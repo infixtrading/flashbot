@@ -1,0 +1,14 @@
+# Routes
+# This file defines all application routes (Higher priority routes first)
+# ~~~~
+
+# Home page
+GET        /                             com.infixtrading.flashbot.controllers.Application.index
+#GET        /bots/:bot                    io.flashbook.flashbot.controllers.Application.bot(bot)
+
+#GET		   /backtest/:strategy/ws   	 io.flashbook.flashbot.controllers.Application.backtestWS(strategy, from="7d", to="now", balances = "{}")
+#GET		   /backtest/:strategy			 io.flashbook.flashbot.controllers.Application.backtest(strategy)
+
+# Prefix must match `play.assets.urlPrefix`
+GET        /assets/*file                 controllers.Assets.at(file)
+GET        /versionedAssets/*file        controllers.Assets.versioned(path="/public", file: Asset)
