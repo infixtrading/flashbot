@@ -2,17 +2,35 @@ package com.infixtrading.flashbot.core
 
 import java.util.UUID.randomUUID
 
+import com.typesafe.config.Config
 import io.circe.Json
 import io.circe.generic.auto._
+import io.circe.parser._
+import com.infixtrading.flashbot.core.Instrument.CurrencyPair
 import com.infixtrading.flashbot.core.Order.{Fill, Side}
 import com.infixtrading.flashbot.engine.TradingSession
-import com.infixtrading.flashbot.core.MarketData
 
+import scala.collection.JavaConverters._
 import scala.math.BigDecimal.RoundingMode.HALF_DOWN
 import scala.concurrent.Future
 
 object Exchange {
-  case class ExchangeConfig(`class`: String, params: Json, pairs: Map[String, Json])
+  case class ExchangeConfig(`class`: String, params: Json, pairs: Set[CurrencyPair])
+
+  object ExchangeConfig {
+    def build(config: Config): ExchangeConfig = {
+      var pairs = Seq.empty[String]
+      try {
+        pairs = config.getStringList("pairs").asScala
+      }
+
+      ExchangeConfig(
+        `class` = config.getString("class"),
+        params = parse("{}").right.get,
+        pairs = pairs.map(CurrencyPair(_)).toSet
+      )
+    }
+  }
 }
 
 abstract class Exchange {
@@ -92,3 +110,4 @@ final case class MarketOrderRequest(clientOid: String,
                                     product: Instrument,
                                     size: Option[Double],
                                     funds: Option[Double]) extends OrderRequest
+
