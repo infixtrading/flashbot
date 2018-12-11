@@ -134,6 +134,8 @@ lazy val baseSettings = Seq(
   ivyConfigurations += CompileTime.hide,
   unmanagedClasspath in Compile ++= update.value.select(configurationFilter(CompileTime.name)),
   unmanagedClasspath in Test ++= update.value.select(configurationFilter(CompileTime.name)),
+
+  libraryDependencies ++= jsonDeps
 )
 
 lazy val allFBSettings = baseSettings ++ publishSettings
@@ -375,9 +377,11 @@ lazy val server = flashbotModule("server", previousFBVersion).settings(
     "com.github.andyglow" % "scala-jsonschema-core_2.12" % "0.0.8",
     "com.github.andyglow" % "scala-jsonschema-api_2.12" % "0.0.8",
     "com.github.andyglow" % "scala-jsonschema-circe-json_2.12" % "0.0.8",
-    "de.sciss" %% "fingertree" % "1.5.2"
+    "de.sciss" %% "fingertree" % "1.5.2",
+
+    "io.circe" %% "circe-config" % "0.5.0"
   ))
-)
+).dependsOn(core)
 
 lazy val client = flashbotModule("client", previousFBVersion).dependsOn(core)
 
