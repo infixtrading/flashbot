@@ -57,7 +57,10 @@ lazy val jsonDeps = List(
 
 lazy val dataStores = List(
   "net.openhft" % "chronicle-queue" % "5.17.1",
-  "net.openhft" % "chronicle-map" % "3.16.4"
+  "net.openhft" % "chronicle-map" % "3.16.4",
+
+  "com.typesafe.akka" %% "akka-persistence" % akkaVersion,
+  "org.fusesource.leveldbjni" % "leveldbjni-all" % "1.8",
 )
 
 lazy val serviceDeps = List(

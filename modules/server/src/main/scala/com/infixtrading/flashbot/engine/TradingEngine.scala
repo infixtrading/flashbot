@@ -40,8 +40,6 @@ class TradingEngine(strategyClassNames: Map[String, String],
                     dataServer: ActorRef)
   extends PersistentActor with ActorLogging {
 
-  val cluster = Cluster(context.system)
-
   import TradingEngine._
   import scala.collection.immutable.Seq
 
