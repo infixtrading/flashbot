@@ -21,8 +21,8 @@ import com.infixtrading.flashbot.util.json._
 import com.infixtrading.flashbot.util._
 import com.infixtrading.flashbot.engine.TradingSession._
 import com.infixtrading.flashbot.models._
-import com.infixtrading.flashbot.models.api.{TradingEngineState, TradingSessionState}
-import com.infixtrading.flashbot.models.core.{Portfolio, TimeRange}
+import com.infixtrading.flashbot.models.api._
+import com.infixtrading.flashbot.models.core.{Account, Market, Portfolio, TimeRange}
 import com.infixtrading.flashbot.report.ReportEvent.{BalanceEvent, PositionEvent}
 import com.infixtrading.flashbot.report._
 
@@ -55,14 +55,14 @@ class TradingEngine(strategyClassNames: Map[String, String],
   override def persistenceId: String = "trading-engine"
 
   /**
-    * Turns an incoming command into a sequence of [[Event]] objects that affect the state in
-    * some way and are then persisted, or into an [[EngineError]] to be returned to the sender.
-    * Note that while this is an asynchronous operation (returns a Future), the thread that
+    * Turns an incoming command into a sequence of [[TradingEngineEvent]] objects that affect the
+    * state in some way and are then persisted, or into an [[EngineError]] to be returned to the
+    * sender. Note that while this is an asynchronous operation (returns a Future), the thread that
     * handles engine commands will block on the Future in order to know what events to persist.
     * This only applies to commands. Queries, which are read-only, bypass Akka persistence and
     * hence are free to be fully-async.
     */
-  def processCommand(command: TradingEngineCommand): Future[Seq[Event]] = command match {
+  def processCommand(command: TradingEngineCommand): Future[Seq[TradingEngineEvent]] = command match {
 
     case StartEngine =>
 
@@ -275,7 +275,7 @@ class TradingEngine(strategyClassNames: Map[String, String],
           // Start the trading session
           processCommand(StartTradingSession(None, strategyName, paramsJson,
               Backtest(timeRange), ref, portfolio, report)) onComplete {
-            case Success(events: Seq[Event]) =>
+            case Success(events: Seq[TradingEngineEvent]) =>
               events.foreach(println)
             case Failure(err) =>
               eventsOut.foreach(_ ! err)
@@ -291,7 +291,7 @@ class TradingEngine(strategyClassNames: Map[String, String],
       case q => sender ! EngineError(s"Unsupported query $q")
     }
 
-    case cmd: Command =>
+    case cmd: TradingEngineCommand =>
       // Blocking!
       val result = Await.ready(processCommand(cmd), 10 seconds).value.get
       result match {
@@ -314,7 +314,7 @@ class TradingEngine(strategyClassNames: Map[String, String],
     case SnapshotOffer(metadata, snapshot: TradingEngineState) =>
       state = snapshot
     case RecoveryCompleted => // ignore
-    case event: Event =>
+    case event: TradingEngineEvent =>
       state = state.update(event)
   }
 }

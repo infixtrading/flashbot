@@ -1,7 +1,7 @@
 package com.infixtrading.flashbot.models.core
 
-import com.infixtrading.flashbot.core.Order.{Buy, Sell, Side}
 import com.infixtrading.flashbot.core._
+import com.infixtrading.flashbot.models.core.Order.{Buy, Sell, Side}
 import io.circe._
 import io.circe.generic.semiauto._
 

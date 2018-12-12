@@ -12,7 +12,7 @@ import io.circe.Json
 import com.infixtrading.flashbot.core._
 import com.infixtrading.flashbot.core.DataSource._
 import com.infixtrading.flashbot.core.MarketData.BaseMarketData
-import com.infixtrading.flashbot.core.Slice.SliceId
+import com.infixtrading.flashbot.models.core.Slice.SliceId
 import com.infixtrading.flashbot.core.FlashbotConfig._
 import com.infixtrading.flashbot.models.core.DataPath
 import com.infixtrading.flashbot.util.time._

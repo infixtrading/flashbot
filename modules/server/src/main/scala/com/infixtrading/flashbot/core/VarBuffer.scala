@@ -8,6 +8,7 @@ import com.infixtrading.flashbot.core.VarBuffer.VarState
 import com.infixtrading.flashbot.engine.TradingEngine.EngineError
 import com.infixtrading.flashbot.engine.TradingSession
 import com.infixtrading.flashbot.engine.TradingSession._
+import com.infixtrading.flashbot.models.api.{LogMessage, SessionReportEvent}
 import com.infixtrading.flashbot.report.ReportDelta._
 import com.infixtrading.flashbot.report.ReportEvent._
 

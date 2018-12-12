@@ -3,9 +3,9 @@ package com.infixtrading.flashbot.engine
 import akka.NotUsed
 import akka.stream.scaladsl.Source
 import io.circe.Json
-import com.infixtrading.flashbot.core.Action.ActionQueue
 import com.infixtrading.flashbot.core.DataSource._
 import com.infixtrading.flashbot.core._
+import com.infixtrading.flashbot.models.core.Action.ActionQueue
 import com.infixtrading.flashbot.models.core.Portfolio
 import com.infixtrading.flashbot.report.{Report, ReportDelta, ReportEvent}
 

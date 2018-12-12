@@ -9,7 +9,7 @@ import akka.stream.{ActorMaterializer, OverflowStrategy}
 import akka.pattern.ask
 import akka.util.Timeout
 import io.circe._
-import com.infixtrading.flashbot.core.Action.{ActionQueue, CancelLimitOrder, PostLimitOrder, PostMarketOrder}
+import com.infixtrading.flashbot.models.core.Action.{ActionQueue, CancelLimitOrder, PostLimitOrder, PostMarketOrder}
 import com.infixtrading.flashbot.core.DataSource.StreamSelection
 import com.infixtrading.flashbot.core.FlashbotConfig.ExchangeConfig
 import com.infixtrading.flashbot.core.Instrument.CurrencyPair
@@ -20,6 +20,7 @@ import com.infixtrading.flashbot.core.{DataSource, _}
 import com.infixtrading.flashbot.engine.DataServer.{ClusterLocality, DataStreamReq}
 import com.infixtrading.flashbot.engine.TradingSession._
 import com.infixtrading.flashbot.exchanges.Simulator
+import com.infixtrading.flashbot.models.api.{LogMessage, OrderTarget, SessionReportEvent}
 import com.infixtrading.flashbot.models.core.{Account, DataPath, Market, Portfolio}
 import com.infixtrading.flashbot.report.ReportEvent._
 import com.infixtrading.flashbot.report._
@@ -34,7 +35,7 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
                           exchangeConfigs: Map[String, ExchangeConfig],
                           strategyKey: String,
                           strategyParams: Json,
-                          mode: Mode,
+                          mode: TradingSessionMode,
                           sessionEventsRef: ActorRef,
                           initialPortfolio: Portfolio,
                           initialReport: Report,

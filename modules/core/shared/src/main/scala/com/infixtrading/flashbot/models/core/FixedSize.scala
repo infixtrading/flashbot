@@ -1,6 +1,6 @@
 package com.infixtrading.flashbot.models.core
 
-import com.infixtrading.flashbot.core.Order.{Buy, Sell, Side}
+import com.infixtrading.flashbot.models.core.Order.{Buy, Sell, Side}
 
 case class FixedSize(amount: Double, security: String) {
 

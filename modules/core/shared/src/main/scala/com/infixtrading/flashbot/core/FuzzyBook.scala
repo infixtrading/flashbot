@@ -1,6 +1,6 @@
 package com.infixtrading.flashbot.core
 
-import com.infixtrading.flashbot.core.Order._
+import com.infixtrading.flashbot.models.core.Order._
 import com.infixtrading.flashbot.models.core.{Order, OrderBook}
 
 import scala.concurrent.duration._

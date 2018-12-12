@@ -7,9 +7,9 @@ import io.circe.Json
 import io.circe.generic.auto._
 import io.circe.parser._
 import com.infixtrading.flashbot.core.Instrument.CurrencyPair
-import com.infixtrading.flashbot.core.Order.{Fill, Side}
 import com.infixtrading.flashbot.engine.TradingSession
 import com.infixtrading.flashbot.models.core.FixedSize
+import com.infixtrading.flashbot.models.core.Order.{Fill, Side}
 
 import scala.collection.JavaConverters._
 import scala.math.BigDecimal.RoundingMode.HALF_DOWN

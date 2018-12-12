@@ -45,7 +45,7 @@ package object stream {
       Supervision.Stop
     })
 
-  def iteratorToSource[T](it: Iterator[T])(implicit ec: ExecutionContext) = {
+  def iteratorToSource[T](it: Iterator[T])(implicit ec: ExecutionContext): Source[T, NotUsed] = {
     Source.unfoldAsync[Iterator[T], T](it) { memo =>
       // TODO: Can we use Future.success and Future.failure here?
       // I have a hunch it was causing weird errors and that's why I left it like this.
@@ -65,13 +65,13 @@ package object stream {
     def toSource(implicit ec: ExecutionContext): Source[T, NotUsed] = iteratorToSource(it)
   }
 
-  def actorPathsAreLocal(a: ActorPath, b: ActorPath) =
+  def actorPathsAreLocal(a: ActorPath, b: ActorPath): Boolean =
     RootActorPath(a.address) == RootActorPath(b.address)
 
-  def actorIsLocal(other: ActorRef)(implicit context: ActorContext) =
+  def actorIsLocal(other: ActorRef)(implicit context: ActorContext): Boolean =
     RootActorPath(context.self.path.address) == RootActorPath(other.path.address)
 
-  def senderIsLocal(implicit context: ActorContext) = actorIsLocal(context.sender)
+  def senderIsLocal(implicit context: ActorContext): Boolean = actorIsLocal(context.sender)
 
   implicit def toActorPath(dataAddress: DataAddress): ActorPath =
     ActorPath.fromString(dataAddress.host.get)
@@ -79,9 +79,10 @@ package object stream {
   trait StreamRequest[T]
 
   implicit class StreamRequester(ref: ActorRef) {
-    def <<?[T](req: StreamRequest[T]) = (ref ? req)(Timeout(10 seconds)) match {
-      case fut: Future[StreamResponse[T]] => fut
-    }
+    def <<?[T](req: StreamRequest[T]): Future[StreamResponse[T]] =
+      (ref ? req)(Timeout(10 seconds)) match {
+        case fut: Future[StreamResponse[T]] => fut
+      }
   }
 
 }

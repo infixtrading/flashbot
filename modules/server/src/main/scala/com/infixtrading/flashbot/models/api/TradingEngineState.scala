@@ -1,5 +1,4 @@
 package com.infixtrading.flashbot.models.api
-import TradingSessionState
 
 case class TradingEngineState(bots: Map[String, Seq[TradingSessionState]],
                               startedAtMicros: Long = 0) {

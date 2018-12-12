@@ -1,9 +1,9 @@
 package com.infixtrading.flashbot.core
 
-import com.infixtrading.flashbot.core.Action.{ActionQueue, CancelLimitOrder, PostLimitOrder, PostMarketOrder}
+import com.infixtrading.flashbot.models.core.Action.{ActionQueue, CancelLimitOrder, PostLimitOrder, PostMarketOrder}
 import com.infixtrading.flashbot.engine.IdManager
-import com.infixtrading.flashbot.engine.TradingSession.OrderTarget
 import com.infixtrading.flashbot.core.Convert._
+import com.infixtrading.flashbot.models.api.OrderTarget
 import com.infixtrading.flashbot.models.core.Action
 
 import scala.collection.immutable.Queue

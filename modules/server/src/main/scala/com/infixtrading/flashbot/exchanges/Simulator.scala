@@ -1,7 +1,7 @@
 package com.infixtrading.flashbot.exchanges
 
-import com.infixtrading.flashbot.core.Ladder.ladderFillOrder
-import com.infixtrading.flashbot.core.Order._
+import com.infixtrading.flashbot.models.core.Ladder.ladderFillOrder
+import com.infixtrading.flashbot.models.core.Order._
 import com.infixtrading.flashbot.core._
 import com.infixtrading.flashbot.engine.TradingSession
 import com.infixtrading.flashbot.models.core.{Ladder, Order, OrderBook}

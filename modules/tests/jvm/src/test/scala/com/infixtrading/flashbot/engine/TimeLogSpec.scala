@@ -4,7 +4,7 @@ import java.io.File
 
 import io.circe.generic.auto._
 import com.infixtrading.flashbot.util.files._
-import com.infixtrading.flashbot.core.Order.{Buy, Sell}
+import com.infixtrading.flashbot.models.core.Order.{Buy, Sell}
 import com.infixtrading.flashbot.core.Trade
 import com.infixtrading.flashbot.engine.TimeLog
 import com.infixtrading.flashbot.engine.TimeLog.ScanDuration

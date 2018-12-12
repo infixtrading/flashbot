@@ -9,7 +9,7 @@ import io.circe.generic.semiauto._
 import com.infixtrading.flashbot.core.Convert._
 import com.infixtrading.flashbot.core.Instrument.CurrencyPair
 import com.infixtrading.flashbot.core._
-import com.infixtrading.flashbot.engine.TradingSession.{OrderTarget, SessionReportEvent}
+import com.infixtrading.flashbot.models.api.{OrderTarget, SessionReportEvent}
 import com.infixtrading.flashbot.models.core._
 import com.infixtrading.flashbot.report.ReportEvent._
 
