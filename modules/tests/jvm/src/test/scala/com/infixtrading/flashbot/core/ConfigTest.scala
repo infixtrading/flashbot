@@ -7,6 +7,6 @@ class ConfigTest extends FlatSpec with Matchers {
   "FlashbotConfig" should "load the default config" in {
     FlashbotConfig.load(ConfigFactory.load.getConfig("flashbot"))
       .right.get.exchanges("bitstamp")
-      .`class`shouldEqual "io.flashbook.flashbot.exchanges.Bitstamp"
+      .`class`shouldEqual "com.infixtrading.flashbot.exchanges.Bitstamp"
   }
 }

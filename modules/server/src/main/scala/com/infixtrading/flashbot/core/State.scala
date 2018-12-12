@@ -1,7 +1,7 @@
 package com.infixtrading.flashbot.core
 
-import scala.reflect.{ClassTag, classTag}
 import com.infixtrading.flashbot.engine.TradingSession
+import scala.reflect.ClassTag
 
 /**
   * Bots can use the operations defined here to store domain specific state that persists between
@@ -15,7 +15,7 @@ object State {
   // Vars are in-memory only.
   case class Var[T](key: String, value: T) {
     def map(fn: T => T): Var[T] = copy(value = fn(value))
-    def withVal(t: T) = copy(value = value)
+    def withVal(t: T): Var[T] = copy(value = value)
   }
 
   trait Get[T] {

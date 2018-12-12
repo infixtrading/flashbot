@@ -11,6 +11,7 @@ import akka.stream.{ActorMaterializer, OverflowStrategy}
 import akka.util.Timeout
 import io.circe.Json
 import io.circe.syntax._
+import io.circe.literal._
 import io.circe.parser.parse
 import com.infixtrading.flashbot.core.FlashbotConfig.{BotConfig, ExchangeConfig}
 import com.infixtrading.flashbot.core._
@@ -32,7 +33,8 @@ import scala.util.{Failure, Success}
   */
 class TradingEngine(strategyClassNames: Map[String, String],
                     exchangeConfigs: Map[String, ExchangeConfig],
-                    defaultBots: Map[String, BotConfig])
+                    defaultBots: Map[String, BotConfig],
+                    dataServer: ActorRef)
   extends PersistentActor with ActorLogging {
 
   val cluster = Cluster(context.system)
@@ -63,10 +65,13 @@ class TradingEngine(strategyClassNames: Map[String, String],
 
       // Start the default bots
       defaultBots.foreach {
-        case (name, BotConfig(strategy, mode, params, initial_assets, initial_positions)) =>
+        case (name, BotConfig(strategy, mode, paramsOpt, initial_assets, initial_positions)) =>
 
-          val initialAssets = initial_assets.map(kv => Account.parse(kv._1) -> kv._2)
-          val initialPositions = initial_positions.map(kv => Market.parse(kv._1) -> kv._2)
+          val params = paramsOpt.getOrElse(json"{}")
+          val initialAssets = initial_assets.getOrElse(Map.empty)
+            .map(kv => Account.parse(kv._1) -> kv._2)
+          val initialPositions = initial_positions.getOrElse(Map.empty)
+            .map(kv => Market.parse(kv._1) -> kv._2)
 
           // First of all, we look for any previous sessions for this bot. If one exists, then
           // take the portfolio from the last session as the initial portfolio for this session.
@@ -127,7 +132,8 @@ class TradingEngine(strategyClassNames: Map[String, String],
         mode,
         sessionEventsRef,
         initialBalances,
-        initialReport
+        initialReport,
+        dataServer
       )))
 
       // Start the session. We are only waiting for an initialization error, or a confirmation
@@ -218,7 +224,7 @@ class TradingEngine(strategyClassNames: Map[String, String],
         sender ! StrategiesResponse(strategyClassNames.keys.map(StrategyResponse).toList)
 
       case StrategyInfoQuery(name) =>
-        val sessionLoader = new SessionLoader(exchangeConfigs)
+        val sessionLoader = new SessionLoader(exchangeConfigs, dataServer)
         (for {
           className <- strategyClassNames.get(name).toFut(s"Unknown strategy $name.")
           strategy <- Future.fromTry(sessionLoader.loadNewStrategy(className))

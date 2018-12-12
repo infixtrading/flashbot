@@ -1,6 +1,6 @@
 package com.infixtrading.flashbot.engine
 
-import akka.actor.ActorSystem
+import akka.actor.{ActorRef, ActorSystem}
 import akka.stream.ActorMaterializer
 import akka.pattern.ask
 import akka.util.Timeout
@@ -15,12 +15,12 @@ import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration._
 import scala.util.{Failure, Success, Try}
 
-class SessionLoader(exchangeConfigs: Map[String, ExchangeConfig])
+class SessionLoader(exchangeConfigs: Map[String, ExchangeConfig], dataServer: ActorRef)
                    (implicit ec: ExecutionContext) {
   implicit val timeout = Timeout(10 seconds)
 
   def index: Future[DataSourceIndex] = {
-    (Control.dataServer.get ? ClusterDataIndexReq).collect {
+    (dataServer ? ClusterDataIndexReq).collect {
       case idx: DataClusterIndex =>
         println(idx)
         idx.slices
@@ -44,7 +44,7 @@ class SessionLoader(exchangeConfigs: Map[String, ExchangeConfig])
         Failure(EngineError("Exchange class not found: " + config.`class`, Some(err)))
       case err: ClassCastException =>
         Failure(EngineError(s"Class ${config.`class`} must be a " +
-          s"subclass of io.flashbook.core.Exchange", Some(err)))
+          s"subclass of com.infixtrading.flashbot.core.Exchange", Some(err)))
     }
 
   protected[engine] def loadNewStrategy(className: String): Try[Strategy] =
@@ -59,7 +59,7 @@ class SessionLoader(exchangeConfigs: Map[String, ExchangeConfig])
 
       case err: ClassCastException =>
         Failure(EngineError(s"Class $className must be a " +
-          s"subclass of io.flashbook.core.Strategy", Some(err)))
+          s"subclass of com.infixtrading.flashbot.core.Strategy", Some(err)))
       case err => Failure(err)
     }
 }
