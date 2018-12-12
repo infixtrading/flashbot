@@ -1,5 +1,7 @@
 package com.infixtrading.flashbot.core
 
+import scala.collection.immutable.{Map, Set}
+
 /**
   * The data structure used to calculate positions, equity, PnL, order sizes, etc... This will
   * typically be populated from the last trade price or a candle.

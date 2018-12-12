@@ -1,4 +1,6 @@
 package com.infixtrading.flashbot.core
+import io.circe._
+import io.circe.generic.semiauto._
 
 case class Position(size: Long, leverage: Double, entryPrice: Double) {
 
@@ -32,8 +34,8 @@ case class Position(size: Long, leverage: Double, entryPrice: Double) {
     ), pnl)
   }
 
-  def isLong = size > 0
-  def isShort = size < 0
+  def isLong: Boolean = size > 0
+  def isShort: Boolean = size < 0
 }
 
 object Position {

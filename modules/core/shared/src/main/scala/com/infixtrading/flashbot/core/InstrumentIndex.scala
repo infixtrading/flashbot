@@ -1,5 +1,7 @@
 package com.infixtrading.flashbot.core
 
+import scala.collection.immutable.{Map, Set}
+
 class InstrumentIndex(val instruments: Map[String, Set[Instrument]]) extends AnyVal {
   def apply(exchange: String, symbol: String): Instrument = apply(Market(exchange, symbol))
   def apply(market: Market): Instrument = get(market).get

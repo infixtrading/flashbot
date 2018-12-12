@@ -2,7 +2,6 @@ package com.infixtrading.flashbot
 
 import org.scalatest.{FlatSpec, FunSpec, FunSuite, Matchers}
 
-
 class TestLibSuite extends FlatSpec with Matchers {
 
   "assertTestLib" should "is a test lib" in {

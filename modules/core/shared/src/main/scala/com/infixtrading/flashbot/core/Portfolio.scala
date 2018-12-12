@@ -2,6 +2,7 @@ package com.infixtrading.flashbot.core
 
 import io.circe.{Decoder, Encoder, KeyEncoder}
 import io.circe.generic.semiauto._
+import scala.collection.immutable.{Map, Set}
 
 /**
   * Keeps track of asset balances and positions across all exchanges. Calculates equity and PnL.

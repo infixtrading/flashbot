@@ -85,7 +85,8 @@ val compilerOptions = Seq(
   "-Ywarn-dead-code",
   "-Ywarn-numeric-widen",
   "-Xfuture",
-  "-Yno-predef",
+  "-explaintypes",
+//  "-Yno-predef",
   "-Ywarn-unused-import"
 )
 
@@ -248,8 +249,7 @@ lazy val jsModules = Seq[Project](scalajs)
 lazy val jvmModules = Seq[Project](server, client)
 //lazy val fbDocsModules = Seq[Project](docs)
 
-lazy val jvmProjects: Seq[Project] =
-  (crossModules.map(_._1) ++ jvmModules)
+lazy val jvmProjects: Seq[Project] = crossModules.map(_._1) ++ jvmModules
 
 lazy val jsProjects: Seq[Project] =
   (crossModules.map(_._2) ++ jsModules)
@@ -412,8 +412,8 @@ lazy val testsBase = crossModule("tests", previousFBVersion)
       file("modules/tests") / "shared" / "src" / "main" / "resources"
   ).dependsOn(coreBase, testingBase)
 
-lazy val tests = testsBase.jvm
-lazy val testsJS = testsBase.js
+lazy val tests = testsBase.jvm.dependsOn(server, client)
+lazy val testsJS = testsBase.js.dependsOn(scalajs)
 
 lazy val publishSettings = Seq(
   releaseCrossBuild := true,

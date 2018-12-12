@@ -1,52 +1,43 @@
 package com.infixtrading.flashbot.core
 
+import com.infixtrading.flashbot.core.FlashbotConfig.{BotConfigJson, DataSourceConfig, ExchangeConfig, IngestConfig}
+import com.typesafe.config.Config
 import io.circe._
-import io.circe.generic.semiauto._
+import io.circe.config.syntax._
+import io.circe.generic.auto._
+
+case class FlashbotConfig(`api-key`: Option[String],
+                           `data-root`: String,
+                          `market-data-root`: String,
+                          `app-data-root`: String,
+                          ingest: IngestConfig,
+                          strategies: Map[String, String],
+                          exchanges: Map[String, ExchangeConfig],
+                          sources: Map[String, DataSourceConfig],
+                          bots: BotConfigJson)
+
 
 object FlashbotConfig {
 
   case class IngestConfig(paths: Seq[String], retention: String)
 
-  case class ExchangeConfig(`class`: String, params: Json, pairs: Seq[String])
+  case class ExchangeConfig(`class`: String, params: Option[Json], pairs: Option[Seq[String]])
 
   implicit val pe: Encoder[Position] = Position.postionEn
   implicit val pd: Decoder[Position] = Position.postionDe
 
   case class BotConfig(strategy: String,
                        mode: String,
-                       params: Json,
-                       initial_assets: Map[String, Double],
-                       initial_positions: Map[String, Position])
+                       params: Option[Json],
+                       `initial-assets`: Option[Map[String, Double]],
+                       `initial-positions`: Option[Map[String, Position]])
 
-  def buildBotConfigs: Seq[BotConfig] = Seq.empty
+  case class BotConfigJson(default: Seq[String], configs: Map[String, BotConfig])
 
-  case class BotConfigJson(default: Seq[String], all: Map[String, BotConfig]) {
-    def bots: Map[String, BotConfig] = all
-  }
+  final case class DataSourceConfig(`class`: String, topics: Option[Seq[String]], datatypes: Option[Seq[String]])
 
-  final case class DataSourceConfig(`class`: String, topics: Seq[String], datatypes: Seq[String])
+//  implicit val configEncoder: Encoder[FlashbotConfig] = deriveEncoder[FlashbotConfig]
+//  implicit val configDecoder: Decoder[FlashbotConfig] = deriveDecoder[FlashbotConfig]
 
-  case class ConfigFile(dataroot: String,
-                        marketdata: String,
-                        appdata: String,
-                        apikey: Option[String],
-                        ingest: IngestConfig,
-                        strategies: Map[String, String],
-                        exchanges: Map[String, ExchangeConfig],
-                        sources: Map[String, DataSourceConfig],
-                        bots: BotConfigJson)
-
-  implicit val configEncoder: Encoder[ConfigFile] = deriveEncoder[ConfigFile]
-  implicit val configDecoder: Decoder[ConfigFile] = deriveDecoder[ConfigFile]
-
-  def loadConfig(config: Config): ConfigFile = {
-    val result = config.as[ConfigFile]
-    result.left.foreach(err => {
-      println("Got an error")
-      println(err)
-      println(err.getMessage)
-    })
-    result.right.get
-  }
-
+  def load(config: Config): Either[Error, FlashbotConfig] = config.as[FlashbotConfig]
 }

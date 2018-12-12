@@ -1,5 +1,7 @@
 package com.infixtrading.flashbot.core
 
+import scala.collection.immutable.Set
+
 class Pegs(val pegs: Set[(String, String)]) extends AnyVal {
   def of(asset: String): Set[String] = of(Set(asset))
 
