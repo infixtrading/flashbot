@@ -85,6 +85,10 @@ object Instrument {
         list = str.split("_")
       CurrencyPair(list(0), list(1))
     }
+
+    implicit class CurrencyPairOps(product: String) {
+      def pair: CurrencyPair = CurrencyPair(product)
+    }
   }
 
   case class Index(symbol: String, base: String, quote: String) extends Instrument {
