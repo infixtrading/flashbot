@@ -76,8 +76,7 @@ object DeltaFmt {
     implicitly[DeltaFmtJson[java.lang.Integer]],
     implicitly[DeltaFmtJson[java.lang.Double]],
     implicitly[DeltaFmtJson[java.lang.String]],
-    implicitly[DeltaFmtJson[java.lang.Boolean]],
-  )
+    implicitly[DeltaFmtJson[java.lang.Boolean]])
 
   // We need to have an index of DeltaFmtJson instances. It would be great to do without this,
   // but for now this works.
