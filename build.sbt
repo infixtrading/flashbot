@@ -483,7 +483,8 @@ lazy val CompileTime = config("compile-time")
 val jvmTestProjects = jvmProjects
 val jsTestProjects = jsProjects.filterNot(Set(scalajs))
 
-val formatCommands = ";scalafmtCheck;test:scalafmtCheck;scalafmtSbtCheck;scalastyle"
+//val formatCommands = ";scalafmtCheck;test:scalafmtCheck;scalafmtSbtCheck;scalastyle"
+val formatCommands = ""
 
 addCommandAlias("buildJVM", jvmProjects.map(";" + _.id + "/compile").mkString)
 addCommandAlias(
