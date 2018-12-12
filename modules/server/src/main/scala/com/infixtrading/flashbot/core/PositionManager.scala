@@ -1,5 +1,6 @@
 package com.infixtrading.flashbot.core
 
+import com.infixtrading.flashbot.models.core.{FixedSize, Market, Portfolio}
 import com.quantego
 
 /**

@@ -1,7 +1,7 @@
 package com.infixtrading.flashbot.report
 
 import com.infixtrading.flashbot.core._
-import com.infixtrading.flashbot.core.Candle
+import com.infixtrading.flashbot.models.core.Candle
 import com.infixtrading.flashbot.report.Report.{ReportValue, ValuesMap}
 import com.infixtrading.flashbot.report.ReportDelta._
 import com.infixtrading.flashbot.report.ReportEvent._
@@ -10,6 +10,7 @@ import io.circe._
 import io.circe.generic.auto._
 import io.circe.generic.semiauto._
 import io.circe.syntax._
+
 import scala.concurrent.duration._
 
 case class Report(strategy: String,
@@ -69,7 +70,7 @@ case class Report(strategy: String,
 
     case e: PriceEvent =>
       genTimeSeriesDelta[PriceEvent](
-        List("price", e.exchange, e.instrument.toString).mkString("."), e, _.price) :: Nil
+        List("price", e.market.exchange, e.market.symbol).mkString("."), e, _.price) :: Nil
 
     case e: BalanceEvent =>
       genTimeSeriesDelta[BalanceEvent](

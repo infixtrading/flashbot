@@ -12,6 +12,7 @@ import com.infixtrading.flashbot.core.Slice.SliceId
 import com.infixtrading.flashbot.core._
 import com.infixtrading.flashbot.engine.IndexedDeltaLog._
 import com.infixtrading.flashbot.engine.TimeLog.ScanDuration
+import com.infixtrading.flashbot.models.core.Slice
 
 import scala.collection.immutable.{Queue, SortedSet}
 import scala.concurrent.duration._

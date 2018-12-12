@@ -1,8 +1,11 @@
 package com.infixtrading.flashbot.util
 
+import java.time.Instant
+
 import io.circe._
 import io.circe.syntax._
 import java.util.concurrent.TimeUnit.{DAYS, HOURS, MILLISECONDS, MINUTES, SECONDS}
+
 import scala.concurrent.duration.{Duration, FiniteDuration}
 import scala.util.matching.Regex
 
@@ -48,4 +51,13 @@ package object time {
   }
 
   def currentTimeMicros: Long = System.currentTimeMillis * 1000
+
+  def parseTime(now: Instant, str: String): Either[Duration, Instant] = {
+  if (str == "now") {
+    Right(now)
+  } else {
+    Left(parseDuration(str))
+  }
+}
+
 }

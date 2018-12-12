@@ -1,7 +1,9 @@
 package com.infixtrading.flashbot.core
 
+import com.infixtrading.flashbot.models.core.{Account, FixedSize, Market}
 import org.jgrapht.alg.shortestpath.DijkstraShortestPath
 import org.jgrapht.graph.SimpleWeightedGraph
+
 import scala.collection.JavaConverters._
 
 object Convert {

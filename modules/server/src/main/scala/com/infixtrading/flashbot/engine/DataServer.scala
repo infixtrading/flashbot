@@ -12,7 +12,7 @@ import akka.stream.{ActorMaterializer, SourceRef}
 import akka.stream.scaladsl.{Source, StreamRefs}
 import akka.util.Timeout
 import com.infixtrading.flashbot.core.DataSource._
-import com.infixtrading.flashbot.core.{DataPath, DeltaFmt, DeltaFmtJson, MarketData}
+import com.infixtrading.flashbot.core.{DeltaFmt, DeltaFmtJson, MarketData}
 import com.infixtrading.flashbot.core.DeltaFmt._
 import com.infixtrading.flashbot.core.FlashbotConfig.{DataSourceConfig, ExchangeConfig, IngestConfig}
 import com.infixtrading.flashbot.util.stream._

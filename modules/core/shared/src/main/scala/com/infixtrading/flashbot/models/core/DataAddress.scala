@@ -1,4 +1,4 @@
-package com.infixtrading.flashbot.core
+package com.infixtrading.flashbot.models.core
 
 final case class DataAddress(host: Option[String],
                              path: DataPath) {

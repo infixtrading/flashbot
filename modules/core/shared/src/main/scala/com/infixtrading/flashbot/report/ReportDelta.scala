@@ -1,6 +1,7 @@
 package com.infixtrading.flashbot.report
 
 import com.infixtrading.flashbot.core._
+import com.infixtrading.flashbot.models.core.Candle
 import com.infixtrading.flashbot.report.ReportEvent._
 import io.circe._
 import io.circe.Decoder.Result

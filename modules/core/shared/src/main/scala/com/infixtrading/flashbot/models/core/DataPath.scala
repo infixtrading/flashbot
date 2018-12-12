@@ -1,4 +1,4 @@
-package com.infixtrading.flashbot.core
+package com.infixtrading.flashbot.models.core
 
 final case class DataPath(source: String, topic: String, dataType: String) {
   override def toString: String = List(source, topic, dataType).mkString("/")

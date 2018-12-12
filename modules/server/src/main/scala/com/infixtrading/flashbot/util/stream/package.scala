@@ -6,8 +6,9 @@ import akka.stream.{ActorMaterializer, ActorMaterializerSettings, Supervision}
 import akka.stream.scaladsl.{Flow, Source}
 import akka.pattern.ask
 import akka.util.Timeout
-import com.infixtrading.flashbot.core.{DataAddress, MarketData}
+import com.infixtrading.flashbot.core.MarketData
 import com.infixtrading.flashbot.engine.StreamResponse
+import com.infixtrading.flashbot.models.core.DataAddress
 
 import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration._

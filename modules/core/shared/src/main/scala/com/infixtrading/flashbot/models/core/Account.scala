@@ -1,4 +1,5 @@
-package com.infixtrading.flashbot.core
+package com.infixtrading.flashbot.models.core
+
 import io.circe.{KeyDecoder, KeyEncoder}
 
 case class Account(exchange: String, security: String) {

@@ -1,5 +1,7 @@
 package com.infixtrading.flashbot.core
 
+import com.infixtrading.flashbot.models.core.{Account, Market}
+
 import scala.collection.immutable.{Map, Set}
 
 class InstrumentIndex(val instruments: Map[String, Set[Instrument]]) extends AnyVal {

@@ -1,6 +1,8 @@
 package com.infixtrading.flashbot.core
 
 import java.time.{Duration, Instant, ZoneOffset, ZonedDateTime}
+
+import com.infixtrading.flashbot.models.core.Candle
 import com.infixtrading.flashbot.util
 import org.ta4j.core.{BaseTimeSeries, TimeSeries}
 

@@ -20,6 +20,7 @@ import com.infixtrading.flashbot.core.{DataSource, _}
 import com.infixtrading.flashbot.engine.DataServer.{ClusterLocality, DataStreamReq}
 import com.infixtrading.flashbot.engine.TradingSession._
 import com.infixtrading.flashbot.exchanges.Simulator
+import com.infixtrading.flashbot.models.core.{Account, DataPath, Market, Portfolio}
 import com.infixtrading.flashbot.report.ReportEvent._
 import com.infixtrading.flashbot.report._
 

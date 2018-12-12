@@ -1,5 +1,7 @@
 package com.infixtrading.flashbot.core
 
+import com.infixtrading.flashbot.models.core.Market
+
 import scala.collection.immutable.{Map, Set}
 
 /**

@@ -1,7 +1,8 @@
 package com.infixtrading.flashbot.report
 
 import com.infixtrading.flashbot.core._
-import com.infixtrading.flashbot.core.{Account, Instrument, Market, Position}
+import com.infixtrading.flashbot.core.Instrument
+import com.infixtrading.flashbot.models.core.{Account, Candle, Market, Position}
 import com.infixtrading.flashbot.report.ReportDelta._
 import io.circe._
 import io.circe.generic.semiauto._
@@ -23,8 +24,7 @@ object ReportEvent {
     implicit def tradeEventDe: Decoder[TradeEvent] = deriveDecoder[TradeEvent]
   }
 
-  case class PriceEvent(exchange: String,
-                        instrument: Instrument,
+  case class PriceEvent(market: Market,
                         price: Double,
                         micros: Long) extends ReportEvent with Timestamped
   case class PositionEvent(market: Market,

@@ -1,6 +1,8 @@
 package com.infixtrading.flashbot.core
 
+import com.infixtrading.flashbot.models.core.{Candle, Ladder, OrderBook}
 import com.infixtrading.flashbot.util.time.parseDuration
+
 import scala.concurrent.duration.FiniteDuration
 
 sealed trait DataType[T] {

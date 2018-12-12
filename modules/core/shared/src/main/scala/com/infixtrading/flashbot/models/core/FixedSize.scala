@@ -1,4 +1,4 @@
-package com.infixtrading.flashbot.core
+package com.infixtrading.flashbot.models.core
 
 import com.infixtrading.flashbot.core.Order.{Buy, Sell, Side}
 

@@ -1,6 +1,7 @@
 package com.infixtrading.flashbot.core
 
 import com.infixtrading.flashbot.core.FlashbotConfig.{BotConfigJson, DataSourceConfig, ExchangeConfig, IngestConfig}
+import com.infixtrading.flashbot.models.core.Position
 import com.typesafe.config.Config
 import io.circe._
 import io.circe.config.syntax._

@@ -1,6 +1,7 @@
 package com.infixtrading.flashbot.core
 
 import com.infixtrading.flashbot.core.Order.{Buy, Fill, Sell}
+import com.infixtrading.flashbot.models.core.{Account, Portfolio}
 
 trait Instrument {
 

@@ -20,6 +20,9 @@ import com.infixtrading.flashbot.util.stream.buildMaterializer
 import com.infixtrading.flashbot.util.json._
 import com.infixtrading.flashbot.util._
 import com.infixtrading.flashbot.engine.TradingSession._
+import com.infixtrading.flashbot.models._
+import com.infixtrading.flashbot.models.api.{TradingEngineState, TradingSessionState}
+import com.infixtrading.flashbot.models.core.{Portfolio, TimeRange}
 import com.infixtrading.flashbot.report.ReportEvent.{BalanceEvent, PositionEvent}
 import com.infixtrading.flashbot.report._
 
@@ -47,7 +50,7 @@ class TradingEngine(strategyClassNames: Map[String, String],
   implicit val ec: ExecutionContext = system.dispatcher
 
   val snapshotInterval = 100000
-  var state = EngineState(Map.empty)
+  var state = TradingEngineState(Map.empty)
 
   override def persistenceId: String = "trading-engine"
 
@@ -59,7 +62,7 @@ class TradingEngine(strategyClassNames: Map[String, String],
     * This only applies to commands. Queries, which are read-only, bypass Akka persistence and
     * hence are free to be fully-async.
     */
-  def processCommand(command: Command): Future[Seq[Event]] = command match {
+  def processCommand(command: TradingEngineCommand): Future[Seq[Event]] = command match {
 
     case StartEngine =>
 
@@ -100,7 +103,7 @@ class TradingEngine(strategyClassNames: Map[String, String],
             Some(name),
             strategy,
             params,
-            Mode(mode),
+            TradingSessionMode(mode),
             ref,
             initialSessionPortfolio,
             Report.empty(strategy, params)
@@ -141,8 +144,8 @@ class TradingEngine(strategyClassNames: Map[String, String],
       implicit val timeout: Timeout = Timeout(10 seconds)
       (sessionActor ? "start").map {
         case (sessionId: String, micros: Long) =>
-          SessionStarted(sessionId, botIdOpt, strategyKey, strategyParams,
-            mode, micros, initialBalances, initialReport) :: Nil
+          Seq(SessionStarted(sessionId, botIdOpt, strategyKey, strategyParams,
+            mode, micros, initialBalances, initialReport))
       }
 
     /**
@@ -308,7 +311,7 @@ class TradingEngine(strategyClassNames: Map[String, String],
     * Recover persisted state after a restart or crash.
     */
   override def receiveRecover: Receive = {
-    case SnapshotOffer(metadata, snapshot: EngineState) =>
+    case SnapshotOffer(metadata, snapshot: TradingEngineState) =>
       state = snapshot
     case RecoveryCompleted => // ignore
     case event: Event =>
@@ -317,80 +320,6 @@ class TradingEngine(strategyClassNames: Map[String, String],
 }
 
 object TradingEngine {
-
-  case class EngineState(bots: Map[String, Seq[TradingSessionState]],
-                         startedAtMicros: Long = 0) {
-    /**
-      * A pure function that updates the state in response to an event that occurred in the
-      * engine. No side effects or outside state please!
-      */
-    def update(event: Event): EngineState = event match {
-      case EngineStarted(micros, withBots) =>
-        copy(
-          startedAtMicros = micros,
-          bots = withBots.map(botId => botId -> Seq.empty[TradingSessionState]).toMap ++ bots
-        )
-
-      case SessionStarted(id, Some(botId), strategyKey, strategyParams, mode,
-          micros, portfolio, report) =>
-        copy(bots = bots + (botId -> (
-          bots.getOrElse[Seq[TradingSessionState]](botId, Seq.empty) :+
-            TradingSessionState(id, strategyKey, strategyParams, mode, micros, portfolio, report))))
-
-      case e: SessionUpdated => e match {
-        case ReportUpdated(botId, delta) =>
-          val bot = bots(botId)
-          copy(bots = bots + (botId -> bot.updated(bot.length - 1,
-            bot.last.updateReport(delta))))
-
-        case BalancesUpdated(botId, account, balance) =>
-          val bot = bots(botId)
-          copy(bots = bots + (botId -> bot.updated(bot.length - 1,
-            bot.last.copy(portfolio = bot.last.portfolio.withBalance(account, balance)))))
-
-        case PositionUpdated(botId, market, position) =>
-          val bot = bots(botId)
-          copy(bots = bots + (botId -> bot.updated(bot.length - 1,
-            bot.last.copy(portfolio = bot.last.portfolio.unsafeSetPosition(market, position)))))
-
-      }
-    }
-  }
-
-  sealed trait Command
-  case class StartTradingSession(botId: Option[String],
-                                 strategyKey: String,
-                                 strategyParams: Json,
-                                 mode: Mode,
-                                 sessionEvents: ActorRef,
-                                 initialPortfolio: Portfolio,
-                                 report: Report) extends Command
-
-  case object StartEngine extends Command
-  case class ProcessBotSessionEvent(botId: String, event: ReportEvent) extends Command
-
-  sealed trait Event
-  case class SessionStarted(id: String,
-                            botId: Option[String],
-                            strategyKey: String,
-                            strategyParams: Json,
-                            mode: Mode,
-                            micros: Long,
-                            portfolio: Portfolio,
-                            report: Report) extends Event
-  case class EngineStarted(micros: Long, withBots: Seq[String]) extends Event
-
-  sealed trait SessionUpdated extends Event {
-    def botId: String
-  }
-  case class ReportUpdated(botId: String,
-                           delta: ReportDelta) extends SessionUpdated
-  case class BalancesUpdated(botId: String,
-                             account: Account,
-                             balance: Double) extends SessionUpdated
-  case class PositionUpdated(botId: String,
-                             market: Market,
-                             position: Position) extends SessionUpdated
 
   sealed trait Query
   case object Ping extends Query

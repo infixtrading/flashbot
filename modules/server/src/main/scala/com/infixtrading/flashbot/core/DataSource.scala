@@ -11,6 +11,7 @@ import io.circe.generic.auto._
 import com.infixtrading.flashbot.core.DataSource._
 import com.infixtrading.flashbot.core.FlashbotConfig.ExchangeConfig
 import com.infixtrading.flashbot.core.Slice.SliceId
+import com.infixtrading.flashbot.models.core.{DataAddress, DataPath, Slice}
 import com.infixtrading.flashbot.util.time.parseDuration
 import com.infixtrading.flashbot.util.stream._
 
