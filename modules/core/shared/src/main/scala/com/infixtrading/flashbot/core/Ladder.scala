@@ -2,6 +2,7 @@ package com.infixtrading.flashbot.core
 
 import com.infixtrading.flashbot.core.Order.{Buy, Sell, Side}
 import io.circe._
+import io.circe.generic.auto._
 import io.circe.generic.semiauto._
 import scala.collection.immutable.{SortedMap, TreeMap}
 

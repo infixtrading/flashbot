@@ -1,5 +1,10 @@
 package com.infixtrading.flashbot
 
+import com.infixtrading.flashbot.core.Order.Side
+import com.infixtrading.flashbot.util.time.parseDuration
+import java.time.Instant
+import scala.concurrent.duration.Duration
+
 package object core {
   case class TimeRange(from: Long, to: Long = Long.MaxValue)
   object TimeRange {
@@ -51,7 +56,7 @@ package object core {
                     bestAskQuantity: Double,
                     lastTradePrice: Double,
                     lastTradeId: Long) extends Timestamped with Priced {
-    def price = lastTradePrice
+    def price: Double = lastTradePrice
   }
 
 

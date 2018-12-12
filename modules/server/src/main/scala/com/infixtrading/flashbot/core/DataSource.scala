@@ -9,12 +9,13 @@ import de.sciss.fingertree.{FingerTree, RangedSeq}
 import io.circe.Json
 import io.circe.generic.auto._
 import com.infixtrading.flashbot.core.DataSource._
-import com.infixtrading.flashbot.core.InfixConfig.ExchangeConfig
+import com.infixtrading.flashbot.core.FlashbotConfig.ExchangeConfig
 import com.infixtrading.flashbot.core.Slice.SliceId
 import com.infixtrading.flashbot.util.time.parseDuration
 import com.infixtrading.flashbot.util.stream._
 
 import scala.collection.JavaConverters._
+import scala.collection.immutable
 import scala.concurrent.Future
 import scala.concurrent.duration._
 
@@ -50,37 +51,9 @@ object DataSource {
 
   final case class DataTypeConfig(retention: Option[String])
 
-
-//  object DataSourceConfig {
-//    def build(config: Config): DataSourceConfig = {
-//      var topics = Seq.empty[String]
-//      try {
-//        topics = config.getStringList("topics").asScala
-//      }
-//
-//      var datatypes = Seq.empty[String]
-//      try {
-//        datatypes = config.getStringList("datatypes").asScala
-//      }
-//
-//      DataSourceConfig(
-//        `class` = config.getString("class"),
-//        topics = topics.toSet,
-//        dataTypes = datatypes.toSet
-//      )
-//    }
-//  }
-
-
   trait Mergable[T] extends Any {
     def merge(other: T): T
   }
-
-
-//  case class SliceMatch(bundle: Option[Long] = None, slice: Option[Long] = None) {
-//    def matches(sliceId: SliceId): Boolean =
-//      bundle.forall(_ == sliceId.bundle) && slice.forall(_ == sliceId.slice)
-//  }
 
   implicit class SliceIndex(val rangedSlices: RangedSeq[Slice, Long])
       extends AnyVal with Mergable[SliceIndex] {
@@ -113,12 +86,12 @@ object DataSource {
 
   class DataTypeIndex(val bundles: Map[String, SliceIndex]) extends AnyVal
       with Mergable[DataTypeIndex] {
-    def get(dataType: String) = bundles.get(dataType)
-    def apply(dataType: String) = get(dataType).get
-    def merge(other: DataTypeIndex) = mergeMap(bundles, other.bundles)
-    def isEmpty = bundles.isEmpty
+    def get(dataType: String): Option[SliceIndex] = bundles.get(dataType)
+    def apply(dataType: String): SliceIndex = get(dataType).get
+    def merge(other: DataTypeIndex): DataTypeIndex = mergeMap(bundles, other.bundles)
+    def isEmpty: Boolean = bundles.isEmpty
 
-    def slices = bundles.flatMap {
+    def slices: Seq[Slice] = bundles.flatMap {
       case (dataType, index) =>
         index.slices.map(_.mapAddress(_.withType(dataType)))
     }.toSeq
@@ -135,13 +108,13 @@ object DataSource {
   class TopicIndex(val topics: Map[String, DataTypeIndex]) extends AnyVal
       with Mergable[TopicIndex] {
 
-    def get(topic: String) = topics.get(topic)
-    def apply(topic: String) = get(topic).get
-    def merge(other: TopicIndex) = mergeMap(topics, other.topics)
+    def get(topic: String): Option[DataTypeIndex] = topics.get(topic)
+    def apply(topic: String): DataTypeIndex = get(topic).get
+    def merge(other: TopicIndex): TopicIndex = mergeMap(topics, other.topics)
     def filter(fn: ((String, DataTypeIndex)) => Boolean): TopicIndex = topics.filter(fn)
-    def isEmpty = topics.isEmpty
+    def isEmpty: Boolean = topics.isEmpty
 
-    def slices = topics.flatMap {
+    def slices: Seq[Slice] = topics.flatMap {
       case (topic, index) =>
         index.slices.map(_.mapAddress(_.withTopic(topic)))
     }.toSeq
@@ -157,17 +130,17 @@ object DataSource {
 
   class DataSourceIndex(val sources: Map[String, TopicIndex]) extends AnyVal
       with Mergable[DataSourceIndex] {
-    def get(dataSource: String) = sources.get(dataSource)
-    def apply(dataSource: String) = get(dataSource).get
-    def apply(path: DataPath) = (for {
+    def get(dataSource: String): Option[TopicIndex] = sources.get(dataSource)
+    def apply(dataSource: String): TopicIndex = get(dataSource).get
+    def apply(path: DataPath): SliceIndex = (for {
       topics <- get(path.source)
       types <- topics.get(path.topic)
       bundles <- types.get(path.dataType)
     } yield bundles).getOrElse(SliceIndex.empty)
 
-    def merge(other: DataSourceIndex) = mergeMap(sources, other.sources)
-    def isEmpty = sources.isEmpty
-    def slices = sources.flatMap {
+    def merge(other: DataSourceIndex): DataSourceIndex = mergeMap(sources, other.sources)
+    def isEmpty: Boolean = sources.isEmpty
+    def slices: Seq[Slice] = sources.flatMap {
       case (src, topics) => topics.slices.map(_.mapAddress(_.withSource(src)))
     }.toSeq
 
@@ -189,9 +162,9 @@ object DataSource {
   class DataClusterIndex(val members: Map[ActorPath, DataSourceIndex]) extends AnyVal
       with Mergable[DataClusterIndex] {
 
-    def merge(other: DataClusterIndex) = mergeMap(members, other.members)
+    def merge(other: DataClusterIndex): DataClusterIndex = mergeMap(members, other.members)
 
-    def slices = members.flatMap {
+    def slices: Seq[Slice] = members.flatMap {
       case (host, index) => index.slices.map(_.mapAddress(_.withHost(host.toString)))
     }.toSeq
 
@@ -291,10 +264,7 @@ object DataSource {
     def toLocal: StreamSelection = StreamSelection(address.path, from, to, polling)
   }
 
-//  def reindex(sources: Iterable[Iterable[MarketData[_]]]) =
-//    sources.zipWithIndex.map { case (mds, i) => mds.map(_.withBundle(i))}
-//
-  def reindex(sources: List[Source[MarketData[_], NotUsed]]) =
+  def reindex(sources: List[Source[MarketData[_], NotUsed]]) : immutable.Seq[Any] =
     sources.zipWithIndex.map { case (mds, i) => mds.map(_.withBundle(i))}
 
 //  def reindex(sources: Source[Source[MarketData[_], NotUsed], NotUsed]) =
