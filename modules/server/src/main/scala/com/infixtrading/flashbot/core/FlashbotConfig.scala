@@ -16,7 +16,6 @@ case class FlashbotConfig(`api-key`: Option[String],
                           sources: Map[String, DataSourceConfig],
                           bots: BotConfigJson)
 
-
 object FlashbotConfig {
 
   case class IngestConfig(paths: Seq[String], retention: String)
