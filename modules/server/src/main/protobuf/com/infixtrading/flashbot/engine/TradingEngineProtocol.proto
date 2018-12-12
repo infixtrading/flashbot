@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+// Brought in from scalapb-runtime
+import "scalapb/scalapb.proto";
+import "google/protobuf/wrappers.proto";
+
+package com.infixtrading.flashbot.models.TradingEngineProtocol;
+
+option (scalapb.options) = {
+    single_file: true
+    flat_package: true
+    preamble: "sealed trait Event"
+};
+
+// State
+
+message EngineState {
+
+}
+
+// Events
+
+message StartTradingSession {
+    option (scalapb.message).extends = "Command";
+
+    string bot_id = 1;
+}

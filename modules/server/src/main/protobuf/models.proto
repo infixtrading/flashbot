@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+// Brought in from scalapb-runtime
+import "scalapb/scalapb.proto";
+import "google/protobuf/wrappers.proto";
+
+package com.infixtrading.flashbot.models;
+
+message EngineState {
+}

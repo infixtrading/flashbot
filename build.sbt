@@ -134,7 +134,13 @@ lazy val baseSettings = Seq(
   unmanagedClasspath in Compile ++= update.value.select(configurationFilter(CompileTime.name)),
   unmanagedClasspath in Test ++= update.value.select(configurationFilter(CompileTime.name)),
 
-  libraryDependencies ++= jsonDeps
+  libraryDependencies ++= (jsonDeps ++ Seq(
+    "com.thesamet.scalapb" %% "scalapb-runtime" % scalapb.compiler.Version.scalapbVersion % "protobuf"
+  )),
+  
+  PB.targets in Compile := Seq(
+    scalapb.gen() -> (sourceManaged in Compile).value
+  )
 )
 
 lazy val allFBSettings = baseSettings ++ publishSettings

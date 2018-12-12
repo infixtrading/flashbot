@@ -37,10 +37,10 @@ class TradingEngine(strategyClassNames: Map[String, String],
                     dataServer: ActorRef)
   extends PersistentActor with ActorLogging {
 
-  val cluster = Cluster(context.system)
-
   import TradingEngine._
   import scala.collection.immutable.Seq
+
+  val cluster = Cluster(context.system)
 
   implicit val system: ActorSystem = context.system
   implicit val mat: ActorMaterializer = buildMaterializer
@@ -59,7 +59,7 @@ class TradingEngine(strategyClassNames: Map[String, String],
     * This only applies to commands. Queries, which are read-only, bypass Akka persistence and
     * hence are free to be fully-async.
     */
-  def processCommand(command: Command): Future[Seq[Event]] = command match {
+  def processCommand(command: TradingEngineCommand): Future[Seq[Event]] = command match {
 
     case StartEngine =>
 
@@ -288,7 +288,7 @@ class TradingEngine(strategyClassNames: Map[String, String],
       case q => sender ! EngineError(s"Unsupported query $q")
     }
 
-    case cmd: Command =>
+    case cmd: TradingEngineCommand =>
       // Blocking!
       val result = Await.ready(processCommand(cmd), 10 seconds).value.get
       result match {
@@ -357,17 +357,6 @@ object TradingEngine {
     }
   }
 
-  sealed trait Command
-  case class StartTradingSession(botId: Option[String],
-                                 strategyKey: String,
-                                 strategyParams: Json,
-                                 mode: Mode,
-                                 sessionEvents: ActorRef,
-                                 initialPortfolio: Portfolio,
-                                 report: Report) extends Command
-
-  case object StartEngine extends Command
-  case class ProcessBotSessionEvent(botId: String, event: ReportEvent) extends Command
 
   sealed trait Event
   case class SessionStarted(id: String,
