@@ -23,7 +23,8 @@ abstract class DataSource(dataTypes: Set[String]) {
 
   def discoverTopics(exchangeConfig: Option[ExchangeConfig])
                     (implicit ctx: ActorContext, mat: ActorMaterializer): Future[Set[String]] =
-    Future.successful(exchangeConfig.map(_.pairs.map(_.toString)).getOrElse(Seq.empty).toSet)
+    Future.successful(exchangeConfig.flatMap(_.pairs)
+      .map(_.map(_.toString).toSet).getOrElse(Set.empty))
 
   def types: Map[String, DeltaFmtJson[_]] = Map.empty
 

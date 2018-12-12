@@ -60,7 +60,7 @@ class DataSourceActor(marketDataPath: File,
     .asInstanceOf[DataSource]
 
   val types: Map[String, DeltaFmtJson[_]] =
-    config.datatypes.foldLeft(dataSource.types)((memo, dt) =>
+    config.datatypes.getOrElse(Seq.empty).foldLeft(dataSource.types)((memo, dt) =>
       memo + (dt -> DataType.parse(dt).get.fmtJson))
 
   val topicsFut = dataSource.discoverTopics(exchangeConfig)
