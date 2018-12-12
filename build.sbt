@@ -85,7 +85,8 @@ val compilerOptions = Seq(
   "-Ywarn-dead-code",
   "-Ywarn-numeric-widen",
   "-Xfuture",
-  "-Yno-predef",
+  "-explaintypes",
+//  "-Yno-predef",
   "-Ywarn-unused-import"
 )
 
@@ -134,6 +135,8 @@ lazy val baseSettings = Seq(
   ivyConfigurations += CompileTime.hide,
   unmanagedClasspath in Compile ++= update.value.select(configurationFilter(CompileTime.name)),
   unmanagedClasspath in Test ++= update.value.select(configurationFilter(CompileTime.name)),
+
+  libraryDependencies ++= jsonDeps
 )
 
 lazy val allFBSettings = baseSettings ++ publishSettings
@@ -246,8 +249,7 @@ lazy val jsModules = Seq[Project](scalajs)
 lazy val jvmModules = Seq[Project](server, client)
 //lazy val fbDocsModules = Seq[Project](docs)
 
-lazy val jvmProjects: Seq[Project] =
-  (crossModules.map(_._1) ++ jvmModules)
+lazy val jvmProjects: Seq[Project] = crossModules.map(_._1) ++ jvmModules
 
 lazy val jsProjects: Seq[Project] =
   (crossModules.map(_._2) ++ jsModules)
@@ -375,9 +377,11 @@ lazy val server = flashbotModule("server", previousFBVersion).settings(
     "com.github.andyglow" % "scala-jsonschema-core_2.12" % "0.0.8",
     "com.github.andyglow" % "scala-jsonschema-api_2.12" % "0.0.8",
     "com.github.andyglow" % "scala-jsonschema-circe-json_2.12" % "0.0.8",
-    "de.sciss" %% "fingertree" % "1.5.2"
+    "de.sciss" %% "fingertree" % "1.5.2",
+
+    "io.circe" %% "circe-config" % "0.5.0"
   ))
-)
+).dependsOn(core)
 
 lazy val client = flashbotModule("client", previousFBVersion).dependsOn(core)
 
@@ -408,8 +412,8 @@ lazy val testsBase = crossModule("tests", previousFBVersion)
       file("modules/tests") / "shared" / "src" / "main" / "resources"
   ).dependsOn(coreBase, testingBase)
 
-lazy val tests = testsBase.jvm
-lazy val testsJS = testsBase.js
+lazy val tests = testsBase.jvm.dependsOn(server, client)
+lazy val testsJS = testsBase.js.dependsOn(scalajs)
 
 lazy val publishSettings = Seq(
   releaseCrossBuild := true,
