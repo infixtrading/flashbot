@@ -72,8 +72,6 @@ lazy val timeSeriesDeps = List( "org.ta4j" % "ta4j-core" % "0.12" )
 
 lazy val statsDeps = List( "org.la4j" % "la4j" % "0.6.0" )
 
-
-
 val compilerOptions = Seq(
   "-deprecation",
   "-encoding",
