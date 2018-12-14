@@ -11,7 +11,7 @@ import io.circe.generic.auto._
 import com.infixtrading.flashbot.core.DataSource._
 import com.infixtrading.flashbot.core.FlashbotConfig.ExchangeConfig
 import com.infixtrading.flashbot.models.core.Slice.SliceId
-import com.infixtrading.flashbot.models.core.{DataAddress, DataPath, Slice}
+import com.infixtrading.flashbot.models.core.{DataAddress, DataPath, Slice, TimeRange}
 import com.infixtrading.flashbot.util.time.parseDuration
 import com.infixtrading.flashbot.util.stream._
 
@@ -20,7 +20,7 @@ import scala.collection.immutable
 import scala.concurrent.Future
 import scala.concurrent.duration._
 
-abstract class DataSource(dataTypes: Set[String]) {
+abstract class DataSource {
 
   def discoverTopics(exchangeConfig: Option[ExchangeConfig])
                     (implicit ctx: ActorContext, mat: ActorMaterializer): Future[Set[String]] =
@@ -246,7 +246,9 @@ object DataSource {
     * A logical description of some data that can be streamed. Intentionally leaves out lower
     * level details such as data address hosts, slices/bundles, and data locality constraints.
     */
-  case class StreamSelection(path: DataPath, from: Long, to: Long, polling: Boolean)
+  case class StreamSelection(path: DataPath, from: Long, to: Long, polling: Boolean) {
+    def timeRange: TimeRange = TimeRange(from, to)
+  }
   object StreamSelection {
     def apply(path: DataPath, from: Long, polling: Boolean): StreamSelection =
       StreamSelection(path, from, Long.MaxValue, polling)

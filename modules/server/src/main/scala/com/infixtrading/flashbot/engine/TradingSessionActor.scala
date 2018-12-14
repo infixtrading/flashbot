@@ -1,5 +1,6 @@
 package com.infixtrading.flashbot.engine
 
+import java.time.Instant
 import java.util.UUID
 
 import akka.NotUsed
@@ -32,12 +33,12 @@ import scala.concurrent.duration._
 import scala.util.{Failure, Success, Try}
 
 class TradingSessionActor(strategyClassNames: Map[String, String],
-                          exchangeConfigs: Map[String, ExchangeConfig],
+                          getExchangeConfigs: () => Map[String, ExchangeConfig],
                           strategyKey: String,
                           strategyParams: Json,
                           mode: TradingSessionMode,
                           sessionEventsRef: ActorRef,
-                          initialPortfolio: Portfolio,
+                          portfolioRef: PortfolioRef,
                           initialReport: Report,
                           dataServer: ActorRef) extends Actor with ActorLogging {
 
@@ -63,12 +64,16 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
   def setup(): Future[SessionSetup] = {
 
     implicit val timeout: Timeout = Timeout(10 seconds)
+    val exchangeConfigs = getExchangeConfigs()
 
     // Set the time. Using system time just this once.
     val sessionMicros = currentTimeMicros
+    val now = Instant.ofEpochMilli(sessionMicros / 1000)
 
     // Create the session loader
-    val sessionLoader: SessionLoader = new SessionLoader(exchangeConfigs, dataServer)
+    val sessionLoader: SessionLoader = new SessionLoader(getExchangeConfigs, dataServer)
+
+    val initialPortfolio = portfolioRef.getPortfolio
 
     // Create default instruments for each currency pair configured for an exchange.
     // We have to cast it because apparently Set isn't covariant.
@@ -77,7 +82,7 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
 
     // Load a new instance of an exchange.
     def loadExchange(name: String): Try[Exchange] =
-      sessionLoader.loadNewExchange(exchangeConfigs(name))
+      sessionLoader.loadNewExchange(name)
         .map(plainInstance => {
           // Wrap it in our Simulator if necessary.
           val instance = if (mode == Live) plainInstance else new Simulator(plainInstance)
@@ -90,10 +95,14 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
           instance
         })
 
+    log.debug("Starting async setup")
+
     for {
       // Check that we have a config for the requested strategy.
       strategyClassName <- strategyClassNames.get(strategyKey)
         .toTry(s"Unknown strategy: $strategyKey").toFut
+
+      _ = { log.debug("Found strategy class") }
 
       // Load the strategy
       strategy <- Future.fromTry[Strategy](sessionLoader.loadNewStrategy(strategyClassName))
@@ -129,20 +138,26 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
 
       // Ask the local data server to stream the data at the given paths.
       streams <- Future.sequence(paths.map((path: DataPath) => {
-        val selection = mode match {
-          case Backtest(range) => StreamSelection(path, range.from, range.to)
+        val selection: StreamSelection = mode match {
+          case Backtest(range) => StreamSelection(path, range.start, range.end)
           case _ => StreamSelection(path, sessionMicros, polling = true)
         }
-        (dataServer ? DataStreamReq(selection, ClusterLocality))
-          .map { case se: StreamResponse[MarketData[_]] => se.toSource }
+        for {
+          mdOverrideIt <- strategy.resolveMarketData(selection)
+          mdOverrideSrc = mdOverrideIt.map(iteratorToSource)
+          src <- mdOverrideSrc.map(Future.successful).getOrElse(
+            (dataServer ? DataStreamReq(selection, ClusterLocality))
+              .map { case se: StreamResponse[MarketData[_]] => se.toSource })
+        } yield src
       }))
     } yield
       SessionSetup(instruments, exchanges, strategy,
-        UUID.randomUUID.toString, streams, sessionMicros)
+        UUID.randomUUID.toString, streams, sessionMicros, initialPortfolio)
   }
 
   def runSession(sessionSetup: SessionSetup): String = sessionSetup match {
-    case SessionSetup(instruments, exchanges, strategy, sessionId, streams, sessionMicros) =>
+    case SessionSetup(instruments, exchanges, strategy, sessionId, streams,
+          sessionMicros, initialPortfolio) =>
 
       /**
         * The trading session that we fold market data over.
@@ -206,6 +221,10 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
 
         // Lift-off
         .scan(new Session()) { case (session, dataOrTick) =>
+
+          // Load the portfolio into the session from the PortfolioRef on every scan iteration.
+          val initPortfolio = portfolioRef.getPortfolio
+          session.portfolio = initPortfolio
 
           // First, setup the event buffer so that we can handle synchronous events.
           val thisEventBuffer: mutable.Buffer[Any] = new ArrayBuffer[Any]()
@@ -404,6 +423,11 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
             }
           }
 
+          // At the end of every scan iteration, we merge the resulting portfolio changes into
+          // the portfolio ref.
+          val portfolioDiff = session.portfolio.diff(initPortfolio)
+          portfolioRef.mergePortfolio(portfolioDiff)
+
           session
         }
         .drop(1)
@@ -429,9 +453,11 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
     case "start" =>
       setup().onComplete {
         case Success(sessionSetup) =>
+          log.debug("Session setup success")
           sender ! (sessionSetup.sessionId, sessionSetup.sessionMicros)
           runSession(sessionSetup)
         case Failure(err) =>
+          log.error(err, "Session setup failure")
           sender ! err
       }
   }

@@ -24,7 +24,8 @@ object TradingSession {
                           strategy: Strategy,
                           sessionId: String,
                           streams: Seq[Source[MarketData[_], NotUsed]],
-                          sessionMicros: Long)
+                          sessionMicros: Long,
+                          initialPortfolio: Portfolio)
 
   def closeActionForOrderId(actions: ActionQueue, ids: IdManager, id: String): ActionQueue =
     actions match {

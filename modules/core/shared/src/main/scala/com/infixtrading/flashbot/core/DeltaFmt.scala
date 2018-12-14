@@ -88,7 +88,7 @@ object DeltaFmt {
 
   implicit class FmtStringOps(str: String) {
     def fmt: DeltaFmt[_] = DataType.parse(str) match {
-      case Some(dt) => dt.fmt
+      case Some(dt) => dt.fmtJson
       case None => formats(str)
     }
 

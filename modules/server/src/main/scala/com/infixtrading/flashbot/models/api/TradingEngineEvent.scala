@@ -15,7 +15,15 @@ case class SessionStarted(id: String,
                           portfolio: Portfolio,
                           report: Report) extends TradingEngineEvent
 
-case class EngineStarted(micros: Long, withBots: Seq[String]) extends TradingEngineEvent
+case class SessionInitializationError(cause: Exception,
+                                      botId: Option[String],
+                                      strategyKey: String,
+                                      strategyParams: Json,
+                                      mode: TradingSessionMode,
+                                      portfolio: Portfolio,
+                                      report: Report) extends TradingEngineEvent
+
+case class EngineStarted(micros: Long) extends TradingEngineEvent
 
 sealed trait SessionUpdated extends TradingEngineEvent {
   def botId: String

@@ -2,13 +2,13 @@ package com.infixtrading.flashbot.core
 
 import com.infixtrading.flashbot.core.FlashbotConfig.{BotConfigJson, DataSourceConfig, ExchangeConfig, IngestConfig}
 import com.infixtrading.flashbot.models.core.Position
-import com.typesafe.config.Config
+import com.typesafe.config.{Config, ConfigFactory}
 import io.circe._
 import io.circe.config.syntax._
 import io.circe.generic.auto._
 
 case class FlashbotConfig(`api-key`: Option[String],
-                           `data-root`: String,
+                          `data-root`: String,
                           `market-data-root`: String,
                           `app-data-root`: String,
                           ingest: IngestConfig,
@@ -40,4 +40,5 @@ object FlashbotConfig {
 //  implicit val configDecoder: Decoder[FlashbotConfig] = deriveDecoder[FlashbotConfig]
 
   def load(config: Config): Either[Error, FlashbotConfig] = config.as[FlashbotConfig]
+  def load(): Either[Error, FlashbotConfig] = load(ConfigFactory.load().getConfig("flashbot"))
 }

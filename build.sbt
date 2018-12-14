@@ -18,14 +18,10 @@ lazy val networkDeps = List(
   "com.typesafe.akka" %% "akka-remote" % akkaVersion,
   "com.typesafe.akka" %% "akka-cluster" % akkaVersion,
   "com.typesafe.akka" %% "akka-http" % akkaHttpVersion,
-  "com.typesafe.akka" %% "akka-http-testkit" % akkaHttpVersion % Test,
+  "com.typesafe.akka" %% "akka-http-testkit" % akkaHttpVersion,
 
   // CORS
   "ch.megard" %% "akka-http-cors" % "0.3.0",
-
-  // Persistent storage
-  "com.typesafe.akka" %% "akka-persistence" % akkaVersion,
-  "org.fusesource.leveldbjni" % "leveldbjni-all" % "1.8",
 
   //  "com.github.andyglow" %% "websocket-scala-client" % "0.2.4" % Compile,
   "org.java-websocket" % "Java-WebSocket" % "1.3.8",
@@ -60,7 +56,7 @@ lazy val dataStores = List(
   "net.openhft" % "chronicle-map" % "3.16.4",
 
   "com.typesafe.akka" %% "akka-persistence" % akkaVersion,
-  "org.fusesource.leveldbjni" % "leveldbjni-all" % "1.8",
+  "org.fusesource.leveldbjni" % "leveldbjni-all" % "1.8"
 )
 
 lazy val serviceDeps = List(
@@ -73,7 +69,11 @@ lazy val serviceDeps = List(
 
 lazy val timeSeriesDeps = List( "org.ta4j" % "ta4j-core" % "0.12" )
 
-lazy val statsDeps = List( "org.la4j" % "la4j" % "0.6.0" )
+lazy val statsDeps = List(
+  "org.la4j" % "la4j" % "0.6.0",
+  "org.scalanlp" %% "breeze" % "1.0-RC2",
+  "org.scalanlp" %% "breeze-natives" % "1.0-RC2"
+)
 
 val compilerOptions = Seq(
   "-deprecation",
@@ -364,8 +364,9 @@ lazy val coreJS = coreBase.js
 
 
 lazy val server = flashbotModule("server", previousFBVersion).settings(
+  unmanagedBase := file("modules/server/lib"),
   libraryDependencies ++= ((
-    serviceDeps ++ networkDeps ++ jsonDeps ++ graphQLServerDeps ++
+    serviceDeps ++ networkDeps ++ jsonDeps ++
     dataStores ++ timeSeriesDeps ++ testDeps ++ statsDeps
   ) ++ Seq(
     "org.jgrapht" % "jgrapht" % "1.3.0",
@@ -396,7 +397,7 @@ lazy val testingBase = crossModule("testing", previousFBVersion)
       _.filterNot(Set("-Yno-predef"))
     },
     libraryDependencies ++= Seq(
-      "org.scalacheck" %%% "scalacheck" % scalaCheckVersionFor(scalaVersion.value) % Test,
+      "org.scalacheck" %%% "scalacheck" % scalaCheckVersionFor(scalaVersion.value),
       "org.scalatest" %%% "scalatest" % scalaTestVersionFor(scalaVersion.value)
     )
   ).dependsOn(coreBase)

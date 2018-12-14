@@ -1,14 +1,17 @@
 package com.infixtrading.flashbot.util
 
+import java.time.{Instant, LocalDateTime, ZoneId}
+
 import akka.NotUsed
-import akka.actor.{ActorContext, ActorPath, ActorRef, ActorSystem, RootActorPath}
+import akka.actor.{ActorContext, ActorPath, ActorRef, ActorSystem, Cancellable, RootActorPath}
 import akka.stream.{ActorMaterializer, ActorMaterializerSettings, Supervision}
 import akka.stream.scaladsl.{Flow, Source}
 import akka.pattern.ask
 import akka.util.Timeout
 import com.infixtrading.flashbot.core.MarketData
+import com.infixtrading.flashbot.util.time._
 import com.infixtrading.flashbot.engine.StreamResponse
-import com.infixtrading.flashbot.models.core.DataAddress
+import com.infixtrading.flashbot.models.core.{Candle, DataAddress, TimeRange}
 
 import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration._
@@ -83,6 +86,19 @@ package object stream {
       (ref ? req)(Timeout(10 seconds)) match {
         case fut: Future[StreamResponse[T]] => fut
       }
+  }
+
+  def tickTimeRange(range: TimeRange, timeStep: FiniteDuration): Source[Instant, NotUsed] = {
+    val startAt = Instant.ofEpochMilli(range.start/1000)
+    val endAt = Instant.ofEpochMilli(range.end/1000)
+    val isRealTime = range.end == Long.MaxValue
+    if (isRealTime)
+      Source.tick(0 seconds, timeStep, "").zipWithIndex.map(_._2)
+        .map(i => startAt.plusMillis(i * timeStep.toMillis)).mapMaterializedValue(_ => NotUsed)
+    else Source.unfold(startAt)(item => {
+      val next = item.plusMillis(timeStep.toMillis)
+      Some((next, item))
+    }).takeWhile(_.isBefore(endAt))
   }
 
 }

@@ -1,6 +1,7 @@
 package com.infixtrading.flashbot.util
 
 import java.time.Instant
+import java.util.Date
 
 import io.circe._
 import io.circe.syntax._
@@ -53,11 +54,15 @@ package object time {
   def currentTimeMicros: Long = System.currentTimeMillis * 1000
 
   def parseTime(now: Instant, str: String): Either[Duration, Instant] = {
-  if (str == "now") {
-    Right(now)
-  } else {
-    Left(parseDuration(str))
+    if (str == "now") {
+      Right(now)
+    } else {
+      Left(parseDuration(str))
+    }
   }
-}
+
+  implicit class MicrosOps(micros: Long) {
+    def microsToDate: Date = new Date(micros / 1000)
+  }
 
 }

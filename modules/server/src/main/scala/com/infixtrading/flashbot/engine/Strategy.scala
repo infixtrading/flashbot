@@ -2,11 +2,13 @@ package com.infixtrading.flashbot.engine
 
 import java.util.UUID
 
+import akka.stream.Materializer
 import json.Schema
 import com.github.andyglow.jsonschema.AsCirce._
 import io.circe._
 import io.circe.generic.semiauto._
 import com.infixtrading.flashbot.core.Convert._
+import com.infixtrading.flashbot.core.DataSource.StreamSelection
 import com.infixtrading.flashbot.core.Instrument.CurrencyPair
 import com.infixtrading.flashbot.core._
 import com.infixtrading.flashbot.models.api.{OrderTarget, SessionReportEvent}
@@ -26,7 +28,6 @@ abstract class Strategy {
 
   type Params
   var params: this.Params = _
-//  def params = paramsOpt.get
 
   def paramsDecoder: Decoder[this.Params]
 
@@ -53,7 +54,7 @@ abstract class Strategy {
   def initialize(portfolio: Portfolio, loader: SessionLoader): Future[Seq[DataPath]]
 
   /**
-    * Receives streaming streaming market data from the sources declared during initialization.
+    * Receives streaming market data from the sources declared during initialization.
     */
   def handleData(data: MarketData[_])(implicit ctx: TradingSession)
 
@@ -187,7 +188,9 @@ abstract class Strategy {
     ctx.send(SessionReportEvent(TimeSeriesCandle(name, candle)))
   }
 
-  def resolveAddress(address: DataPath): Option[Iterator[MarketData[_]]] = None
+  def resolveMarketData(streamSelection: StreamSelection)(implicit mat: Materializer)
+      : Future[Option[Iterator[MarketData[_]]]] =
+    Future.successful(None)
 
   /**
     * Internal state that is used for bookkeeping by the Var type classes. This will be set

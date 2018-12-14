@@ -195,4 +195,6 @@ class Simulator(base: Exchange, latencyMicros: Long = 0) extends Exchange {
   override def useFundsForMarketBuys: Boolean = base.useFundsForMarketBuys
 
   override def lotSize(pair: Instrument): Option[Double] = base.lotSize(pair)
+
+  override def fetchPortfolio = base.fetchPortfolio
 }

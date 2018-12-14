@@ -58,6 +58,25 @@ case class Portfolio(assets: Map[Account, Double],
   def unsafeSetPosition(market: Market, position: Position): Portfolio =
     copy(positions = positions + (market -> position))
 
+  def merge(portfolio: Portfolio): Portfolio = copy(
+    assets = assets ++ portfolio.assets,
+    positions = positions ++ portfolio.positions
+  )
+
+  /**
+    * Returns this portfolio without any elements that exist in `other`.
+    */
+  def diff(other: Portfolio): Portfolio = copy(
+    assets = assets.filterNot { case (acc, value) => other.assets.get(acc).contains(value) },
+    positions = positions.filterNot {
+      case (market, value) => positions.get(market).contains(value) }
+  )
+
+  def withoutExchange(name: String): Portfolio = copy(
+    assets = assets.filterKeys(_.exchange != name),
+    positions = positions.filterKeys(_.exchange != name)
+  )
+
   /**
     * Splits each account's total equity/buying power evenly among all given markets.
     */
@@ -81,7 +100,10 @@ case class Portfolio(assets: Map[Account, Double],
 }
 
 object Portfolio {
+
   implicit val portfolioEn: Encoder[Portfolio] = deriveEncoder
   implicit val portfolioDe: Decoder[Portfolio] = deriveDecoder
+
+  def empty: Portfolio = Portfolio(Map.empty, Map.empty)
 }
 

@@ -8,30 +8,12 @@ import io.circe.generic.auto._
 import io.circe.parser._
 import com.infixtrading.flashbot.core.Instrument.CurrencyPair
 import com.infixtrading.flashbot.engine.TradingSession
-import com.infixtrading.flashbot.models.core.FixedSize
+import com.infixtrading.flashbot.models.core.{FixedSize, Portfolio, Position}
 import com.infixtrading.flashbot.models.core.Order.{Fill, Side}
 
 import scala.collection.JavaConverters._
 import scala.math.BigDecimal.RoundingMode.HALF_DOWN
 import scala.concurrent.Future
-
-object Exchange {
-
-//  object ExchangeConfig {
-////    def build(config: Config): ExchangeConfig = {
-////      var pairs = Seq.empty[String]
-////      try {
-////        pairs = config.getStringList("pairs").asScala
-////      }
-////
-////      ExchangeConfig(
-////        `class` = config.getString("classz"),
-////        params = parse("{}").right.get,
-////        pairs = pairs.map(CurrencyPair(_)).toSet
-////      )
-////    }
-//  }
-}
 
 abstract class Exchange {
 
@@ -73,10 +55,11 @@ abstract class Exchange {
     ret
   }
 
+  def fetchPortfolio: Future[(Map[String, Double], Map[String, Position])]
+
   def genOrderId: String = randomUUID.toString
 
   def instruments: Future[Set[Instrument]] = Future.successful(Set.empty)
-
 
   def roundQuote(instrument: Instrument)(balance: Double): Double = BigDecimal(balance)
     .setScale(quoteAssetPrecision(instrument), HALF_DOWN).doubleValue()
@@ -90,6 +73,11 @@ abstract class Exchange {
       size.copy(amount = roundQuote(instrument)(size.amount))
     else throw new RuntimeException(s"Can't round $size for instrument $instrument")
 
+  private var jsonParams: Option[Json] = _
+  def withParams(json: Option[Json]): Exchange = {
+    jsonParams = json
+    this
+  }
 }
 
 sealed trait OrderRequest {

@@ -5,7 +5,6 @@ import io.circe.{Decoder, Encoder}
 import scala.reflect.{ClassTag, classTag}
 import com.infixtrading.flashbot.core.State.Var
 import com.infixtrading.flashbot.core.VarBuffer.VarState
-import com.infixtrading.flashbot.engine.TradingEngine.EngineError
 import com.infixtrading.flashbot.engine.TradingSession
 import com.infixtrading.flashbot.engine.TradingSession._
 import com.infixtrading.flashbot.models.api.{LogMessage, SessionReportEvent}
@@ -48,7 +47,7 @@ class VarBuffer(initialReportVals: Map[String, Any]) {
         * Buffer type doesn't match our type for the same name. Throw error. No persist for u.
         */
       case Some(vState: Loaded[_]) =>
-        throw EngineError(classErrorMsg(classTag[T], getClassTag(vState.instance)))
+        throw new RuntimeException(classErrorMsg(classTag[T], getClassTag(vState.instance)))
 
       /**
         * Found a tombstone, meaning this is a fresh var. Initialize, persist, return.
@@ -119,7 +118,7 @@ class VarBuffer(initialReportVals: Map[String, Any]) {
         * Type error
         */
       case Some(vState: Loaded[_]) =>
-        throw EngineError(classErrorMsg(classTag[T], getClassTag(vState)))
+        throw new RuntimeException(classErrorMsg(classTag[T], getClassTag(vState)))
 
 
       /**
