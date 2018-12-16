@@ -15,11 +15,10 @@ import scala.concurrent.duration._
 import scala.util.{Failure, Success, Try}
 
 class SessionLoader(getExchangeConfigs: () => Map[String, ExchangeConfig], dataServer: ActorRef)
-                   (implicit ec: ExecutionContext, mat: Materializer) {
+                   (implicit val ec: ExecutionContext, val mat: Materializer) {
   implicit val timeout = Timeout(10 seconds)
 
-  implicit val executionContext: ExecutionContext = ec
-  implicit val materializer: Materializer = mat
+//  implicit val materializer: Materializer = mat
 
   def index: Future[DataSourceIndex] = {
     (dataServer ? ClusterDataIndexReq).collect {

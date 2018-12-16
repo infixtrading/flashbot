@@ -1,6 +1,7 @@
 package com.infixtrading.flashbot.models.core
 
-import io.circe.{KeyDecoder, KeyEncoder}
+import io.circe._
+import io.circe.generic.semiauto._
 
 case class Market(exchange: String, symbol: String) {
   override def toString = s"$exchange/$symbol"
@@ -21,6 +22,9 @@ object Market {
     }
     ret
   }
+
+  implicit def en: Encoder[Market] = deriveEncoder[Market]
+  implicit def de: Decoder[Market] = deriveDecoder[Market]
 
   implicit val marketKeyEncoder: KeyEncoder[Market] = new KeyEncoder[Market] {
     override def apply(key: Market) = key.toString

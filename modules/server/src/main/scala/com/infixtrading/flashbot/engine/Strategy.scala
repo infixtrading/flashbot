@@ -2,7 +2,9 @@ package com.infixtrading.flashbot.engine
 
 import java.util.UUID
 
+import akka.NotUsed
 import akka.stream.Materializer
+import akka.stream.scaladsl.Source
 import json.Schema
 import com.github.andyglow.jsonschema.AsCirce._
 import io.circe._
@@ -189,7 +191,7 @@ abstract class Strategy {
   }
 
   def resolveMarketData(streamSelection: StreamSelection)(implicit mat: Materializer)
-      : Future[Option[Iterator[MarketData[_]]]] =
+      : Future[Option[Source[MarketData[_], NotUsed]]] =
     Future.successful(None)
 
   /**

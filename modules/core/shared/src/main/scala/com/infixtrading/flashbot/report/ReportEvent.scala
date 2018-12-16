@@ -1,10 +1,11 @@
 package com.infixtrading.flashbot.report
 
 import com.infixtrading.flashbot.core._
-import com.infixtrading.flashbot.core.Instrument
 import com.infixtrading.flashbot.models.core.{Account, Candle, Market, Position}
+import com.infixtrading.flashbot.report.Report.ReportError
 import com.infixtrading.flashbot.report.ReportDelta._
 import io.circe._
+import io.circe.generic.auto._
 import io.circe.generic.semiauto._
 
 /**
@@ -27,9 +28,11 @@ object ReportEvent {
   case class PriceEvent(market: Market,
                         price: Double,
                         micros: Long) extends ReportEvent with Timestamped
+
   case class PositionEvent(market: Market,
                            position: Position,
                            micros: Long) extends ReportEvent with Timestamped
+
   case class BalanceEvent(account: Account,
                           balance: Double,
                           micros: Long) extends ReportEvent with Timestamped
@@ -48,11 +51,15 @@ object ReportEvent {
     implicit def collEventDe: Decoder[CollectionEvent] = deriveDecoder
   }
 
+  case class SessionComplete(error: Option[ReportError]) extends ReportEvent
+
   case class ReportValueEvent(event: ValueEvent) extends ReportEvent
 
   implicit def reportValueEvent(event: ValueEvent): ReportEvent = ReportValueEvent(event)
 
-//  implicit val reportEventEn: Encoder[ReportEvent] = deriveEncoder[ReportEvent]
-//  implicit val reportEventDe: Decoder[ReportEvent] = deriveDecoder[ReportEvent]
+  implicit def reportEventEn(implicit valEventEn: Encoder[ValueEvent]): Encoder[ReportEvent] =
+    deriveEncoder[ReportEvent]
+  implicit def reportEventDe(implicit valEventDe: Decoder[ValueEvent]): Decoder[ReportEvent] =
+    deriveDecoder[ReportEvent]
 
 }

@@ -1,25 +1,24 @@
+package strategies
+
 
 import java.time.Instant
 
 import akka.NotUsed
-import akka.stream.{ActorMaterializer, Materializer}
-import akka.stream.scaladsl.JavaFlowSupport.Source
+import akka.stream.Materializer
 import akka.stream.scaladsl.{Keep, Sink, Source}
 import com.infixtrading.flashbot.core.DataSource.StreamSelection
+import com.infixtrading.flashbot.core.Instrument.CurrencyPair
 import com.infixtrading.flashbot.core.MarketData.BaseMarketData
-import com.infixtrading.flashbot.core.{DataType, MarketData, TimeSeriesTap, Trade}
+import com.infixtrading.flashbot.core.{MarketData, TimeSeriesTap}
 import com.infixtrading.flashbot.engine.{SessionLoader, Strategy, TradingSession}
 import com.infixtrading.flashbot.models.api.OrderTarget
-import com.infixtrading.flashbot.models.core.Order.Buy
 import com.infixtrading.flashbot.models.core._
-import io.circe._
+import io.circe.{Decoder, Encoder}
 import io.circe.generic.auto._
 import io.circe.generic.semiauto._
-import org.jquantlib.math.distributions.NormalDistribution
-import org.jquantlib.processes.GeometricBrownianMotionProcess
 
-import scala.concurrent.{Await, Future}
 import scala.concurrent.duration._
+import scala.concurrent.{Await, Future}
 import scala.util.{Failure, Success}
 
 case class Prediction[T](prediction: T, confidence: Double)
@@ -37,21 +36,26 @@ trait Predictor3[A1, A2, A3, R] {
 }
 
 
+case class LookaheadParams(market: Market, sabotage: Boolean)
+object LookaheadParams {
+  implicit def lookaheadEncoder: Encoder[LookaheadParams] = deriveEncoder
+  implicit def lookaheadDecoder: Decoder[LookaheadParams] = deriveDecoder
+}
+
 /**
   * A strategy that predicts data one step forwards in time.
   */
 class LookAheadCandleStrategy extends Strategy with Predictor1[MarketData[Candle], Double] {
 
-  case class Params(market: Market, sabotage: Boolean)
+  type Params = LookaheadParams
 
   override def paramsDecoder = deriveDecoder
 
   // Source the data from the strategy itself.
-  val tr = TimeRange(0, Instant.EPOCH.plusMillis((5 days).toMillis).toEpochMilli * 1000)
-  val path1 = DataPath("bitfinex", "eth_usd", "candles_5m")
-  def dataSeqs(implicit mat: Materializer): Map[DataPath, Seq[MarketData[Candle]]] = Map(
+  val path1 = DataPath("bitfinex", "eth_usd", "candles_5min")
+  def dataSeqs(tr: TimeRange)(implicit mat: Materializer): Map[DataPath, Seq[MarketData[Candle]]] = Map(
     path1 -> Await.result(
-      TimeSeriesTap.prices(90.0, .4, .2, tr, 5 minutes).map {
+      TimeSeriesTap.prices(100.0, .2, .6, tr, 5 minutes).map {
         case (instant, price) =>
           val micros = instant.toEpochMilli * 1000
           BaseMarketData(Candle(micros, price, price, price, price, None), path1, micros, 1)
@@ -74,38 +78,32 @@ class LookAheadCandleStrategy extends Strategy with Predictor1[MarketData[Candle
   override def initialize(portfolio: Portfolio, loader: SessionLoader) = {
     import loader._
     Future {
-      staticData = dataSeqs
-      Seq.empty
+//      staticData = dataSeqs
+      Seq("bitfinex/eth_usd/candles_5min")
     }
   }
 
   override def handleData(md: MarketData[_])(implicit ctx: TradingSession) = md.data match {
     case candle: Candle =>
       // If high confidence prediction, follow it blindly. If low, do nothing.
-      val prediction = predict(md)
+      val prediction = predict(md.asInstanceOf[MarketData[Candle]])
       if (prediction.confidence > .75) {
-        val constraints = Seq(Portfolioprediction.prediction)
         val sym = md.path
+        val market = Market(md.source, md.topic)
+        val pair = CurrencyPair(md.topic)
 
-        (if (prediction.prediction > candle.close) {
-          Some(portfolio.manager.solve(
-            Seq(s"long($sym).as(usd) == ${portfolio.maxBuyingPower(sym).as("usd")}")))
-
+        // Price about to go up, as much as we can.
+        if (prediction.prediction > candle.close) {
+          println(candle, prediction)
+          println("buy")
+          marketOrder(market,
+            FixedSize(ctx.getPortfolio.assets(Account(md.source, pair.quote)), pair.quote))
         } else if (prediction.prediction < candle.close) {
-          Some(portfolio.manager.solve(
-            Seq(s"short($sym).as(usd) == ${portfolio.maxSellingPower(sym).as("usd")}")))
-
-        } else None) match {
-          case Some(Success(orderTargets: Seq[OrderTarget])) =>
-            for (t <- orderTargets) {
-              ctx.send(t)
-            }
-
-          case Some(Failure(err)) =>
-            _log.error(err)
-//            throw err
-
-          case None =>
+          println(candle, prediction)
+          println("sell")
+          // Price about to go down, sell everything!
+          marketOrder(market,
+            FixedSize(-ctx.getPortfolio.assets(Account(md.source, pair.base)), pair.base))
         }
       }
   }
@@ -126,15 +124,28 @@ class LookAheadCandleStrategy extends Strategy with Predictor1[MarketData[Candle
     * item being streamed and base our test strategy off of it.
     */
   override def resolveMarketData(streamSelection: StreamSelection)
-                                (implicit mat: Materializer): Future[Option[Iterator[MarketData[_]]]] = {
+                                (implicit mat: Materializer)
+  : Future[Option[Source[MarketData[_], NotUsed]]] = {
+
+    // Build static data if not yet built.
+    if (staticData.isEmpty) {
+      staticData = dataSeqs(streamSelection.timeRange)
+    }
+
+    // Return it.
     Future.successful((streamSelection.path match {
-      case DataPath(_, "eth_usd", "candles_1h") =>
+      case DataPath(_, "eth_usd", "candles_5min") =>
         Some(TimeSeriesTap.prices(90.0, .4, .2, streamSelection.timeRange, 5 minutes))
-      case DataPath(_, "btc_usd", "candles_1h") =>
+      case DataPath(_, "btc_usd", "candles_5min") =>
         Some(TimeSeriesTap.prices(3000.0, .6, .4, streamSelection.timeRange, 5 minutes))
       case _ => None
-    }).map((src: Source[(Instant, Double), NotUsed]) => ???))
-  }
+    }).map((src: Source[(Instant, Double), NotUsed]) =>
+      src.map { case (inst, price) =>
+        val micros = inst.toEpochMilli * 1000
+        BaseMarketData(Candle(micros, price, price, price, price, None),
+          streamSelection.path, micros, 1)
+      }))
+    }
 
 
 }

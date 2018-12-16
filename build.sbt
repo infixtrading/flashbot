@@ -18,7 +18,6 @@ lazy val networkDeps = List(
   "com.typesafe.akka" %% "akka-remote" % akkaVersion,
   "com.typesafe.akka" %% "akka-cluster" % akkaVersion,
   "com.typesafe.akka" %% "akka-http" % akkaHttpVersion,
-  "com.typesafe.akka" %% "akka-http-testkit" % akkaHttpVersion,
 
   // CORS
   "ch.megard" %% "akka-http-cors" % "0.3.0",
@@ -32,10 +31,8 @@ lazy val networkDeps = List(
   "com.pusher" % "pusher-java-client" % "1.8.1"
 )
 
-lazy val testDeps = List(
-  "org.scalactic" %% "scalactic" % "3.0.5",
-  "org.scalatest" %% "scalatest" % "3.0.5" % "test"
-)
+//lazy val testDeps = List(
+//)
 
 lazy val graphQLServerDeps = List(
   "org.sangria-graphql" %% "sangria" % "1.4.2",
@@ -56,6 +53,7 @@ lazy val dataStores = List(
   "net.openhft" % "chronicle-map" % "3.16.4",
 
   "com.typesafe.akka" %% "akka-persistence" % akkaVersion,
+  "org.iq80.leveldb"            % "leveldb"          % "0.7",
   "org.fusesource.leveldbjni" % "leveldbjni-all" % "1.8"
 )
 
@@ -138,7 +136,7 @@ lazy val baseSettings = Seq(
   unmanagedClasspath in Test ++= update.value.select(configurationFilter(CompileTime.name)),
 
   libraryDependencies ++= jsonDeps
-)
+) ++ macroSettings
 
 lazy val allFBSettings = baseSettings ++ publishSettings
 
@@ -242,7 +240,7 @@ lazy val docSettings = allFBSettings ++ Seq(
 
 lazy val crossModules = Seq[(Project, Project)](
   (core, coreJS),
-  (testing, testingJS),
+//  (testing, testingJS),
   (tests, testsJS),
 )
 
@@ -367,7 +365,7 @@ lazy val server = flashbotModule("server", previousFBVersion).settings(
   unmanagedBase := file("modules/server/lib"),
   libraryDependencies ++= ((
     serviceDeps ++ networkDeps ++ jsonDeps ++
-    dataStores ++ timeSeriesDeps ++ testDeps ++ statsDeps
+    dataStores ++ timeSeriesDeps ++ statsDeps
   ) ++ Seq(
     "org.jgrapht" % "jgrapht" % "1.3.0",
     "org.jgrapht" % "jgrapht-core" % "1.3.0",
@@ -391,19 +389,19 @@ lazy val client = flashbotModule("client", previousFBVersion).dependsOn(core)
 
 lazy val scalajs = flashbotModule("scalajs", None).enablePlugins(ScalaJSPlugin).dependsOn(coreJS)
 
-lazy val testingBase = crossModule("testing", previousFBVersion)
-  .settings(
-    scalacOptions ~= {
-      _.filterNot(Set("-Yno-predef"))
-    },
-    libraryDependencies ++= Seq(
-      "org.scalacheck" %%% "scalacheck" % scalaCheckVersionFor(scalaVersion.value),
-      "org.scalatest" %%% "scalatest" % scalaTestVersionFor(scalaVersion.value)
-    )
-  ).dependsOn(coreBase)
+//lazy val testingBase = crossModule("testing", previousFBVersion)
+//  .settings(
+//    scalacOptions ~= {
+//      _.filterNot(Set("-Yno-predef"))
+//    },
+//    libraryDependencies ++= Seq(
+//      "org.scalacheck" %%% "scalacheck" % scalaCheckVersionFor(scalaVersion.value),
+//      "org.scalatest" %%% "scalatest" % scalaTestVersionFor(scalaVersion.value)
+//    )
+//  ).dependsOn(coreBase)
 
-lazy val testing = testingBase.jvm
-lazy val testingJS = testingBase.js
+//lazy val testing = testingBase.jvm
+//lazy val testingJS = testingBase.js
 
 lazy val testsBase = crossModule("tests", previousFBVersion)
   .settings(noPublishSettings: _*)
@@ -411,10 +409,16 @@ lazy val testsBase = crossModule("tests", previousFBVersion)
     scalacOptions ~= {
       _.filterNot(Set("-Yno-predef"))
     },
+    libraryDependencies ++= Seq(
+      "org.scalactic" %% "scalactic" % "3.0.5",
+      "org.scalatest" %% "scalatest" % "3.0.5" % "test",
+      "org.scalacheck" %% "scalacheck" % scalaCheckVersion,
+      "com.typesafe.akka" %% "akka-testkit" % akkaVersion % Test
+    ),
 //    sourceGenerators in Test += (sourceManaged in Test).map(Boilerplate.genTests).taskValue,
     unmanagedResourceDirectories in Compile +=
       file("modules/tests") / "shared" / "src" / "main" / "resources"
-  ).dependsOn(coreBase, testingBase)
+  ).dependsOn(coreBase)
 
 lazy val tests = testsBase.jvm.dependsOn(server, client)
 lazy val testsJS = testsBase.js.dependsOn(scalajs)

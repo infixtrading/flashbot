@@ -3,7 +3,7 @@ package com.infixtrading.flashbot.engine
 import java.security.InvalidParameterException
 
 import akka.Done
-import akka.actor.{ActorInitializationException, ActorLogging, ActorRef, ActorSystem, Props}
+import akka.actor.{ActorInitializationException, ActorLogging, ActorRef, ActorSystem, PoisonPill, Props}
 import akka.pattern.{ask, pipe}
 import akka.persistence._
 import akka.stream.scaladsl.{Keep, Sink, Source}
@@ -22,7 +22,7 @@ import com.infixtrading.flashbot.util.json._
 import com.infixtrading.flashbot.util._
 import com.infixtrading.flashbot.models.api._
 import com.infixtrading.flashbot.models.core.{Account, Market, Portfolio, TimeRange}
-import com.infixtrading.flashbot.report.ReportEvent.{BalanceEvent, PositionEvent}
+import com.infixtrading.flashbot.report.ReportEvent.{BalanceEvent, PositionEvent, SessionComplete}
 import com.infixtrading.flashbot.report._
 
 import scala.concurrent.duration._
@@ -47,7 +47,7 @@ class TradingEngine(engineId: String,
   private implicit val ec: ExecutionContext = system.dispatcher
   private implicit val timeout: Timeout = Timeout(5 seconds)
 
-  override def persistenceId: String = "trading-engine"
+  override def persistenceId: String = "trading-engine-2"
 
   private val snapshotInterval = 100000
 
@@ -278,37 +278,38 @@ class TradingEngine(engineId: String,
         // TODO: Remove the try catch
         try {
 
-          log.debug("About to parse")
-
           // TODO: Handle parse errors
           val paramsJson = parse(params).right.get
           val report = Report.empty(strategyName, paramsJson, barSize)
 
-          log.debug("Parsed")
-
           val portfolio = parseJson[Portfolio](portfolioStr).right.get
 
-          log.debug("Portfolio")
+          val (ref, reportEventSrc) = Source
+            .actorRef[ReportEvent](Int.MaxValue, OverflowStrategy.fail)
+            .preMaterialize()
 
           // Fold the empty report over the ReportEvents emitted from the session.
-          val (ref: ActorRef, fut: Future[Report]) =
-            Source.actorRef[ReportEvent](Int.MaxValue, OverflowStrategy.fail)
-              .scan[(Report, scala.Seq[Json])]((report, Seq.empty))((r, ev) => {
-                implicit var newReport = r._1
-                val deltas = r._1.genDeltas(ev)
-                var jsonDeltas = Seq.empty[Json]
-                deltas.foreach { delta =>
-                  jsonDeltas :+= delta.asJson
-                }
-                (deltas.foldLeft(r._1)(_.update(_)), jsonDeltas)
-              })
-              // Send the report deltas to the client if requested.
-              .alsoTo(Sink.foreach(rd => {
-                eventsOut.foreach(ref => rd._2.foreach(ref ! _))
-              }))
-              .map(_._1)
-              .toMat(Sink.last)(Keep.both)
-              .run
+          val fut: Future[Report] = reportEventSrc
+            .scan[(Report, scala.Seq[Json])]((report, Seq.empty))((r, ev) => {
+              implicit var newReport = r._1
+              // Complete this stream once a SessionComplete event comes in.
+              ev match {
+                case _: SessionComplete => ref ! PoisonPill
+              }
+              val deltas = r._1.genDeltas(ev)
+              var jsonDeltas = Seq.empty[Json]
+              deltas.foreach { delta =>
+                jsonDeltas :+= delta.asJson
+              }
+              (deltas.foldLeft(r._1)(_.update(_)), jsonDeltas)
+            })
+            // Send the report deltas to the client if requested.
+            .alsoTo(Sink.foreach(rd => {
+              eventsOut.foreach(ref => rd._2.foreach(ref ! _))
+            }))
+            .map(_._1)
+            .toMat(Sink.last)(Keep.right)
+            .run
 
           // Always send the initial report back to let the client know we started the backtest.
           eventsOut.foreach(_ ! report)
@@ -317,9 +318,10 @@ class TradingEngine(engineId: String,
           startTradingSession(None, strategyName, paramsJson, Backtest(timeRange),
             ref, new flashbot.engine.PortfolioRef.Isolated(portfolio), report) onComplete {
             case Success(event: TradingEngineEvent) =>
+              log.debug("Trading session started")
               eventsOut.foreach(_ ! event)
             case Failure(err) =>
-              log.error(err, "Error in trading session")
+              log.error(err, "Trading session initialization error")
               eventsOut.foreach(_ ! err)
           }
 
@@ -401,12 +403,12 @@ class TradingEngine(engineId: String,
     log.debug("Sending start")
     (sessionActor ? "start").map[TradingEngineEvent] {
       case (sessionId: String, micros: Long) =>
-        log.debug("Bot SessionStarted")
+        log.debug("Session started")
         SessionStarted(sessionId, botId, strategyKey, strategyParams,
           mode, micros, initialPortfolio, report)
     } recover {
       case err: Exception =>
-        log.error("Error!")
+        log.error(err, "Error during session init")
         SessionInitializationError(err, botId, strategyKey, strategyParams,
           mode, initialPortfolio, report)
     }

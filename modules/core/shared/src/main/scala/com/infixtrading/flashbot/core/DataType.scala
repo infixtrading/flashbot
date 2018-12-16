@@ -30,7 +30,7 @@ object DataType {
 }
   case class CandlesType(duration: FiniteDuration) extends DataType[Candle] {
     override def name = "candles"
-    override def fmtJson = ???
+    override def fmtJson = DeltaFmt.defaultFmtJson[Candle]("candles")
 
   case class Series(key: String, timeStep: FiniteDuration) extends DataType[Double] {
     override def name = "series"

@@ -7,7 +7,7 @@ import akka.actor.{ActorSystem, Props}
 import akka.pattern.ask
 import akka.testkit.{ImplicitSender, TestKit}
 import akka.util.Timeout
-import com.infixtrading.flashbot.models.api.{BacktestQuery, Ping, Pong}
+import com.infixtrading.flashbot.models.api.{BacktestQuery, Ping, Pong, ReportResponse}
 import com.infixtrading.flashbot.util.files.rmRf
 import com.typesafe.config.{Config, ConfigFactory}
 import org.scalatest._
@@ -27,6 +27,7 @@ import scala.concurrent.duration._
 import scala.concurrent.ExecutionContext.Implicits.global
 import org.scalacheck.Properties
 import org.scalacheck.Prop.forAll
+import strategies.LookaheadParams
 
 class TradingEngineSpec
   extends TestKit(ActorSystem("TradingEngineSpec", ConfigFactory.load()))
@@ -76,25 +77,43 @@ class TradingEngineSpec
     }
 
     "be profitable when using lookahead" in {
+      val fbConfig = FlashbotConfig.load match {
+        case Right(v) => v
+        case Left(err) => fail(err)
+      }
+
+      val now = Instant.now()
+
       val dataServer = system.actorOf(Props(
-        new DataServer(testFolder, Map.empty, Map.empty, None, useCluster = false)))
+        new DataServer(testFolder, fbConfig.sources, fbConfig.exchanges, None,
+          useCluster = false)), "data-server")
 
       val engine = system.actorOf(Props(
-        new TradingEngine("test2", Map.empty, Map.empty, Map.empty, dataServer)))
+        new TradingEngine("test2", fbConfig.strategies, fbConfig.exchanges, Map.empty,
+          dataServer)), "trading-engine-2")
+
+      val params = LookaheadParams(Market("bitfinex/eth_usd"), sabotage = false)
 
       val report = Await.result((engine ? BacktestQuery(
         "lookahead",
-        json"""{"foo": "hi"}""".pretty(Printer.noSpaces),
-        TimeRange(start = 0),
+        params.asJson.pretty(Printer.noSpaces),
+        TimeRange.build(now, 60 days),
         Portfolio(
-          Map(Account("bitmex/xbt") -> 8.0),
-          Map(Market("bitmex/xbtusd") -> Position(size = -10000, leverage = 4, entryPrice = 20000))
+          Map(Account("bitfinex/eth") -> 8.0, Account("bitfinex/usd") -> 800),
+          Map.empty
         ).asJson.pretty(Printer.noSpaces),
         Some(1 hour),
         None
       )).map {
-        case report: Report => report
+        case ReportResponse(report: Report) => report
       }, timeout.duration)
+
+      // We should have 60 days worth of report data.
+      val timeSeriesBarCount = 60 * 24
+      report.error shouldBe None
+//      report.timeSeries("returns").size shouldBe timeSeriesBarCount
+
+      // There shouldn't be a single period of negative returns when the algo is cheating.
     }
 
 //    "lose money when using lookahead to self sabatoge" in {

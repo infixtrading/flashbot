@@ -23,6 +23,7 @@ import com.infixtrading.flashbot.engine.TradingSession._
 import com.infixtrading.flashbot.exchanges.Simulator
 import com.infixtrading.flashbot.models.api.{LogMessage, OrderTarget, SessionReportEvent}
 import com.infixtrading.flashbot.models.core.{Account, DataPath, Market, Portfolio}
+import com.infixtrading.flashbot.report.Report.ReportError
 import com.infixtrading.flashbot.report.ReportEvent._
 import com.infixtrading.flashbot.report._
 
@@ -80,6 +81,11 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
     def defaultInstruments(exchange: String): Set[Instrument] =
       exchangeConfigs(exchange).pairs.asInstanceOf[Set[Instrument]]
 
+    def streamSelection(path: DataPath): StreamSelection = mode match {
+      case Backtest(range) => StreamSelection(path, range.start, range.end)
+      case _ => StreamSelection(path, sessionMicros, polling = true)
+    }
+
     // Load a new instance of an exchange.
     def loadExchange(name: String): Try[Exchange] =
       sessionLoader.loadNewExchange(name)
@@ -116,7 +122,21 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
       }
 
       // Initialize the strategy and collect data paths
-      paths <- strategy.initialize(initialPortfolio, sessionLoader)
+      allPaths <- strategy.initialize(initialPortfolio, sessionLoader)
+
+      // See which of the paths can be resolved by the strategy itself.
+      locallyResolved <- Future.sequence(allPaths.map { path =>
+        strategy.resolveMarketData(streamSelection(path))
+      }) map { ret =>
+        (allPaths zip ret) collect {
+          case (path, Some(value)) => path -> value
+        } toMap
+      }
+
+      _ = { log.debug("Resolved {} streams locally: {}.", locallyResolved.size, locallyResolved) }
+
+      // The rest of the paths which still need to be resolved.
+      paths = allPaths.diff(locallyResolved.keys.toSeq)
 
       // Load the exchanges
       exchangeNames: Set[String] = paths.toSet[DataPath].map(_.source).intersect(exchangeConfigs.keySet)
@@ -137,19 +157,20 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
         .map(_.filter(_._2.nonEmpty))
 
       // Ask the local data server to stream the data at the given paths.
-      streams <- Future.sequence(paths.map((path: DataPath) => {
-        val selection: StreamSelection = mode match {
-          case Backtest(range) => StreamSelection(path, range.start, range.end)
-          case _ => StreamSelection(path, sessionMicros, polling = true)
-        }
+      serverStreams <- Future.sequence(paths.map((path: DataPath) => {
+        val selection = streamSelection(path)
         for {
-          mdOverrideIt <- strategy.resolveMarketData(selection)
-          mdOverrideSrc = mdOverrideIt.map(iteratorToSource)
+          mdOverrideSrc <- strategy.resolveMarketData(selection)
           src <- mdOverrideSrc.map(Future.successful).getOrElse(
             (dataServer ? DataStreamReq(selection, ClusterLocality))
               .map { case se: StreamResponse[MarketData[_]] => se.toSource })
         } yield src
       }))
+
+      // Combine the server and local streams.
+      streams = serverStreams ++ locallyResolved.values
+      _ = { log.debug("Resolved {} market data streams out of" +
+        " {} paths requested by the strategy.", streams.size, allPaths.size) }
     } yield
       SessionSetup(instruments, exchanges, strategy,
         UUID.randomUUID.toString, streams, sessionMicros, initialPortfolio)
@@ -263,9 +284,10 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
           val exchange: Option[Exchange] = ex.map(exchanges(_))
 
           // If this data has price info attached, emit that price info.
-          data match {
-            case Some(md: MarketData[Priced]) =>
-              session.prices = session.prices.withPrice(Market(md.source, md.topic), md.data.price)
+          data.map(_.data) match {
+            case Some(pd: Priced) =>
+              session.prices = session.prices.withPrice(
+                Market(data.get.source, data.get.topic), pd.price)
             case _ =>
           }
 
@@ -439,10 +461,10 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
       fut.onComplete {
         case Success(_) =>
           log.info("session success")
-          sessionEventsRef ! PoisonPill
+          sessionEventsRef ! SessionComplete(error = None)
         case Failure(err) =>
           log.error(err, "session failed")
-          sessionEventsRef ! PoisonPill
+          sessionEventsRef ! SessionComplete(error = Some(ReportError(err)))
       }
 
       // Return the session id
@@ -451,14 +473,15 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
 
   override def receive: Receive = {
     case "start" =>
+      val origSender = sender
       setup().onComplete {
         case Success(sessionSetup) =>
           log.debug("Session setup success")
-          sender ! (sessionSetup.sessionId, sessionSetup.sessionMicros)
+          origSender ! (sessionSetup.sessionId, sessionSetup.sessionMicros)
           runSession(sessionSetup)
         case Failure(err) =>
           log.error(err, "Session setup failure")
-          sender ! err
+          origSender ! err
       }
   }
 }

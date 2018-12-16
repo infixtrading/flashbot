@@ -163,12 +163,12 @@ class VarBuffer(initialReportVals: Map[String, Any]) {
                    (implicit ctx: TradingSession, fmt: DeltaFmtJson[T]): Unit = {
     if (prev.isDefined) {
       val deltas = fmt.diff(prev.get, current.value)
-      implicit val deltaDe: Decoder[fmt.D] = fmt.deltaDe
       ctx.send(deltas.map(delta =>
-        SessionReportEvent(UpdateValueEvent(current.key, delta))):_*)
+        SessionReportEvent(UpdateValueEvent(current.key, fmt.deltaEn(delta)))):_*)
     } else {
-      implicit val deltaDe: Decoder[T] = fmt.modelDe
-      ctx.send(SessionReportEvent(PutValueEvent(current.key, fmt.fmtName, current.value)))
+//      implicit val deltaDe: Decoder[T] = fmt.modelDe
+      ctx.send(SessionReportEvent(PutValueEvent(current.key, fmt.fmtName,
+        fmt.modelEn(current.value))))
     }
   }
 
