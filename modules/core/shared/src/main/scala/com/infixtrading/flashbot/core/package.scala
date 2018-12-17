@@ -61,7 +61,12 @@ package object core {
   }
 
   case class PricePoint(price: Double, micros: Long) extends Timestamped
+
   case class BalancePoint(balance: Double, micros: Long) extends Timestamped
+  object BalancePoint {
+    implicit val en: Encoder[BalancePoint] = deriveEncoder
+    implicit val de: Decoder[BalancePoint] = deriveDecoder
+  }
 
   sealed trait QuoteSide
   case object Bid extends QuoteSide

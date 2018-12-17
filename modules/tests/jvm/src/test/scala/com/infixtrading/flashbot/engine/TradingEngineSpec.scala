@@ -15,7 +15,7 @@ import com.typesafe.config.{Config, ConfigFactory}
 import org.scalatest._
 import akka.actor.{ActorSystem, PoisonPill}
 import akka.testkit.{ImplicitSender, TestKit}
-import com.infixtrading.flashbot.core.FlashbotConfig
+import com.infixtrading.flashbot.core.{BalancePoint, FlashbotConfig}
 import com.infixtrading.flashbot.models.core._
 import com.infixtrading.flashbot.report.Report
 import de.sciss.chart.api._
@@ -137,7 +137,7 @@ class TradingEngineSpec
 //      val timeSeriesBarCount = 3
       report.error shouldBe None
 
-      println(report.timeSeries.keySet)
+      println(report.collections.keySet)
 
       def reportTimePeriod(report: Report): Class[_ <: RegularTimePeriod] =
         (report.barSize.length, report.barSize.unit) match {
@@ -153,16 +153,25 @@ class TradingEngineSpec
         val timeClass = reportTimePeriod(report)
         report.timeSeries(key).foreach { candle =>
           val time =  RegularTimePeriod.createInstance(timeClass, new Date(candle.micros / 1000), TimeZone.getDefault)
-          println("adding", timeClass, time, candle)
+//          println("adding", timeClass, time, candle)
           priceSeries.add(time, candle.open, candle.high, candle.low, candle.close)
         }
         priceSeries
       }
 
+//      def buildBalanceSeries(report: Report, key: String): TimeSeries = {
+//        val balanceTS = new TimeSeries("key")
+//        report.collections(key).map(_.as[BalancePoint].right.get).foreach { bp =>
+//          val time =  RegularTimePeriod.createInstance(timeClass, new Date(candle.micros / 1000), TimeZone.getDefault)
+//        }
+//      }
+
+      val equityCollection = new TimeSeriesCollection()
+
 
       val priceCollection = new OHLCSeriesCollection()
 //      priceCollection.addSeries(buildCandleSeries(report, "local.equity_usd"))
-      priceCollection.addSeries(buildCandleSeries(report, "local.eth"))
+//      priceCollection.addSeries(buildCandleSeries(report, "local.eth"))
 
       val chart = ChartFactory.createCandlestickChart("Look-ahead Report", "Time",
         "Price", priceCollection, true)
@@ -199,10 +208,19 @@ class TradingEngineSpec
 //      panel.setFillZoomRectangle(true)
 //      panel.setPreferredSize(new java.awt.Dimension(900, 600))
 
-      val frame = new ChartFrame("Returns", chart)
-      frame.pack()
-      frame.setVisible(true)
-      frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE)
+//      val frame = new ChartFrame("Returns", chart)
+//      frame.pack()
+//      frame.setVisible(true)
+//      frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE)
+
+
+      val mydata = for {
+        bp <- report.collections("all/equity").map(_.as[BalancePoint].right.get)
+      } yield (bp.micros, bp.balance)
+
+      val mychart = XYLineChart(mydata)
+
+      mychart.show("Equity")
 
 
       val fut = Future {
@@ -218,7 +236,6 @@ class TradingEngineSpec
 //      val yAxis = plot.getRangeAxis.asInstanceOf[NumberAxis]
 //      yAxis.setForceZeroInRange(false)
 //      yAxis.setAutoRanging(true)
-
 
 
 //      report.timeSeries("returns").size shouldBe timeSeriesBarCount

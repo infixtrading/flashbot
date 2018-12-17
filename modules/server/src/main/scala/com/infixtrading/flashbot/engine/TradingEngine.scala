@@ -329,7 +329,7 @@ class TradingEngine(engineId: String,
 
           fut.andThen {
             case x =>
-              log.info("Fut: {}", x)
+//              log.info("Fut: {}", x)
           }.map(ReportResponse) pipeTo sender
         } catch {
           case err: Throwable =>

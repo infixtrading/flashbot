@@ -383,8 +383,8 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
               }
 
               // And calculate our equity.
-//              session.send(TimeSeriesEvent("equity_usd",
-//                newPortfolio.equity()(session.prices, instruments).qty, fill.micros))
+              session.send(BalanceEvent(Account("all", "equity"),
+                newPortfolio.equity()(session.prices, instruments).qty, fill.micros))
 
               // Return updated portfolio
               newPortfolio
