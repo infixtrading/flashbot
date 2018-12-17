@@ -9,11 +9,12 @@ import json.Schema
 import com.github.andyglow.jsonschema.AsCirce._
 import io.circe._
 import io.circe.generic.semiauto._
-import com.infixtrading.flashbot.core.Convert._
+import com.infixtrading.flashbot.core.Conversions._
 import com.infixtrading.flashbot.core.DataSource.StreamSelection
 import com.infixtrading.flashbot.core.Instrument.CurrencyPair
 import com.infixtrading.flashbot.core._
-import com.infixtrading.flashbot.models.api.{OrderTarget, SessionReportEvent}
+import com.infixtrading.flashbot.models.api.OrderTarget
+import com.infixtrading.flashbot.models.core.FixedSize.FixedSizeD
 import com.infixtrading.flashbot.models.core._
 import com.infixtrading.flashbot.report.ReportEvent._
 
@@ -120,8 +121,8 @@ abstract class Strategy {
     val baseBalance = FixedSize(ctx.getPortfolio.assets(Account(exchange, pair.base)), pair.base)
     val quoteBalance = FixedSize(ctx.getPortfolio.assets(Account(exchange, pair.quote)), pair.quote)
 
-    val notionalBase = baseBalance.as(pair.quote)(ctx.getPrices, ctx.instruments).get
-    val totalNotional = quoteBalance.amount + notionalBase.amount
+    val notionalBase = baseBalance.as(pair.quote)(ctx.getPrices, ctx.instruments)
+    val totalNotional = quoteBalance.qty + notionalBase.qty
 
     val target = OrderTarget(
       Market(exchange, product),
@@ -134,7 +135,7 @@ abstract class Strategy {
   }
 
   def limitOrder(market: Market,
-                 size: FixedSize,
+                 size: FixedSizeD,
                  price: Double,
                  key: String = DEFAULT,
                  postOnly: Boolean = false)
@@ -152,7 +153,7 @@ abstract class Strategy {
   }
 
   def limitOrderOnce(market: Market,
-                     size: FixedSize,
+                     size: FixedSizeD,
                      price: Double,
                      postOnly: Boolean = false)
                     (implicit ctx: TradingSession): String = {
@@ -168,7 +169,7 @@ abstract class Strategy {
     target.id
   }
 
-  def marketOrder(market: Market, size: FixedSize)
+  def marketOrder(market: Market, size: FixedSizeD)
                  (implicit ctx: TradingSession): String = {
     val target = OrderTarget(
       market,
@@ -182,12 +183,12 @@ abstract class Strategy {
 
   def record(name: String, value: Double, micros: Long)
             (implicit ctx: TradingSession): Unit = {
-    ctx.send(SessionReportEvent(TimeSeriesEvent(name, value, micros)))
+    ctx.send(TimeSeriesEvent(name, value, micros))
   }
 
   def record(name: String, candle: Candle)
             (implicit ctx: TradingSession): Unit = {
-    ctx.send(SessionReportEvent(TimeSeriesCandle(name, candle)))
+    ctx.send(TimeSeriesCandle(name, candle))
   }
 
   def resolveMarketData(streamSelection: StreamSelection)(implicit mat: Materializer)

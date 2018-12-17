@@ -4,12 +4,19 @@ import com.infixtrading.flashbot.models.core.Order.Side
 import com.infixtrading.flashbot.util.time.parseDuration
 import java.time.Instant
 
+import com.infixtrading.flashbot.models.core.{Account, Market}
 import io.circe.{Decoder, Encoder}
 import io.circe.generic.semiauto._
 
 import scala.concurrent.duration.Duration
 
 package object core {
+
+  case class IMarket(exchange: String, instrument: Instrument) {
+    def market = Market(exchange, instrument.symbol)
+    def security = instrument.security.get
+    def settledIn = instrument.settledIn
+  }
 
   sealed trait PairRole
   case object Base extends PairRole

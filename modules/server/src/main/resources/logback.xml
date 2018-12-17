@@ -1,0 +1,21 @@
+<configuration>
+
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%X{akkaTimestamp} %-5level %logger{36} %X{akkaSource} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <logger name="akka" level="DEBUG" />
+    <logger name="com.infixtrading.flashbot" level="DEBUG" />
+    <!--<logger name="com.infixtrading.flashbot.engine.DataSourceActor" level="DEBUG" />-->
+
+    <!--<logger name="com.gargoylesoftware.htmlunit.javascript" level="OFF" />-->
+    <!-- https://hibernate.atlassian.net/browse/HV-1323 -->
+    <logger name="org.hibernate.validator.messageinterpolation.ParameterMessageInterpolator" level="ERROR" />
+
+    <root level="WARN">
+        <appender-ref ref="STDOUT" />
+    </root>
+
+</configuration>

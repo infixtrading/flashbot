@@ -8,6 +8,7 @@ import io.circe.generic.auto._
 import io.circe.parser._
 import com.infixtrading.flashbot.core.Instrument.CurrencyPair
 import com.infixtrading.flashbot.engine.TradingSession
+import com.infixtrading.flashbot.models.core.FixedSize.FixedSizeD
 import com.infixtrading.flashbot.models.core.{FixedSize, Portfolio, Position}
 import com.infixtrading.flashbot.models.core.Order.{Fill, Side}
 
@@ -66,11 +67,11 @@ abstract class Exchange {
   def roundBase(instrument: Instrument)(balance: Double): Double = BigDecimal(balance)
     .setScale(baseAssetPrecision(instrument), HALF_DOWN).doubleValue()
 
-  def round(instrument: Instrument)(size: FixedSize): FixedSize =
+  def round(instrument: Instrument)(size: FixedSizeD): FixedSizeD =
     if (size.security == instrument.security.get)
-      size.copy(amount = roundBase(instrument)(size.amount))
+      size.map(roundBase(instrument))
     else if (size.security == instrument.settledIn)
-      size.copy(amount = roundQuote(instrument)(size.amount))
+      size.map(roundQuote(instrument))
     else throw new RuntimeException(s"Can't round $size for instrument $instrument")
 
   private var jsonParams: Option[Json] = _

@@ -16,6 +16,7 @@ import com.infixtrading.flashbot.models.core._
 import io.circe.{Decoder, Encoder}
 import io.circe.generic.auto._
 import io.circe.generic.semiauto._
+import org.jquantlib.time.TimeSeries
 
 import scala.concurrent.duration._
 import scala.concurrent.{Await, Future}
@@ -46,16 +47,19 @@ object LookaheadParams {
   * A strategy that predicts data one step forwards in time.
   */
 class LookAheadCandleStrategy extends Strategy with Predictor1[MarketData[Candle], Double] {
+  import FixedSize.dNumeric._
+
+  new TimeSeries()
 
   type Params = LookaheadParams
 
   override def paramsDecoder = deriveDecoder
 
   // Source the data from the strategy itself.
-  val path1 = DataPath("bitfinex", "eth_usd", "candles_5min")
+  val path1 = DataPath("bitfinex", "eth_usd", "candles_5s")
   def dataSeqs(tr: TimeRange)(implicit mat: Materializer): Map[DataPath, Seq[MarketData[Candle]]] = Map(
     path1 -> Await.result(
-      TimeSeriesTap.prices(100.0, .2, .6, tr, 5 minutes).map {
+      TimeSeriesTap.prices(100.0, .2, .6, tr, 5 seconds).map {
         case (instant, price) =>
           val micros = instant.toEpochMilli * 1000
           BaseMarketData(Candle(micros, price, price, price, price, None), path1, micros, 1)
@@ -79,32 +83,59 @@ class LookAheadCandleStrategy extends Strategy with Predictor1[MarketData[Candle
     import loader._
     Future {
 //      staticData = dataSeqs
-      Seq("bitfinex/eth_usd/candles_5min")
+      Seq("bitfinex/eth_usd/candles_5s")
     }
   }
 
+  var prediction: Option[Double] = None
+
   override def handleData(md: MarketData[_])(implicit ctx: TradingSession) = md.data match {
     case candle: Candle =>
+
+      record("eth", candle)
+
+      if (prediction.isDefined) {
+        if (prediction.get != candle.close) {
+          println(s"ERROR: Expected prediction ${prediction.get}, got ${candle}")
+        } else {
+          println(s"Successful prediction. We predicted ${prediction.get}, and we got $candle")
+        }
+      }
       // If high confidence prediction, follow it blindly. If low, do nothing.
-      val prediction = predict(md.asInstanceOf[MarketData[Candle]])
-      if (prediction.confidence > .75) {
+      val p = predict(md.asInstanceOf[MarketData[Candle]])
+      if (p.confidence > .75) {
+        prediction = Some(p.prediction)
         val sym = md.path
         val market = Market(md.source, md.topic)
         val pair = CurrencyPair(md.topic)
 
         // Price about to go up, as much as we can.
-        if (prediction.prediction > candle.close) {
-          println(candle, prediction)
-          println("buy")
-          marketOrder(market,
-            FixedSize(ctx.getPortfolio.assets(Account(md.source, pair.quote)), pair.quote))
-        } else if (prediction.prediction < candle.close) {
-          println(candle, prediction)
-          println("sell")
+        if (prediction.get > candle.close) {
+          val account = Account(md.source, pair.quote)
+//          println(candle, prediction)
+//          println("buy")
+//          println(market)
+//          println(ctx.getPortfolio)
+//          println(ctx.getPortfolio.balance(account))
+//          println(ctx.getPortfolio.balance(account).size)
+          marketOrder(market, ctx.getPortfolio.balance(account).size)
+//          marketOrder(market,
+//            FixedSize(ctx.getPortfolio.assets(Account(md.source, pair.quote)), pair.quote))
+        } else if (prediction.get < candle.close) {
+          val account = Account(md.source, pair.base)
+//          println(candle, prediction)
+//          println("sell")
+//          println(market)
+//          println(ctx.getPortfolio)
+//          println(ctx.getPortfolio.balance(account))
+//          println(-ctx.getPortfolio.balance(account).size)
           // Price about to go down, sell everything!
-          marketOrder(market,
-            FixedSize(-ctx.getPortfolio.assets(Account(md.source, pair.base)), pair.base))
+          marketOrder(market, -ctx.getPortfolio.balance(account).size)
+//          marketOrder(market,
+//            FixedSize(-ctx.getPortfolio.assets(Account(md.source, pair.base)), pair.base))
         }
+      } else {
+        prediction = None
       }
   }
 
@@ -133,19 +164,8 @@ class LookAheadCandleStrategy extends Strategy with Predictor1[MarketData[Candle
     }
 
     // Return it.
-    Future.successful((streamSelection.path match {
-      case DataPath(_, "eth_usd", "candles_5min") =>
-        Some(TimeSeriesTap.prices(90.0, .4, .2, streamSelection.timeRange, 5 minutes))
-      case DataPath(_, "btc_usd", "candles_5min") =>
-        Some(TimeSeriesTap.prices(3000.0, .6, .4, streamSelection.timeRange, 5 minutes))
-      case _ => None
-    }).map((src: Source[(Instant, Double), NotUsed]) =>
-      src.map { case (inst, price) =>
-        val micros = inst.toEpochMilli * 1000
-        BaseMarketData(Candle(micros, price, price, price, price, None),
-          streamSelection.path, micros, 1)
-      }))
-    }
+    Future.successful(Some(Source(staticData(streamSelection.path).toIndexedSeq)))
+  }
 
 
 }

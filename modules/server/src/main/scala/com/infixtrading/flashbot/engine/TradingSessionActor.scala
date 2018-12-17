@@ -9,7 +9,9 @@ import akka.stream.scaladsl.{Keep, Sink, Source}
 import akka.stream.{ActorMaterializer, OverflowStrategy}
 import akka.pattern.ask
 import akka.util.Timeout
+import breeze.stats.distributions.Gaussian
 import io.circe._
+import io.circe.syntax._
 import com.infixtrading.flashbot.models.core.Action.{ActionQueue, CancelLimitOrder, PostLimitOrder, PostMarketOrder}
 import com.infixtrading.flashbot.core.DataSource.StreamSelection
 import com.infixtrading.flashbot.core.FlashbotConfig.ExchangeConfig
@@ -21,7 +23,7 @@ import com.infixtrading.flashbot.core.{DataSource, _}
 import com.infixtrading.flashbot.engine.DataServer.{ClusterLocality, DataStreamReq}
 import com.infixtrading.flashbot.engine.TradingSession._
 import com.infixtrading.flashbot.exchanges.Simulator
-import com.infixtrading.flashbot.models.api.{LogMessage, OrderTarget, SessionReportEvent}
+import com.infixtrading.flashbot.models.api.{LogMessage, OrderTarget}
 import com.infixtrading.flashbot.models.core.{Account, DataPath, Market, Portfolio}
 import com.infixtrading.flashbot.report.Report.ReportError
 import com.infixtrading.flashbot.report.ReportEvent._
@@ -67,6 +69,8 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
     implicit val timeout: Timeout = Timeout(10 seconds)
     val exchangeConfigs = getExchangeConfigs()
 
+    log.debug("Exchange configs: {}", exchangeConfigs)
+
     // Set the time. Using system time just this once.
     val sessionMicros = currentTimeMicros
     val now = Instant.ofEpochMilli(sessionMicros / 1000)
@@ -77,9 +81,8 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
     val initialPortfolio = portfolioRef.getPortfolio
 
     // Create default instruments for each currency pair configured for an exchange.
-    // We have to cast it because apparently Set isn't covariant.
     def defaultInstruments(exchange: String): Set[Instrument] =
-      exchangeConfigs(exchange).pairs.asInstanceOf[Set[Instrument]]
+      exchangeConfigs(exchange).pairs.getOrElse(Seq.empty).map(CurrencyPair(_)).toSet
 
     def streamSelection(path: DataPath): StreamSelection = mode match {
       case Backtest(range) => StreamSelection(path, range.start, range.end)
@@ -122,42 +125,47 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
       }
 
       // Initialize the strategy and collect data paths
-      allPaths <- strategy.initialize(initialPortfolio, sessionLoader)
+      paths <- strategy.initialize(initialPortfolio, sessionLoader)
 
       // See which of the paths can be resolved by the strategy itself.
-      locallyResolved <- Future.sequence(allPaths.map { path =>
+      selfPaths <- Future.sequence(paths.map { path =>
         strategy.resolveMarketData(streamSelection(path))
       }) map { ret =>
-        (allPaths zip ret) collect {
+        (paths zip ret) collect {
           case (path, Some(value)) => path -> value
         } toMap
       }
 
-      _ = { log.debug("Resolved {} streams locally: {}.", locallyResolved.size, locallyResolved) }
+      _ = { log.debug("Resolved {} streams locally: {}.", selfPaths.size, selfPaths) }
 
       // The rest of the paths which still need to be resolved.
-      paths = allPaths.diff(locallyResolved.keys.toSeq)
+      remainingPaths = paths.diff(selfPaths.keys.toSeq)
 
       // Load the exchanges
-      exchangeNames: Set[String] = paths.toSet[DataPath].map(_.source).intersect(exchangeConfigs.keySet)
+      exchangeNames: Set[String] = paths.toSet[DataPath].map(_.source)
+        .intersect(exchangeConfigs.keySet)
+      _ = { log.debug("Loading exchanges: {}.", exchangeNames) }
+
       exchanges: Map[String, Exchange] <- Future.sequence(exchangeNames.map(n =>
         loadExchange(n).map(n -> _).toFut)).map(_.toMap)
+      _ = { log.debug("Loaded exchanges: {}.", exchanges) }
 
       // Load the instruments.
-      instruments <- Future.sequence(exchanges.map { case (exName, ex) =>
-        // Merge exchange provided instruments with default ones.
-        ex.instruments.map((is: Set[Instrument]) => exName -> (defaultInstruments(exName) ++ is))})
-
+      instruments <- Future.sequence(exchanges.map {
+          case (exName, ex) =>
+            // Merge exchange provided instruments with default ones.
+            ex.instruments
+              .map((is: Set[Instrument]) => exName -> (defaultInstruments(exName) ++ is))}
+        )
         // Filter out any instruments that were not mentioned as a topic
         // in any of the subscribed data paths.
         .map(_.toMap.mapValues(_.filter((inst: Instrument) =>
             paths.map(_.topic).contains(inst.symbol))))
-
         // Remove empties.
         .map(_.filter(_._2.nonEmpty))
 
       // Ask the local data server to stream the data at the given paths.
-      serverStreams <- Future.sequence(paths.map((path: DataPath) => {
+      serverStreams <- Future.sequence(remainingPaths.map((path: DataPath) => {
         val selection = streamSelection(path)
         for {
           mdOverrideSrc <- strategy.resolveMarketData(selection)
@@ -168,17 +176,20 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
       }))
 
       // Combine the server and local streams.
-      streams = serverStreams ++ locallyResolved.values
+      streams = serverStreams ++ selfPaths.values
       _ = { log.debug("Resolved {} market data streams out of" +
-        " {} paths requested by the strategy.", streams.size, allPaths.size) }
+        " {} paths requested by the strategy.", streams.size, paths.size) }
     } yield
-      SessionSetup(instruments, exchanges, strategy,
+      SessionSetup(new InstrumentIndex(instruments), exchanges, strategy,
         UUID.randomUUID.toString, streams, sessionMicros, initialPortfolio)
   }
+
+  val gaussian = Gaussian(0, 1)
 
   def runSession(sessionSetup: SessionSetup): String = sessionSetup match {
     case SessionSetup(instruments, exchanges, strategy, sessionId, streams,
           sessionMicros, initialPortfolio) =>
+      implicit val conversions = GraphConversions
 
       /**
         * The trading session that we fold market data over.
@@ -187,10 +198,10 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
                     protected[engine] var portfolio: Portfolio = initialPortfolio,
                     protected[engine] var prices: PriceIndex = PriceIndex.empty,
                     protected[engine] var orderManagers: Map[String, TargetManager] =
-                        instruments.instruments.mapValues(_ => TargetManager(instruments)),
+                        instruments.byExchange.mapValues(_ => TargetManager(instruments)),
                     // Create action queue for every exchange
                     protected[engine] var actionQueues: Map[String, ActionQueue] =
-                        instruments.instruments.mapValues(_ => ActionQueue()),
+                        instruments.byExchange.mapValues(_ => ActionQueue()),
                     protected[engine] var emittedReportEvents: Seq[ReportEvent] = Seq.empty)
         extends TradingSession {
 
@@ -286,8 +297,8 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
           // If this data has price info attached, emit that price info.
           data.map(_.data) match {
             case Some(pd: Priced) =>
-              session.prices = session.prices.withPrice(
-                Market(data.get.source, data.get.topic), pd.price)
+              log.debug("Found priced data {}", data)
+              session.prices.setPrice(Market(data.get.source, data.get.topic), pd.price)
             case _ =>
           }
 
@@ -333,6 +344,15 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
           def acc(currency: String) = Account(ex.get, currency)
           session.portfolio = fills.foldLeft(session.portfolio) {
             case (portfolio, fill) =>
+
+              session.send(CollectionEvent("fill_size", fill.size.asJson))
+              session.send(CollectionEvent("gauss", (gaussian.draw() * 10 + 5).asJson))
+
+              if (data.isDefined) {
+                val dur = (data.get.micros - fill.micros) / 1000000
+                log.debug(s"Diff between now and fill time: {} seconds", dur)
+              }
+
               // Execute the fill on the portfolio
               val instrument = instruments(ex.get, fill.instrument)
               val newPortfolio = instrument.settle(ex.get, fill, portfolio)
@@ -346,7 +366,7 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
               // The settlement account must be an asset
               val settlementAccount = acc(instrument.settledIn)
               session.send(BalanceEvent(settlementAccount,
-                newPortfolio.balance(settlementAccount), fill.micros))
+                newPortfolio.balance(settlementAccount).qty, fill.micros))
 
               // The security account may be a position or an asset
               val market = Market(ex.get, instrument.symbol)
@@ -356,12 +376,12 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
               } else {
                 val assetAccount = acc(instrument.security.get)
                 session.send(BalanceEvent(assetAccount,
-                  portfolio.balance(assetAccount), fill.micros))
+                  portfolio.balance(assetAccount).qty, fill.micros))
               }
 
               // And calculate our equity.
               session.send(TimeSeriesEvent("equity_usd",
-                newPortfolio.equity()(session.prices), fill.micros))
+                newPortfolio.equity()(session.prices, instruments).qty, fill.micros))
 
               // Return updated portfolio
               newPortfolio
@@ -386,7 +406,7 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
           // Process the events.
           events foreach {
             // Send report events to the events actor ref.
-            case SessionReportEvent(reportEvent) =>
+            case reportEvent: ReportEvent =>
               val re = reportEvent match {
                 case tsEvent: TimeSeriesEvent =>
                   tsEvent.copy(key = "local." + tsEvent.key)

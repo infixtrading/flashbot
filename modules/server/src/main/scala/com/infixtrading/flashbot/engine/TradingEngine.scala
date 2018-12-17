@@ -47,7 +47,7 @@ class TradingEngine(engineId: String,
   private implicit val ec: ExecutionContext = system.dispatcher
   private implicit val timeout: Timeout = Timeout(5 seconds)
 
-  override def persistenceId: String = "trading-engine-2"
+  override def persistenceId: String = "trading-engine"
 
   private val snapshotInterval = 100000
 
@@ -295,7 +295,9 @@ class TradingEngine(engineId: String,
               // Complete this stream once a SessionComplete event comes in.
               ev match {
                 case _: SessionComplete => ref ! PoisonPill
+                case _ => // Ignore other events that are not relevant to stream completion
               }
+
               val deltas = r._1.genDeltas(ev)
               var jsonDeltas = Seq.empty[Json]
               deltas.foreach { delta =>

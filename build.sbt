@@ -19,6 +19,9 @@ lazy val networkDeps = List(
   "com.typesafe.akka" %% "akka-cluster" % akkaVersion,
   "com.typesafe.akka" %% "akka-http" % akkaHttpVersion,
 
+  "com.typesafe.akka" %% "akka-slf4j" % "2.5.19",
+  "ch.qos.logback" % "logback-classic" % "1.2.3",
+
   // CORS
   "ch.megard" %% "akka-http-cors" % "0.3.0",
 
@@ -30,9 +33,6 @@ lazy val networkDeps = List(
   // Pusher
   "com.pusher" % "pusher-java-client" % "1.8.1"
 )
-
-//lazy val testDeps = List(
-//)
 
 lazy val graphQLServerDeps = List(
   "org.sangria-graphql" %% "sangria" % "1.4.2",
@@ -65,7 +65,13 @@ lazy val serviceDeps = List(
   "io.prometheus" % "simpleclient_httpserver" % "0.3.0"
 )
 
-lazy val timeSeriesDeps = List( "org.ta4j" % "ta4j-core" % "0.12" )
+lazy val timeSeriesDeps = List(
+  // Time series
+  "org.ta4j" % "ta4j-core" % "0.12",
+
+  // Charting
+  "de.sciss" %% "scala-chart" % "0.6.0"
+)
 
 lazy val statsDeps = List(
   "org.la4j" % "la4j" % "0.6.0",
@@ -362,13 +368,13 @@ lazy val coreJS = coreBase.js
 
 
 lazy val server = flashbotModule("server", previousFBVersion).settings(
-  unmanagedBase := file("modules/server/lib"),
   libraryDependencies ++= ((
     serviceDeps ++ networkDeps ++ jsonDeps ++
     dataStores ++ timeSeriesDeps ++ statsDeps
   ) ++ Seq(
     "org.jgrapht" % "jgrapht" % "1.3.0",
     "org.jgrapht" % "jgrapht-core" % "1.3.0",
+    "org.jgrapht" % "jgrapht-io" % "1.3.0",
     "com.quantego" % "clp-java" % "1.16.10",
     "com.vmunier" %% "scalajs-scripts" % "1.1.2",
     "com.github.inamik.text.tables" % "inamik-text-tables" % "0.8",
@@ -379,9 +385,9 @@ lazy val server = flashbotModule("server", previousFBVersion).settings(
     "com.github.andyglow" % "scala-jsonschema-circe-json_2.12" % "0.0.8",
     "de.sciss" %% "fingertree" % "1.5.2",
 
-    "io.circe" %% "circe-config" % "0.5.0",
+    "io.circe" %% "circe-config" % "0.5.0"
 
-    "com.twitter" %% "chill-akka" % "0.9.3"
+//    "com.twitter" %% "chill-akka" % "0.9.3"
   ))
 ).dependsOn(core)
 
@@ -414,10 +420,10 @@ lazy val testsBase = crossModule("tests", previousFBVersion)
       "org.scalatest" %% "scalatest" % "3.0.5" % "test",
       "org.scalacheck" %% "scalacheck" % scalaCheckVersion,
       "com.typesafe.akka" %% "akka-testkit" % akkaVersion % Test
-    ),
+    )
 //    sourceGenerators in Test += (sourceManaged in Test).map(Boilerplate.genTests).taskValue,
-    unmanagedResourceDirectories in Compile +=
-      file("modules/tests") / "shared" / "src" / "main" / "resources"
+//    unmanagedResourceDirectories in Compile +=
+//      file("modules/tests") / "shared" / "src" / "main" / "resources"
   ).dependsOn(coreBase)
 
 lazy val tests = testsBase.jvm.dependsOn(server, client)

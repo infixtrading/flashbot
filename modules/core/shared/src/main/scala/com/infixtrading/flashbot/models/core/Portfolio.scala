@@ -3,6 +3,7 @@ package com.infixtrading.flashbot.models.core
 import com.infixtrading.flashbot.core.{InstrumentIndex, PriceIndex}
 import io.circe.generic.semiauto._
 import io.circe.{Decoder, Encoder}
+import FixedSize._
 
 import scala.collection.immutable.Map
 
@@ -12,19 +13,32 @@ import scala.collection.immutable.Map
 case class Portfolio(assets: Map[Account, Double],
                      positions: Map[Market, Position]) {
 
-  def balance(account: Account): Double = assets.getOrElse(account, 0.0)
-
-  def withBalance(account: Account, balance: Double): Portfolio =
+  def balance(account: Account): Balance = Balance(account, assets.getOrElse(account, 0.0))
+  def withAssetBalance(account: Account, balance: Double): Portfolio =
     copy(assets = assets + (account -> balance))
+  def updateAssetBalance(account: Account, fn: Double => Double): Portfolio =
+    withAssetBalance(account, fn(balance(account).qty))
 
-  def updateBalance(account: Account, fn: Double => Double): Portfolio =
-    withBalance(account, fn(balance(account)))
+  def balances: Set[Balance] = assets map { case (acc, qty) => Balance(acc, qty) } toSet
+
+  def positionPNL(market: Market)
+                 (implicit prices: PriceIndex, instruments: InstrumentIndex): FixedSizeD = {
+    val position = positions(market)
+    val instrument = instruments(market)
+    val pnlVal = instrument.PNL(position.size, position.entryPrice, prices(market))
+    FixedSize(pnlVal, instrument.settledIn)
+  }
 
   /**
-    * How much money do we have in terms of `targetAsset`?
+    * What is the value of our portfolio in terms of `targetAsset`?
     */
-  def equity(targetAsset: String = "usd")(implicit prices: PriceIndex): Double = {
-    throw new NotImplementedError()
+  def equity(targetAsset: String = "usd")
+            (implicit prices: PriceIndex,
+             instruments: InstrumentIndex): FixedSizeD = {
+    import FixedSize.dNumeric._
+    val assetsEquity: FixedSizeD = balances.map(_ as targetAsset size).sum
+    val PNLs: FixedSizeD = positions.keys.map(positionPNL(_) as targetAsset).sum
+    assetsEquity + PNLs
   }
 
   def position(market: Market): Option[Position] = positions.get(market)
@@ -36,7 +50,7 @@ case class Portfolio(assets: Map[Account, Double],
     val account = Account(market.exchange, instrument.symbol)
     val (newPosition, pnl) = positions(market).setSize(size, instrument, prices(market))
     unsafeSetPosition(market, newPosition)
-      .withBalance(account, assets(account) + pnl)
+      .withAssetBalance(account, assets(account) + pnl)
   }
 
   def closePosition(market: Market)

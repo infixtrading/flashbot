@@ -64,8 +64,8 @@ object Instrument {
           // Total quote currency paid out to both maker and exchange
           val totalCost = rawCost / (1 - fill.fee)
           portfolio
-            .updateBalance(acc(base), _ + fill.size)
-            .updateBalance(acc(quote), _ - totalCost)
+            .updateAssetBalance(acc(base), _ + fill.size)
+            .updateAssetBalance(acc(quote), _ - totalCost)
 
         /**
           * If we just sold a certain amount of BTC for USD, then the fee is subtracted
@@ -73,8 +73,8 @@ object Instrument {
           */
         case Sell =>
           portfolio
-            .updateBalance(acc(base), _ - fill.size)
-            .updateBalance(acc(quote), _ + fill.size * fill.price * (1 - fill.fee))
+            .updateAssetBalance(acc(base), _ - fill.size)
+            .updateAssetBalance(acc(quote), _ + fill.size * fill.price * (1 - fill.fee))
       }
     }
   }

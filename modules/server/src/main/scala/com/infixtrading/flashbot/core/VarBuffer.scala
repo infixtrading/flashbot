@@ -7,7 +7,7 @@ import com.infixtrading.flashbot.core.State.Var
 import com.infixtrading.flashbot.core.VarBuffer.VarState
 import com.infixtrading.flashbot.engine.TradingSession
 import com.infixtrading.flashbot.engine.TradingSession._
-import com.infixtrading.flashbot.models.api.{LogMessage, SessionReportEvent}
+import com.infixtrading.flashbot.models.api.LogMessage
 import com.infixtrading.flashbot.report.ReportDelta._
 import com.infixtrading.flashbot.report.ReportEvent._
 
@@ -98,7 +98,7 @@ class VarBuffer(initialReportVals: Map[String, Any]) {
     * Delete the var, no matter the type. Remove from session and from buffer.
     */
   def delete(key: String)(implicit ctx: TradingSession): Unit = {
-    ctx.send(SessionReportEvent(RemoveValueEvent(key)))
+    ctx.send(RemoveValueEvent(key))
     vars - key
   }
 
@@ -164,11 +164,10 @@ class VarBuffer(initialReportVals: Map[String, Any]) {
     if (prev.isDefined) {
       val deltas = fmt.diff(prev.get, current.value)
       ctx.send(deltas.map(delta =>
-        SessionReportEvent(UpdateValueEvent(current.key, fmt.deltaEn(delta)))):_*)
+        UpdateValueEvent(current.key, fmt.deltaEn(delta))):_*)
     } else {
 //      implicit val deltaDe: Decoder[T] = fmt.modelDe
-      ctx.send(SessionReportEvent(PutValueEvent(current.key, fmt.fmtName,
-        fmt.modelEn(current.value))))
+      ctx.send(PutValueEvent(current.key, fmt.fmtName, fmt.modelEn(current.value)))
     }
   }
 
