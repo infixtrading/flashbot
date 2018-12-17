@@ -26,16 +26,6 @@ object ReportDelta {
     */
   case class RawEvent(re: ReportEvent) extends ReportDelta
 
-  sealed trait CandleEvent extends ReportDelta {
-    def series: String
-  }
-  case class CandleUpdate(series: String, candle: Candle) extends CandleEvent
-  case class CandleAdd(series: String, candle: Candle) extends CandleEvent
-  object CandleEvent {
-    implicit def candleEventEn: Encoder[CandleEvent] = deriveEncoder
-    implicit def candleEventDe: Decoder[CandleEvent] = deriveDecoder
-  }
-
   sealed trait ValueEvent extends ReportDelta
   case class PutValueEvent(key: String, fmtName: String, value: Json) extends ValueEvent
   case class UpdateValueEvent(key: String, delta: Json) extends ValueEvent

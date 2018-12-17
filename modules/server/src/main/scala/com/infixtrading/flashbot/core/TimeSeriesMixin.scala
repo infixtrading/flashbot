@@ -2,19 +2,20 @@ package com.infixtrading.flashbot.core
 
 import java.time.{Duration, Instant, ZoneOffset, ZonedDateTime}
 
+import com.infixtrading.flashbot.engine.{Strategy, TradingSession}
 import com.infixtrading.flashbot.models.core.Candle
+import com.infixtrading.flashbot.report.ReportEvent.{CandleAdd, CandleUpdate}
 import com.infixtrading.flashbot.util
 import org.ta4j.core.num.Num
 import org.ta4j.core.{Bar, BaseBar, BaseTimeSeries, TimeSeries}
 
-class TimeSeriesGroup(period: Duration) {
+trait TimeSeriesMixin { self: Strategy =>
 
-  def this(periodStr: String) =
-    this(Duration.ofNanos(util.time.parseDuration(periodStr).toNanos))
+  def timePeriod = self.sessionBarSize
 
   var allSeries: Map[String, TimeSeries] = Map.empty
 
-  def getGlobalIndex(micros: Long): Long = micros / period.toMillis
+  def getGlobalIndex(micros: Long): Long = micros / timePeriod.toMillis
 
   def hasNonZeroClosePrice(bar: Bar): Boolean = {
     var ret = false
@@ -27,16 +28,27 @@ class TimeSeriesGroup(period: Duration) {
       }
     } catch {
       case err =>
-        println("Unable to fetch bar close price. Inferring that it's empty.", err)
+//        println("Unable to fetch bar close price. Inferring that it's empty.", err)
     }
     ret
+  }
+
+  def barToCandle(bar: Bar): Candle = {
+    val micros = bar.getBeginTime.toInstant.toEpochMilli * 1000
+    Candle(micros,
+      bar.getOpenPrice.getDelegate.doubleValue(),
+      bar.getMaxPrice.getDelegate.doubleValue(),
+      bar.getMinPrice.getDelegate.doubleValue(),
+      bar.getClosePrice.getDelegate.doubleValue(),
+      bar.getVolume.getDelegate.doubleValue())
   }
 
   def record(exchange: String,
              product: String,
              micros: Long,
              price: Double,
-             amount: Option[Double] = None): Unit = {
+             amount: Option[Double] = None)
+            (implicit ctx: TradingSession): Unit = {
     val key = _key(exchange, product)
     if (!allSeries.isDefinedAt(key)) {
       allSeries += (key ->
@@ -44,8 +56,10 @@ class TimeSeriesGroup(period: Duration) {
     }
     val series = allSeries(key)
 
-    val alignedMillis = getGlobalIndex(micros) * period.toMillis
+    val alignedMillis = getGlobalIndex(micros) * timePeriod.toMillis
     val zdt = ZonedDateTime.ofInstant(Instant.ofEpochMilli(alignedMillis), ZoneOffset.UTC)
+
+    var addedNewBar = false
 
     // Until the last bar exists and accepts the current time, create a new bar.
     while (series.getBarCount == 0 || !series.getLastBar.inPeriod(zdt)) {
@@ -58,9 +72,11 @@ class TimeSeriesGroup(period: Duration) {
         // it should never be empty.
         val secondToLastBar = series.getBar(series.getEndIndex - 1)
         lastBar.get.addPrice(secondToLastBar.getClosePrice)
+        ctx.send(CandleUpdate(key, barToCandle(series.getLastBar)))
       }
       // Ok, now we can add the new bar.
-      series.addBar(period, startingTime.plus(period))
+      addedNewBar = true
+      series.addBar(timePeriod, startingTime.plus(timePeriod))
     }
 
     // Now we have the correct last bar, add the price or trade.
@@ -69,18 +85,23 @@ class TimeSeriesGroup(period: Duration) {
     } else {
       series.addPrice(price)
     }
+    if (addedNewBar)
+      ctx.send(CandleAdd(key, barToCandle(series.getLastBar)))
+    else ctx.send(CandleUpdate(key, barToCandle(series.getLastBar)))
   }
 
   def record(exchange: String,
-            product: Instrument,
-            micros: Long,
-            price: Double,
-            amount: Option[Double]): Unit =
+             product: Instrument,
+             micros: Long,
+             price: Double,
+             amount: Option[Double])
+            (implicit ctx: TradingSession): Unit =
     record(exchange, product.toString, micros, price, amount)
 
   def record(exchange: String,
              product: String,
-             candle: Candle): Unit = {
+             candle: Candle)
+            (implicit ctx: TradingSession): Unit = {
     val key = _key(exchange, product)
     if (!allSeries.isDefinedAt(key)) {
       allSeries += (key ->
@@ -88,7 +109,7 @@ class TimeSeriesGroup(period: Duration) {
     }
     val series = allSeries(key)
 
-    val alignedMillis = getGlobalIndex(candle.micros) * period.toMillis
+    val alignedMillis = getGlobalIndex(candle.micros) * timePeriod.toMillis
     val zdt = ZonedDateTime.ofInstant(Instant.ofEpochMilli(alignedMillis), ZoneOffset.UTC)
 
     // Until the last bar exists and accepts the current time, create a new bar.
@@ -102,9 +123,10 @@ class TimeSeriesGroup(period: Duration) {
         // it should never be empty.
         val secondToLastBar = series.getBar(series.getEndIndex - 1)
         lastBar.get.addPrice(secondToLastBar.getClosePrice)
+        ctx.send(CandleUpdate(key, barToCandle(lastBar.get)))
       }
       // Ok, now we can add the new bar.
-      series.addBar(period, startingTime.plus(period))
+      series.addBar(timePeriod, startingTime.plus(timePeriod))
     }
 
     val curBar = series.getLastBar
@@ -114,15 +136,21 @@ class TimeSeriesGroup(period: Duration) {
     val newHigh = if (curBarIsEmpty) fn(candle.high) else curBar.getMaxPrice.max(fn(candle.high))
     val newLow = if (curBarIsEmpty) fn(candle.low) else curBar.getMinPrice.min(fn(candle.low))
     val newClose = fn(candle.close)
-    val newVolume = curBar.getVolume.plus(fn(candle.volume.getOrElse(0)))
+    val newVolume = curBar.getVolume.plus(fn(candle.volume))
     val newBar = new BaseBar(curBar.getTimePeriod, curBar.getEndTime, newOpen, newHigh,
       newLow, newClose, newVolume, fn(0))
     series.addBar(newBar, true)
+
+    // Update the report
+    if (curBarIsEmpty)
+      ctx.send(CandleAdd(key, barToCandle(newBar)))
+    else ctx.send(CandleUpdate(key, barToCandle(newBar)))
   }
 
   def record(exchange: String,
              product: Instrument,
-             candle: Candle): Unit = record(exchange, product.toString, candle)
+             candle: Candle)
+            (implicit ctx: TradingSession): Unit = record(exchange, product.toString, candle)
 
   def get(exchange: String, product: String): Option[TimeSeries] =
     allSeries.get(_key(exchange, product))

@@ -139,17 +139,6 @@ class TradingEngineSpec
 
       println(report.timeSeries.keySet)
 
-//      val candleCollection = new TimeSeriesCollection()
-//      val open = new TimeSeries("open")
-//      val high = new TimeSeries("high")
-//      val low = new TimeSeries("low")
-//      val close = new TimeSeries("close")
-//      candleCollection.addSeries(open)
-//      candleCollection.addSeries(high)
-//      candleCollection.addSeries(low)
-//      candleCollection.addSeries(close)
-
-
       def reportTimePeriod(report: Report): Class[_ <: RegularTimePeriod] =
         (report.barSize.length, report.barSize.unit) match {
           case (1, MILLISECONDS) => classOf[Millisecond]

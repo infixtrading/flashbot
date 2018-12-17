@@ -9,7 +9,7 @@ import akka.stream.scaladsl.{Keep, Sink, Source}
 import com.infixtrading.flashbot.core.DataSource.StreamSelection
 import com.infixtrading.flashbot.core.Instrument.CurrencyPair
 import com.infixtrading.flashbot.core.MarketData.BaseMarketData
-import com.infixtrading.flashbot.core.{MarketData, TimeSeriesTap}
+import com.infixtrading.flashbot.core.{MarketData, TimeSeriesMixin, TimeSeriesTap}
 import com.infixtrading.flashbot.engine.{SessionLoader, Strategy, TradingSession}
 import com.infixtrading.flashbot.models.api.OrderTarget
 import com.infixtrading.flashbot.models.core._
@@ -46,10 +46,11 @@ object LookaheadParams {
 /**
   * A strategy that predicts data one step forwards in time.
   */
-class LookAheadCandleStrategy extends Strategy with Predictor1[MarketData[Candle], Double] {
-  import FixedSize.dNumeric._
+class LookAheadCandleStrategy extends Strategy
+    with Predictor1[MarketData[Candle], Double]
+    with TimeSeriesMixin {
 
-  new TimeSeries()
+  import FixedSize.dNumeric._
 
   type Params = LookaheadParams
 
@@ -62,7 +63,7 @@ class LookAheadCandleStrategy extends Strategy with Predictor1[MarketData[Candle
       TimeSeriesTap.prices(100.0, .2, .6, tr, 5 seconds).map {
         case (instant, price) =>
           val micros = instant.toEpochMilli * 1000
-          BaseMarketData(Candle(micros, price, price, price, price, None), path1, micros, 1)
+          BaseMarketData(Candle(micros, price, price, price, price, 0), path1, micros, 1)
       } .toMat(Sink.fold(Seq.empty[MarketData[Candle]]) {
         case (memo, md) => memo :+ md
       })(Keep.right).run(), 15 seconds)
@@ -92,7 +93,7 @@ class LookAheadCandleStrategy extends Strategy with Predictor1[MarketData[Candle
   override def handleData(md: MarketData[_])(implicit ctx: TradingSession) = md.data match {
     case candle: Candle =>
 
-      record("eth", candle)
+      record(md.source, md.topic, candle)
 
       if (prediction.isDefined) {
         if (prediction.get != candle.close) {
@@ -166,6 +167,4 @@ class LookAheadCandleStrategy extends Strategy with Predictor1[MarketData[Candle
     // Return it.
     Future.successful(Some(Source(staticData(streamSelection.path).toIndexedSeq)))
   }
-
-
 }

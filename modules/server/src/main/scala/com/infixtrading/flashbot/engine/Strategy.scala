@@ -1,5 +1,6 @@
 package com.infixtrading.flashbot.engine
 
+import java.time.Duration
 import java.util.UUID
 
 import akka.NotUsed
@@ -181,15 +182,15 @@ abstract class Strategy {
     target.id
   }
 
-  def record(name: String, value: Double, micros: Long)
-            (implicit ctx: TradingSession): Unit = {
-    ctx.send(TimeSeriesEvent(name, value, micros))
-  }
-
-  def record(name: String, candle: Candle)
-            (implicit ctx: TradingSession): Unit = {
-    ctx.send(TimeSeriesCandle(name, candle))
-  }
+//  def record(name: String, value: Double, micros: Long)
+//            (implicit ctx: TradingSession): Unit = {
+//    ctx.send(TimeSeriesEvent(name, value, micros))
+//  }
+//
+//  def record(name: String, candle: Candle)
+//            (implicit ctx: TradingSession): Unit = {
+//    ctx.send(TimeSeriesCandle(name, candle))
+//  }
 
   def resolveMarketData(streamSelection: StreamSelection)(implicit mat: Materializer)
       : Future[Option[Source[MarketData[_], NotUsed]]] =
@@ -200,6 +201,8 @@ abstract class Strategy {
     * directly by the TradingSession initialization code.
     */
   implicit var buffer: VarBuffer = _
+
+  var sessionBarSize: Duration = _
 
   protected[engine] def loadParams(jsonParams: Json): Unit = {
     params = paramsDecoder.decodeJson(jsonParams).right.get

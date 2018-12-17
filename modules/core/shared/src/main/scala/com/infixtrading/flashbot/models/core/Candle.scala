@@ -6,12 +6,12 @@ case class Candle(micros: Long,
                   high: Double,
                   low: Double,
                   close: Double,
-                  volume: Option[Double] = None) extends Timestamped with Priced {
+                  volume: Double) extends Timestamped with Priced {
   def add(value: Double, newVolume: Option[Double] = None): Candle = copy(
     high = math.max(high, value),
     low = math.min(low, value),
     close = value,
-    volume = newVolume.orElse(volume)
+    volume = newVolume.getOrElse(volume)
   )
 
   override def price = close

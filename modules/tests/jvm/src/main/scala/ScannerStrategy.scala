@@ -23,7 +23,7 @@ class ScannerStrategy extends Strategy {
   override def handleData(md: MarketData[_])(implicit ctx: TradingSession) =
     md.data match {
       case candle: Candle =>
-        record("price", candle)
+//        record("price", candle)
     }
 
 //  override def resolveMarketData(address: DataPath) = address match {

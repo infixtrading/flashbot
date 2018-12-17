@@ -118,7 +118,7 @@ object TimeSeriesTap {
         case (None, (is @ IsSet(_, data), zero)) if zero == 0 =>
           Some(Candle(
             is.barStart(0, timeStep).toEpochMilli * 1000,
-            data._2, data._2, data._2, data._2
+            data._2, data._2, data._2, data._2, 0
           ))
 
         // Rest

@@ -120,6 +120,9 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
         // Set the buffer
         strategy.buffer = new VarBuffer(initialReport.values.mapValues(_.value))
 
+        // Set the bar size
+        strategy.sessionBarSize = java.time.Duration.ofSeconds(initialReport.barSize.toSeconds)
+
         // Load params
         strategy.loadParams(strategyParams)
       }
@@ -380,8 +383,8 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
               }
 
               // And calculate our equity.
-              session.send(TimeSeriesEvent("equity_usd",
-                newPortfolio.equity()(session.prices, instruments).qty, fill.micros))
+//              session.send(TimeSeriesEvent("equity_usd",
+//                newPortfolio.equity()(session.prices, instruments).qty, fill.micros))
 
               // Return updated portfolio
               newPortfolio
@@ -408,10 +411,10 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
             // Send report events to the events actor ref.
             case reportEvent: ReportEvent =>
               val re = reportEvent match {
-                case tsEvent: TimeSeriesEvent =>
-                  tsEvent.copy(key = "local." + tsEvent.key)
-                case tsCandle: TimeSeriesCandle =>
-                  tsCandle.copy(key = "local." + tsCandle.key)
+                case ce: CandleEvent => ce match {
+                  case ev: CandleAdd => ev.copy("local." + ev.series)
+                  case ev: CandleUpdate => ev.copy("local." + ev.series)
+                }
                 case otherReportEvent => otherReportEvent
               }
               sessionEventsRef ! re

@@ -6,6 +6,7 @@ import java.time.Instant
 
 import com.infixtrading.flashbot.models.core.{Account, Market}
 import io.circe.{Decoder, Encoder}
+import io.circe.generic.auto._
 import io.circe.generic.semiauto._
 
 import scala.concurrent.duration.Duration

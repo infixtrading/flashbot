@@ -27,14 +27,6 @@ case class Report(strategy: String,
     case TradeAdd(tradeEvent) => copy(trades = trades :+ tradeEvent)
     case CollectionAdd(CollectionEvent(name, item)) => copy(collections = collections +
       (name -> (collections.getOrElse(name, Vector.empty[Json]) :+ item)))
-    case event: CandleEvent => event match {
-      case CandleAdd(series, candle) =>
-        copy(timeSeries = timeSeries + (series ->
-          (timeSeries.getOrElse(series, Vector.empty) :+ candle)))
-      case CandleUpdate(series, candle) =>
-        copy(timeSeries = timeSeries + (series ->
-          timeSeries(series).updated(timeSeries(series).length - 1, candle)))
-    }
     case event: ValueEvent => copy(values = event match {
       case PutValueEvent(key, fmtName, anyValue) =>
         val fmt = DeltaFmt.formats(fmtName)
@@ -47,8 +39,18 @@ case class Report(strategy: String,
       case RemoveValueEvent(key) =>
         values - key
     })
+
     case RawEvent(SessionComplete(errOpt)) =>
       copy(isComplete = true, error = errOpt)
+
+    case RawEvent(event: CandleEvent) => event match {
+      case CandleAdd(series, candle) =>
+        copy(timeSeries = timeSeries + (series ->
+          (timeSeries.getOrElse(series, Vector.empty) :+ candle)))
+      case CandleUpdate(series, candle) =>
+        copy(timeSeries = timeSeries + (series ->
+          timeSeries(series).updated(timeSeries(series).length - 1, candle)))
+    }
   }
 
   private def setVal[T](fmt: DeltaFmt[T], key: String, value: Any,
@@ -69,26 +71,11 @@ case class Report(strategy: String,
     case tradeEvent: TradeEvent =>
       TradeAdd(tradeEvent) :: Nil
 
+    case BalanceEvent(acc, balance, micros) =>
+      CollectionAdd(CollectionEvent(acc.toString, BalancePoint(balance, micros).asJson)) :: Nil
+
     case collectionEvent: CollectionEvent =>
       CollectionAdd(collectionEvent) :: Nil
-
-    case e: PriceEvent =>
-      genTimeSeriesDelta[PriceEvent](
-        List("price", e.market.exchange, e.market.symbol).mkString("."), e, _.price) :: Nil
-
-    case e: BalanceEvent =>
-      genTimeSeriesDelta[BalanceEvent](
-        List("balance", e.account.exchange, e.account.security).mkString("."), e, _.balance) :: Nil
-
-    case e: PositionEvent =>
-      genTimeSeriesDelta[PositionEvent](
-        List("position", e.market.exchange, e.market.symbol).mkString("."), e, _.position.size) :: Nil
-
-    case e: TimeSeriesEvent =>
-      genTimeSeriesDelta[TimeSeriesEvent](e.key, e, _.value) :: Nil
-
-    case e: TimeSeriesCandle =>
-      CandleAdd(e.key, e.candle) :: Nil
 
     case e: ReportValueEvent => List(e.event)
 
@@ -99,17 +86,17 @@ case class Report(strategy: String,
   /**
     * Generates either a CandleSave followed by a CandleAdd, or a CandleUpdate by itself.
     */
-  private def genTimeSeriesDelta[T <: Timestamped](series: String,
-                                                   event: T,
-                                                   valueFn: T => Double): ReportDelta = {
-    val value = valueFn(event)
-    val newBarMicros = (event.micros / barSize.toMicros) * barSize.toMicros
-    val currentTS: Seq[Candle] = timeSeries.getOrElse(series, Vector.empty)
-    if (currentTS.lastOption.exists(_.micros == newBarMicros))
-      CandleUpdate(series, currentTS.last.add(value))
-    else
-      CandleAdd(series, Candle(newBarMicros, value, value, value, value))
-  }
+//  private def genTimeSeriesDelta[T <: Timestamped](series: String,
+//                                                   event: T,
+//                                                   valueFn: T => Double): ReportDelta = {
+//    val value = valueFn(event)
+//    val newBarMicros = (event.micros / barSize.toMicros) * barSize.toMicros
+//    val currentTS: Seq[Candle] = timeSeries.getOrElse(series, Vector.empty)
+//    if (currentTS.lastOption.exists(_.micros == newBarMicros))
+//      CandleUpdate(series, currentTS.last.add(value))
+//    else
+//      CandleAdd(series, Candle(newBarMicros, value, value, value, value))
+//  }
 
 }
 
@@ -181,7 +168,7 @@ object Report {
             barSize: Option[Duration] = None): Report = Report(
     strategyName,
     params,
-    barSize.getOrElse(1 minute),
+    barSize.getOrElse(1 hour),
     Vector(),
     Map.empty,
     Map.empty,
