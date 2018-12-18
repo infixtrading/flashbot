@@ -71,10 +71,7 @@ class TradingEngineSpec
   "TradingEngine" should {
     "respond to a ping" in {
 
-      val fbConfig = FlashbotConfig.load match {
-        case Right(v) => v
-        case Left(err) => fail(err)
-      }
+      val fbConfig = FlashbotConfig.load
 
       val dataServer = system.actorOf(Props(new DataServer(
         testFolder,
@@ -89,7 +86,7 @@ class TradingEngineSpec
         fbConfig.strategies,
         fbConfig.exchanges,
         fbConfig.bots.configs,
-        dataServer
+        Left(dataServer)
       )))
 
       val result = Await.result(engine ? Ping, 5 seconds)
@@ -102,10 +99,7 @@ class TradingEngineSpec
     }
 
     "be profitable when using lookahead" in {
-      val fbConfig = FlashbotConfig.load match {
-        case Right(v) => v
-        case Left(err) => fail(err)
-      }
+      val fbConfig = FlashbotConfig.load
 
       val now = Instant.now()
 
@@ -115,7 +109,7 @@ class TradingEngineSpec
 
       val engine = system.actorOf(Props(
         new TradingEngine("test2", fbConfig.strategies, fbConfig.exchanges, Map.empty,
-          dataServer)), "trading-engine-2")
+          Left(dataServer))), "trading-engine-2")
 
       val params = LookaheadParams(Market("bitfinex/eth_usd"), sabotage = false)
 
@@ -216,13 +210,13 @@ class TradingEngineSpec
 
       val mychart = XYLineChart(priceData)
 
-      mychart.show("Equity")
+//      mychart.show("Equity")
 
-      val fut = Future {
-        Thread.sleep((2 days).toMillis)
-      }
-
-      Await.ready(fut, 5 minutes)
+//      val fut = Future {
+//        Thread.sleep((2 days).toMillis)
+//      }
+//
+//      Await.ready(fut, 5 minutes)
 
 //      val plot = chart.getPlot.asInstanceOf[XYPlot]
 //
