@@ -1,24 +1,42 @@
 package com.infixtrading.flashbot.core
 
+import com.infixtrading.flashbot.models.core.{Account, FixedPrice, Market}
+
+import scala.collection.concurrent.TrieMap
 import scala.collection.immutable.{Map, Set}
 
-class InstrumentIndex(val instruments: Map[String, Set[Instrument]]) extends AnyVal {
+class InstrumentIndex(val byExchange: Map[String, Set[Instrument]]) {
+
   def apply(exchange: String, symbol: String): Instrument = apply(Market(exchange, symbol))
   def apply(market: Market): Instrument = get(market).get
   def get(exchange: String, symbol: String): Option[Instrument] =
     get(Market(exchange, symbol))
   def get(market: Market): Option[Instrument] =
-    instruments(market.exchange).find(_.symbol == market.symbol)
+    byExchange(market.exchange).find(_.symbol == market.symbol)
 
-  def forExchange(exchange: String): InstrumentIndex = instruments.filterKeys(_ == exchange)
+  def findMarket(base: Account, quote: Account): Option[Market] = {
+    if (base.exchange == quote.exchange) {
+      byExchange(base.exchange).find(i =>
+        i.security.isDefined &&
+          (i.security.get == base.security) && (i.settledIn == quote.security))
+        .map(i => Market(base.exchange, i.symbol))
+    } else None
+  }
 
-  def accounts: Set[Account] = instruments.flatMap { case (ex, insts) =>
+//  def pricePath(from: AssetKey, to: AssetKey, approx: Boolean): Seq[Market] =
+//    pricePathOpt(from, to, approx).get
+//  def pricePath(from: AssetKey, to: AssetKey): Seq[Market] =
+//    pricePathOpt(from, to, approx = false).orElse(pricePathOpt(from, to, approx = true)).get
+//  def pricePathOpt(from: AssetKey, to: AssetKey) = pricePathOpt(from, to, approx = false)
+
+
+  //  def forExchange(exchange: String): InstrumentIndex = InstrumentIndex(
+//    instruments.filterKeys(_ == exchange),
+//    pricePathCache.remove()
+//  )
+
+  def accounts: Set[Account] = byExchange.flatMap { case (ex, insts) =>
     insts.flatMap { inst => Set(Account(ex, inst.security.get), Account(ex, inst.settledIn)) }
   }.toSet
-}
-
-object InstrumentIndex {
-  implicit def instrumentIndex(instruments: Map[String, Set[Instrument]]): InstrumentIndex
-    = new InstrumentIndex(instruments)
 }
 

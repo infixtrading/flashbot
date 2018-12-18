@@ -1,8 +1,8 @@
 package com.infixtrading.flashbot.report
 
 import com.infixtrading.flashbot.core._
-import com.infixtrading.flashbot.core.Candle
-import com.infixtrading.flashbot.report.Report.{ReportValue, ValuesMap}
+import com.infixtrading.flashbot.models.core.Candle
+import com.infixtrading.flashbot.report.Report.{ReportError, ReportValue, ValuesMap}
 import com.infixtrading.flashbot.report.ReportDelta._
 import com.infixtrading.flashbot.report.ReportEvent._
 import com.infixtrading.flashbot.util.time._
@@ -10,6 +10,7 @@ import io.circe._
 import io.circe.generic.auto._
 import io.circe.generic.semiauto._
 import io.circe.syntax._
+
 import scala.concurrent.duration._
 
 case class Report(strategy: String,
@@ -18,20 +19,14 @@ case class Report(strategy: String,
                   trades: Vector[TradeEvent],
                   collections: Map[String, Vector[Json]],
                   timeSeries: Map[String, Vector[Candle]],
-                  values: ValuesMap) {
+                  values: ValuesMap,
+                  isComplete: Boolean,
+                  error: Option[ReportError]) {
 
   def update(delta: ReportDelta): Report = delta match {
     case TradeAdd(tradeEvent) => copy(trades = trades :+ tradeEvent)
     case CollectionAdd(CollectionEvent(name, item)) => copy(collections = collections +
       (name -> (collections.getOrElse(name, Vector.empty[Json]) :+ item)))
-    case event: CandleEvent => event match {
-      case CandleAdd(series, candle) =>
-        copy(timeSeries = timeSeries + (series ->
-          (timeSeries.getOrElse(series, Vector.empty) :+ candle)))
-      case CandleUpdate(series, candle) =>
-        copy(timeSeries = timeSeries + (series ->
-          timeSeries(series).updated(timeSeries(series).length - 1, candle)))
-    }
     case event: ValueEvent => copy(values = event match {
       case PutValueEvent(key, fmtName, anyValue) =>
         val fmt = DeltaFmt.formats(fmtName)
@@ -44,6 +39,18 @@ case class Report(strategy: String,
       case RemoveValueEvent(key) =>
         values - key
     })
+
+    case RawEvent(SessionComplete(errOpt)) =>
+      copy(isComplete = true, error = errOpt)
+
+    case RawEvent(event: CandleEvent) => event match {
+      case CandleAdd(series, candle) =>
+        copy(timeSeries = timeSeries + (series ->
+          (timeSeries.getOrElse(series, Vector.empty) :+ candle)))
+      case CandleUpdate(series, candle) =>
+        copy(timeSeries = timeSeries + (series ->
+          timeSeries(series).updated(timeSeries(series).length - 1, candle)))
+    }
   }
 
   private def setVal[T](fmt: DeltaFmt[T], key: String, value: Any,
@@ -64,50 +71,48 @@ case class Report(strategy: String,
     case tradeEvent: TradeEvent =>
       TradeAdd(tradeEvent) :: Nil
 
+    case BalanceEvent(acc, balance, micros) =>
+      CollectionAdd(CollectionEvent(acc.toString, BalancePoint(balance, micros).asJson)) :: Nil
+
     case collectionEvent: CollectionEvent =>
       CollectionAdd(collectionEvent) :: Nil
 
-    case e: PriceEvent =>
-      genTimeSeriesDelta[PriceEvent](
-        List("price", e.exchange, e.instrument.toString).mkString("."), e, _.price) :: Nil
-
-    case e: BalanceEvent =>
-      genTimeSeriesDelta[BalanceEvent](
-        List("balance", e.account.exchange, e.account.security).mkString("."), e, _.balance) :: Nil
-
-    case e: PositionEvent =>
-      genTimeSeriesDelta[PositionEvent](
-        List("position", e.market.exchange, e.market.symbol).mkString("."), e, _.position.size) :: Nil
-
-    case e: TimeSeriesEvent =>
-      genTimeSeriesDelta[TimeSeriesEvent](e.key, e, _.value) :: Nil
-
-    case e: TimeSeriesCandle =>
-      CandleAdd(e.key, e.candle) :: Nil
-
     case e: ReportValueEvent => List(e.event)
+
+    case other => Seq(RawEvent(other))
   }
 
 
   /**
     * Generates either a CandleSave followed by a CandleAdd, or a CandleUpdate by itself.
     */
-  private def genTimeSeriesDelta[T <: Timestamped](series: String,
-                                                   event: T,
-                                                   valueFn: T => Double): ReportDelta = {
-    val value = valueFn(event)
-    val newBarMicros = (event.micros / barSize.toMicros) * barSize.toMicros
-    val currentTS: Seq[Candle] = timeSeries.getOrElse(series, Vector.empty)
-    if (currentTS.lastOption.exists(_.micros == newBarMicros))
-      CandleUpdate(series, currentTS.last.add(value))
-    else
-      CandleAdd(series, Candle(newBarMicros, value, value, value, value))
-  }
+//  private def genTimeSeriesDelta[T <: Timestamped](series: String,
+//                                                   event: T,
+//                                                   valueFn: T => Double): ReportDelta = {
+//    val value = valueFn(event)
+//    val newBarMicros = (event.micros / barSize.toMicros) * barSize.toMicros
+//    val currentTS: Seq[Candle] = timeSeries.getOrElse(series, Vector.empty)
+//    if (currentTS.lastOption.exists(_.micros == newBarMicros))
+//      CandleUpdate(series, currentTS.last.add(value))
+//    else
+//      CandleAdd(series, Candle(newBarMicros, value, value, value, value))
+//  }
 
 }
 
 object Report {
   type ValuesMap = Map[String, ReportValue[_]]
+
+  case class ReportError(name: String, message: String, trace: Seq[String],
+                         cause: Option[ReportError])
+  object ReportError {
+    def apply(err: Throwable): ReportError =
+      ReportError(err.getClass.getName, err.getMessage,
+        err.getStackTrace.toSeq.map(_.toString), Option(err.getCause).map(ReportError(_)))
+
+    implicit def en: Encoder[ReportError] = deriveEncoder[ReportError]
+    implicit def de: Decoder[ReportError] = deriveDecoder[ReportError]
+  }
 
   /**
     * ReportValues are stored on disk with default Java serialization.
@@ -149,23 +154,27 @@ object Report {
       }
   }
 
-  implicit val reportEn: Encoder[Report] = Encoder.forProduct7(
-    "strategy", "params", "barSize", "trades", "collections", "timeSeries", "values")(r =>
-      (r.strategy, r.params, r.barSize, r.trades, r.collections, r.timeSeries, r.values))
-  implicit val reportDe: Decoder[Report] = Decoder.forProduct7(
+  implicit val reportEn: Encoder[Report] = Encoder.forProduct9(
+    "strategy", "params", "barSize", "trades", "collections", "timeSeries", "values",
+        "isComplete", "error")(r =>
+      (r.strategy, r.params, r.barSize, r.trades, r.collections, r.timeSeries, r.values,
+        r.isComplete, r.error))
+  implicit val reportDe: Decoder[Report] = Decoder.forProduct9(
     "strategy", "params", "barSize", "trades", "collections",
-    "timeSeries", "values")(Report.apply)
+    "timeSeries", "values", "isComplete", "error")(Report.apply)
 
   def empty(strategyName: String,
             params: Json,
             barSize: Option[Duration] = None): Report = Report(
     strategyName,
     params,
-    barSize.getOrElse(1 minute),
+    barSize.getOrElse(1 hour),
     Vector(),
     Map.empty,
     Map.empty,
-    Map.empty
+    Map.empty,
+    isComplete = false,
+    None
   )
 }
 

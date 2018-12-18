@@ -1,9 +1,10 @@
-package com.infixtrading.flashbot.core
+package com.infixtrading.flashbot.models.core
 
-import com.infixtrading.flashbot.core.Order.{Buy, Sell, Side}
+import com.infixtrading.flashbot.core._
+import com.infixtrading.flashbot.models.core.Order.{Buy, Sell, Side}
 import io.circe._
-import io.circe.generic.auto._
 import io.circe.generic.semiauto._
+
 import scala.collection.immutable.{SortedMap, TreeMap}
 
 case class Ladder(depth: Int,

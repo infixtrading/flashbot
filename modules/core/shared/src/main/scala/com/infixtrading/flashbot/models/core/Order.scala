@@ -1,6 +1,5 @@
-package com.infixtrading.flashbot.core
-
-import com.infixtrading.flashbot.core.Order._
+package com.infixtrading.flashbot.models.core
+import com.infixtrading.flashbot.models.core.Order.Side
 
 object Order {
   sealed trait Side

@@ -1,17 +1,20 @@
-package com.infixtrading.flashbot.core
+package com.infixtrading.flashbot.models.core
+import com.infixtrading.flashbot.core.{Priced, Timestamped}
 
 case class Candle(micros: Long,
                   open: Double,
                   high: Double,
                   low: Double,
                   close: Double,
-                  volume: Option[Double] = None) extends Timestamped {
+                  volume: Double) extends Timestamped with Priced {
   def add(value: Double, newVolume: Option[Double] = None): Candle = copy(
     high = math.max(high, value),
     low = math.min(low, value),
     close = value,
-    volume = newVolume.orElse(volume)
+    volume = newVolume.getOrElse(volume)
   )
+
+  override def price = close
 }
 
 object Candle {

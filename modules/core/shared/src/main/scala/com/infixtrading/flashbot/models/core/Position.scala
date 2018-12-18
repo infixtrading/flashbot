@@ -1,4 +1,6 @@
-package com.infixtrading.flashbot.core
+package com.infixtrading.flashbot.models.core
+
+import com.infixtrading.flashbot.core.Instrument
 import io.circe._
 import io.circe.generic.semiauto._
 

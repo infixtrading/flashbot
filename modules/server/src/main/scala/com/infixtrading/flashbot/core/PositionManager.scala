@@ -1,5 +1,7 @@
 package com.infixtrading.flashbot.core
 
+import com.infixtrading.flashbot.models.core.FixedSize.FixedSizeD
+import com.infixtrading.flashbot.models.core.{FixedSize, Market, Portfolio}
 import com.quantego
 
 /**
@@ -104,7 +106,7 @@ object PositionManager {
                    markets: Seq[Market],
                    targetPercents: Map[String, Double],
                    priceMap: PriceIndex,
-                   equityDenomination: String = "usd"): Map[Market, FixedSize] = {
+                   equityDenomination: String = "usd"): Map[Market, FixedSizeD] = {
 
     val model = new quantego.clp.CLP()
 

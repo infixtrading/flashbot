@@ -1,9 +1,10 @@
 package com.infixtrading.flashbot.core
 
-import com.infixtrading.flashbot.core.Action.{ActionQueue, CancelLimitOrder, PostLimitOrder, PostMarketOrder}
+import com.infixtrading.flashbot.models.core.Action.{ActionQueue, CancelLimitOrder, PostLimitOrder, PostMarketOrder}
 import com.infixtrading.flashbot.engine.IdManager
-import com.infixtrading.flashbot.engine.TradingSession.OrderTarget
-import com.infixtrading.flashbot.core.Convert._
+import com.infixtrading.flashbot.models.api.OrderTarget
+import com.infixtrading.flashbot.models.core.Action
+
 import scala.collection.immutable.Queue
 
 /**
@@ -129,7 +130,7 @@ case class TargetManager(instuments: InstrumentIndex,
                 exchange.genOrderId,
                 TargetId(instrument, key),
                 size.side,
-                Some(exchange.round(instrument)(size.as(instrument.security.get).get).amount),
+                Some(exchange.round(instrument)(size.as(instrument.security.get)).qty),
                 None
               ))
 
@@ -147,7 +148,7 @@ case class TargetManager(instuments: InstrumentIndex,
                 exchange.genOrderId,
                 targetId,
                 size.side,
-                exchange.round(instrument)(size.as(instrument.security.get).get).amount,
+                exchange.round(instrument)(size.as(instrument.security.get)).qty,
                 price,
                 postOnly
               )
@@ -159,7 +160,7 @@ case class TargetManager(instuments: InstrumentIndex,
                   * Existing mounted target is identical to this one. Ignore for idempotency.
                   */
                 case Some(action: PostLimitOrder)
-                  if action.price == price && action.size == size.amount => Nil
+                  if action.price == price && action.size == size.qty => Nil
 
                 /**
                   * Existing mounted target is different than this target. Cancel the previous

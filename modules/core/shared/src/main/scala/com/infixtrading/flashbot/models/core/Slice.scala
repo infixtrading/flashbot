@@ -1,5 +1,5 @@
-package com.infixtrading.flashbot.core
-import com.infixtrading.flashbot.core.Slice.SliceId
+package com.infixtrading.flashbot.models.core
+import com.infixtrading.flashbot.models.core.Slice.SliceId
 
 /**
   * A description of a continuous set of data.

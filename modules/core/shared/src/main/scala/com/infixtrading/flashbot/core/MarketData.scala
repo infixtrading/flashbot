@@ -1,4 +1,5 @@
 package com.infixtrading.flashbot.core
+import com.infixtrading.flashbot.models.core.DataPath
 
 /**
   * Any kind of data that can be streamed into strategies.

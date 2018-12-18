@@ -4,7 +4,7 @@ import java.io.File
 
 import akka.NotUsed
 import akka.actor.SupervisorStrategy.Restart
-import akka.actor.{Actor, ActorLogging, ActorPath, ActorRef, ActorSelection, OneForOneStrategy, Props, RootActorPath, SupervisorStrategy}
+import akka.actor.{Actor, ActorLogging, ActorPath, ActorRef, ActorRefFactory, ActorSelection, OneForOneStrategy, Props, RootActorPath, SupervisorStrategy}
 import akka.cluster.{Cluster, Member}
 import akka.cluster.ClusterEvent.{InitialStateAsEvents, MemberUp}
 import akka.pattern._
@@ -12,7 +12,7 @@ import akka.stream.{ActorMaterializer, SourceRef}
 import akka.stream.scaladsl.{Source, StreamRefs}
 import akka.util.Timeout
 import com.infixtrading.flashbot.core.DataSource._
-import com.infixtrading.flashbot.core.{DataPath, DeltaFmt, DeltaFmtJson, MarketData}
+import com.infixtrading.flashbot.core.{DeltaFmt, DeltaFmtJson, FlashbotConfig, MarketData}
 import com.infixtrading.flashbot.core.DeltaFmt._
 import com.infixtrading.flashbot.core.FlashbotConfig.{DataSourceConfig, ExchangeConfig, IngestConfig}
 import com.infixtrading.flashbot.util.stream._
@@ -64,25 +64,38 @@ object DataServer {
   case object ClusterLocality extends Locality
 
   case class DataSourceTerminated(key: String)
+
+  def props: Props = {
+    val fbConfig = FlashbotConfig.load
+    Props(new DataServer(
+      new File(fbConfig.`market-data-root`),
+      fbConfig.sources,
+      fbConfig.exchanges,
+      None, useCluster = false))
+  }
 }
 
 class DataServer(marketDataPath: File,
                  configs: Map[String, DataSourceConfig],
                  exchangeConfigs: Map[String, ExchangeConfig],
-                 ingestConfig: Option[IngestConfig]) extends Actor with ActorLogging {
+                 ingestConfig: Option[IngestConfig],
+                 useCluster: Boolean) extends Actor with ActorLogging {
   import DataServer._
   import DataSourceActor._
 
   implicit val mat = ActorMaterializer()(context)
   implicit val ec: ExecutionContext = context.system.dispatcher
 
-  println("data server")
-
   // Subscribe to cluster MemberUp events to register ourselves with all other data servers.
-  val cluster: Cluster = Cluster(context.system)
-  override def preStart() =
-    cluster.subscribe(self, initialStateMode = InitialStateAsEvents, classOf[MemberUp])
-  override def postStop() = cluster.unsubscribe(self)
+  val cluster: Option[Cluster] = if (useCluster) Some(Cluster(context.system)) else None
+  override def preStart() = {
+    if (cluster.isDefined) {
+      cluster.get.subscribe(self, initialStateMode = InitialStateAsEvents, classOf[MemberUp])
+    }
+  }
+  override def postStop() = {
+    if (cluster.isDefined) cluster.get.unsubscribe(self)
+  }
 
   def register(member: Member): Unit = {
     val remoteServer =
@@ -218,7 +231,7 @@ class DataServer(marketDataPath: File,
     * market data streams without this method is generally not supported. Here we keep track of
     * how many separate bundles we've seen so far. This running count is the new `bundleIndex`.
     */
-  def concatMarketDataStreams[T](sources: List[Source[MarketData[T], NotUsed]]) =
+  def concatMarketDataStreams[T](sources: List[Source[MarketData[T], NotUsed]]): Source[MarketData[T], NotUsed] =
     Source(sources)
       .zipWithIndex
       .flatMapConcat { case (src, i) => src.map(md => (s"${i}_${md.bundleIndex}", md)) }
@@ -244,3 +257,4 @@ class DataServer(marketDataPath: File,
       }
 
 }
+

@@ -1,5 +1,6 @@
 package com.infixtrading.flashbot.core
-import com.infixtrading.flashbot.core.Order.{Limit, OrderType, Side}
+import com.infixtrading.flashbot.models.core.Order
+import com.infixtrading.flashbot.models.core.Order._
 
 sealed trait OrderEvent {
   val orderId: String

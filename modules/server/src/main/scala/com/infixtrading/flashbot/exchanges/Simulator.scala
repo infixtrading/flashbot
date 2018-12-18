@@ -1,10 +1,10 @@
 package com.infixtrading.flashbot.exchanges
 
-import com.infixtrading.flashbot.core.Ladder.ladderFillOrder
-import com.infixtrading.flashbot.core.Order
-import com.infixtrading.flashbot.core.Order._
+import com.infixtrading.flashbot.models.core.Ladder.ladderFillOrder
+import com.infixtrading.flashbot.models.core.Order._
 import com.infixtrading.flashbot.core._
 import com.infixtrading.flashbot.engine.TradingSession
+import com.infixtrading.flashbot.models.core.{Ladder, Order, OrderBook}
 
 import scala.collection.immutable.Queue
 
@@ -122,54 +122,55 @@ class Simulator(base: Exchange, latencyMicros: Long = 0) extends Exchange {
     }
 
     // Update latest depth/pricing data.
-    data match {
-      case Some(md: MarketData[OrderBook]) =>
+    data.map(_.data) match {
+      case Some(book: OrderBook) =>
         // TODO: Turn aggregate full order books into aggregate depths here
         ???
-      case Some(md: MarketData[Ladder]) =>
-        depths = depths + (md.topic -> md.data)
+      case Some(ladder: Ladder) =>
+        depths = depths + (data.get.topic -> ladder)
 
-      case Some(md: MarketData[Priced]) =>
-        prices = prices + (md.topic -> md.data.price)
+      case Some(p: Priced) =>
+        prices = prices + (data.get.topic -> p.price)
 
       /**
         * Match trades against the aggregate book. This is a pretty naive matching strategy.
         * We should use a more precise matching engine for full order books. Also, this mutates
         * our book depths until they are overwritten by a more recent depth snapshot.
         */
-      case Some(md: MarketData[Trade]) if depths.isDefinedAt(md.topic) =>
+      case Some(trade: Trade) if depths.isDefinedAt(data.get.topic) =>
+        val topic = data.get.topic
         // First simulate fills on the aggregate book. Remove the associated liquidity from
         // the depths.
         val simulatedFills =
-          ladderFillOrder(depths(md.topic), md.data.side, Some(md.data.size), None)
+          ladderFillOrder(depths(topic), trade.side, Some(trade.size), None)
         simulatedFills.foreach { case (fillPrice, fillAmount) =>
-            depths = depths + (md.topic -> depths(md.topic).updateLevel(
-              md.data.side match {
+            depths = depths + (topic -> depths(topic).updateLevel(
+              trade.side match {
                 case Buy => Ask
                 case Sell => Bid
-              }, fillPrice, depths(md.topic).quantityAtPrice(fillPrice).get - fillAmount
+              }, fillPrice, depths(topic).quantityAtPrice(fillPrice).get - fillAmount
             ))
         }
 
         // Then use the fills to determine if any of our orders would have executed.
-        if (myOrders.isDefinedAt(md.topic)) {
+        if (myOrders.isDefinedAt(topic)) {
           val lastFillPrice = simulatedFills.last._1
-          val filledOrders = md.data.side match {
+          val filledOrders = trade.side match {
             case Buy =>
-              myOrders(md.topic).asks.filter(_._1 < lastFillPrice).values.toSet.flatten
+              myOrders(topic).asks.filter(_._1 < lastFillPrice).values.toSet.flatten
             case Sell =>
-              myOrders(md.topic).bids.filter(_._1 > lastFillPrice).values.toSet.flatten
+              myOrders(topic).bids.filter(_._1 > lastFillPrice).values.toSet.flatten
           }
           filledOrders.foreach { order =>
             // Remove order from private book
-            myOrders = myOrders + (md.topic -> myOrders(md.topic).done(order.id))
+            myOrders = myOrders + (topic -> myOrders(topic).done(order.id))
 
             // Emit OrderDone event
-            events :+= OrderDone(order.id, md.topic, order.side, Filled, order.price, Some(0))
+            events :+= OrderDone(order.id, topic, order.side, Filled, order.price, Some(0))
 
             // Emit the fill
-            fills :+= Fill(order.id, Some(md.data.id), makerFee, md.topic, order.price.get,
-              order.amount, md.micros, Maker, order.side)
+            fills :+= Fill(order.id, Some(trade.id), makerFee, topic, order.price.get,
+              order.amount, trade.micros, Maker, order.side)
           }
         }
       case _ =>
@@ -195,4 +196,6 @@ class Simulator(base: Exchange, latencyMicros: Long = 0) extends Exchange {
   override def useFundsForMarketBuys: Boolean = base.useFundsForMarketBuys
 
   override def lotSize(pair: Instrument): Option[Double] = base.lotSize(pair)
+
+  override def fetchPortfolio = base.fetchPortfolio
 }

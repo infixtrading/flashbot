@@ -1,6 +1,7 @@
 package com.infixtrading.flashbot.core
 
 import com.infixtrading.flashbot.core.LadderSpread.SpreadConfig
+import com.infixtrading.flashbot.models.core.Ladder
 
 class LadderSpread(val config: SpreadConfig) {
 

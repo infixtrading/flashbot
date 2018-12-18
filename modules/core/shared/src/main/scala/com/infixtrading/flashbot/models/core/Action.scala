@@ -1,6 +1,8 @@
-package com.infixtrading.flashbot.core
+package com.infixtrading.flashbot.models.core
 
-import com.infixtrading.flashbot.core.Order.Side
+import com.infixtrading.flashbot.core.TargetId
+import com.infixtrading.flashbot.models.core.Order.Side
+
 import scala.collection.immutable.Queue
 
 sealed trait Action {

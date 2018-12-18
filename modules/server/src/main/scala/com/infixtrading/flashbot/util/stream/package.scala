@@ -1,13 +1,17 @@
 package com.infixtrading.flashbot.util
 
+import java.time.{Instant, LocalDateTime, ZoneId}
+
 import akka.NotUsed
-import akka.actor.{ActorContext, ActorPath, ActorRef, ActorSystem, RootActorPath}
+import akka.actor.{ActorContext, ActorPath, ActorRef, ActorSystem, Cancellable, RootActorPath}
 import akka.stream.{ActorMaterializer, ActorMaterializerSettings, Supervision}
 import akka.stream.scaladsl.{Flow, Source}
 import akka.pattern.ask
 import akka.util.Timeout
-import com.infixtrading.flashbot.core.{DataAddress, MarketData}
+import com.infixtrading.flashbot.core.MarketData
+import com.infixtrading.flashbot.util.time._
 import com.infixtrading.flashbot.engine.StreamResponse
+import com.infixtrading.flashbot.models.core.{Candle, DataAddress, TimeRange}
 
 import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration._
@@ -44,7 +48,7 @@ package object stream {
       Supervision.Stop
     })
 
-  def iteratorToSource[T](it: Iterator[T])(implicit ec: ExecutionContext) = {
+  def iteratorToSource[T](it: Iterator[T])(implicit ec: ExecutionContext): Source[T, NotUsed] = {
     Source.unfoldAsync[Iterator[T], T](it) { memo =>
       // TODO: Can we use Future.success and Future.failure here?
       // I have a hunch it was causing weird errors and that's why I left it like this.
@@ -64,13 +68,13 @@ package object stream {
     def toSource(implicit ec: ExecutionContext): Source[T, NotUsed] = iteratorToSource(it)
   }
 
-  def actorPathsAreLocal(a: ActorPath, b: ActorPath) =
+  def actorPathsAreLocal(a: ActorPath, b: ActorPath): Boolean =
     RootActorPath(a.address) == RootActorPath(b.address)
 
-  def actorIsLocal(other: ActorRef)(implicit context: ActorContext) =
+  def actorIsLocal(other: ActorRef)(implicit context: ActorContext): Boolean =
     RootActorPath(context.self.path.address) == RootActorPath(other.path.address)
 
-  def senderIsLocal(implicit context: ActorContext) = actorIsLocal(context.sender)
+  def senderIsLocal(implicit context: ActorContext): Boolean = actorIsLocal(context.sender)
 
   implicit def toActorPath(dataAddress: DataAddress): ActorPath =
     ActorPath.fromString(dataAddress.host.get)
@@ -78,9 +82,23 @@ package object stream {
   trait StreamRequest[T]
 
   implicit class StreamRequester(ref: ActorRef) {
-    def <<?[T](req: StreamRequest[T]) = (ref ? req)(Timeout(10 seconds)) match {
-      case fut: Future[StreamResponse[T]] => fut
-    }
+    def <<?[T](req: StreamRequest[T]): Future[StreamResponse[T]] =
+      (ref ? req)(Timeout(10 seconds)) match {
+        case fut: Future[StreamResponse[T]] => fut
+      }
+  }
+
+  def tickTimeRange(range: TimeRange, timeStep: FiniteDuration): Source[Instant, NotUsed] = {
+    val startAt = Instant.ofEpochMilli(range.start/1000)
+    val endAt = Instant.ofEpochMilli(range.end/1000)
+    val isRealTime = range.end == Long.MaxValue
+    if (isRealTime)
+      Source.tick(0 seconds, timeStep, "").zipWithIndex.map(_._2)
+        .map(i => startAt.plusMillis(i * timeStep.toMillis)).mapMaterializedValue(_ => NotUsed)
+    else Source.unfold(startAt)(item => {
+      val next = item.plusMillis(timeStep.toMillis)
+      Some((next, item))
+    }).takeWhile(_.isBefore(endAt))
   }
 
 }

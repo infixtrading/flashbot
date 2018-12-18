@@ -1,22 +1,28 @@
 package com.infixtrading.flashbot.util
 
+import java.time.Instant
+import java.util.Date
+
 import io.circe._
 import io.circe.syntax._
 import java.util.concurrent.TimeUnit.{DAYS, HOURS, MILLISECONDS, MINUTES, SECONDS}
+
 import scala.concurrent.duration.{Duration, FiniteDuration}
 import scala.util.matching.Regex
 
 package object time {
-  private val msFmt: Regex = raw"([0-9]+)ms".r
-  private val secondFmt: Regex = raw"([0-9]+)s".r
-  private val minuteFmt: Regex = raw"([0-9]+)m".r
-  private val hourFmt: Regex = raw"([0-9]+)h".r
-  private val dayFmt: Regex = raw"([0-9]+)d".r
+  private val msFmt: Regex = raw"^([0-9]+)ms$$".r
+  private val secondFmt: Regex = raw"^([0-9]+)s$$".r
+  private val minuteFmt: Regex = raw"^([0-9]+)m$$".r
+  private val minuteFmt2: Regex = raw"^([0-9]+)min$$".r
+  private val hourFmt: Regex = raw"^([0-9]+)h$$".r
+  private val dayFmt: Regex = raw"^([0-9]+)d$$".r
 
-  def parseDurationOpt(str: String): Option[FiniteDuration] = str match {
+  def parseDurationOpt(str: String): Option[FiniteDuration] = str.trim match {
     case msFmt(len: String) => Some(FiniteDuration(len.toInt, MILLISECONDS))
     case secondFmt(len: String) => Some(FiniteDuration(len.toInt, SECONDS))
     case minuteFmt(len: String) => Some(FiniteDuration(len.toInt, MINUTES))
+    case minuteFmt2(len: String) => Some(FiniteDuration(len.toInt, MINUTES))
     case hourFmt(len: String) => Some(FiniteDuration(len.toInt, HOURS))
     case dayFmt(len: String) => Some(FiniteDuration(len.toInt, DAYS))
     case _ => None
@@ -48,4 +54,17 @@ package object time {
   }
 
   def currentTimeMicros: Long = System.currentTimeMillis * 1000
+
+  def parseTime(now: Instant, str: String): Either[Duration, Instant] = {
+    if (str == "now") {
+      Right(now)
+    } else {
+      Left(parseDuration(str))
+    }
+  }
+
+  implicit class MicrosOps(micros: Long) {
+    def microsToDate: Date = new Date(micros / 1000)
+  }
+
 }

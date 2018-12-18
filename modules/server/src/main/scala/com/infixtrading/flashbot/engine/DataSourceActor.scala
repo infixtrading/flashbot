@@ -12,8 +12,9 @@ import io.circe.Json
 import com.infixtrading.flashbot.core._
 import com.infixtrading.flashbot.core.DataSource._
 import com.infixtrading.flashbot.core.MarketData.BaseMarketData
-import com.infixtrading.flashbot.core.Slice.SliceId
+import com.infixtrading.flashbot.models.core.Slice.SliceId
 import com.infixtrading.flashbot.core.FlashbotConfig._
+import com.infixtrading.flashbot.models.core.DataPath
 import com.infixtrading.flashbot.util.time._
 import com.infixtrading.flashbot.util.stream._
 
@@ -53,10 +54,11 @@ class DataSourceActor(marketDataPath: File,
   val snapshotInterval = 4 hours
 
   val cls = getClass.getClassLoader.loadClass(config.`class`)
-  val constructor = cls.getConstructor(classOf[Map[String, DataTypeConfig]])
+//  val constructor = cls.getConstructor(classOf[Map[String, DataTypeConfig]])
+  val constructor = cls.getConstructor()
 
   val dataSource = constructor
-    .newInstance(config.datatypes)
+    .newInstance()
     .asInstanceOf[DataSource]
 
   val types: Map[String, DeltaFmtJson[_]] =

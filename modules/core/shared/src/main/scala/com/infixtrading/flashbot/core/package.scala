@@ -1,33 +1,24 @@
 package com.infixtrading.flashbot
 
-import com.infixtrading.flashbot.core.Order.Side
+import com.infixtrading.flashbot.models.core.Order.Side
 import com.infixtrading.flashbot.util.time.parseDuration
 import java.time.Instant
+
+import com.infixtrading.flashbot.models.core.{Account, Market}
+import io.circe.{Decoder, Encoder}
+import io.circe.generic.auto._
+import io.circe.generic.semiauto._
+
 import scala.concurrent.duration.Duration
 
 package object core {
-  case class TimeRange(from: Long, to: Long = Long.MaxValue)
-  object TimeRange {
-    def build(now: Instant, from: String, to: String): TimeRange = {
-      val fromT = parseTime(now, from)
-      val toT = parseTime(now, to)
-      (fromT, toT) match {
-        case (Right(inst), Left(dur)) => TimeRange(
-          inst.toEpochMilli * 1000,
-          inst.plusMillis(dur.toMillis).toEpochMilli * 1000)
-        case (Left(dur), Right(inst)) => TimeRange(
-          inst.minusMillis(dur.toMillis).toEpochMilli * 1000,
-          inst.toEpochMilli * 1000)
-      }
-    }
+
+  trait HasSecurity extends Any {
+    def security: String
   }
 
-  def parseTime(now: Instant, str: String): Either[Duration, Instant] = {
-    if (str == "now") {
-      Right(now)
-    } else {
-      Left(parseDuration(str))
-    }
+  trait MaybeHasAccount extends Any {
+    def account: Option[Account]
   }
 
   sealed trait PairRole
@@ -72,11 +63,21 @@ package object core {
   }
 
   case class PricePoint(price: Double, micros: Long) extends Timestamped
+
   case class BalancePoint(balance: Double, micros: Long) extends Timestamped
+  object BalancePoint {
+    implicit val en: Encoder[BalancePoint] = deriveEncoder
+    implicit val de: Decoder[BalancePoint] = deriveDecoder
+  }
 
   sealed trait QuoteSide
   case object Bid extends QuoteSide
   case object Ask extends QuoteSide
+
+  object QuoteSide {
+    implicit val en: Encoder[QuoteSide] = deriveEncoder
+    implicit val de: Decoder[QuoteSide] = deriveDecoder
+  }
 
 
   case class Tick(events: Seq[Any] = Seq.empty, exchange: Option[String] = None)

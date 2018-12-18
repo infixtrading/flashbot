@@ -1,6 +1,8 @@
-package com.infixtrading.flashbot.core
+package com.infixtrading.flashbot.models.core
 
-import com.infixtrading.flashbot.core.Order.{Buy, Sell, Side}
+import com.infixtrading.flashbot.core.{OrderChange, OrderDone, OrderEvent, OrderOpen}
+import com.infixtrading.flashbot.models.core.Order.{Buy, Sell, Side}
+
 import scala.collection.immutable.{Queue, TreeMap}
 
 case class OrderBook(orders: Map[String, Order] = Map.empty,

@@ -1,5 +1,6 @@
 package com.infixtrading.flashbot.engine
 
+import java.time.Instant
 import java.util.UUID
 
 import akka.NotUsed
@@ -8,8 +9,10 @@ import akka.stream.scaladsl.{Keep, Sink, Source}
 import akka.stream.{ActorMaterializer, OverflowStrategy}
 import akka.pattern.ask
 import akka.util.Timeout
+import breeze.stats.distributions.Gaussian
 import io.circe._
-import com.infixtrading.flashbot.core.Action.{ActionQueue, CancelLimitOrder, PostLimitOrder, PostMarketOrder}
+import io.circe.syntax._
+import com.infixtrading.flashbot.models.core.Action.{ActionQueue, CancelLimitOrder, PostLimitOrder, PostMarketOrder}
 import com.infixtrading.flashbot.core.DataSource.StreamSelection
 import com.infixtrading.flashbot.core.FlashbotConfig.ExchangeConfig
 import com.infixtrading.flashbot.core.Instrument.CurrencyPair
@@ -20,6 +23,9 @@ import com.infixtrading.flashbot.core.{DataSource, _}
 import com.infixtrading.flashbot.engine.DataServer.{ClusterLocality, DataStreamReq}
 import com.infixtrading.flashbot.engine.TradingSession._
 import com.infixtrading.flashbot.exchanges.Simulator
+import com.infixtrading.flashbot.models.api.{LogMessage, OrderTarget}
+import com.infixtrading.flashbot.models.core.{Account, DataPath, Market, Portfolio}
+import com.infixtrading.flashbot.report.Report.ReportError
 import com.infixtrading.flashbot.report.ReportEvent._
 import com.infixtrading.flashbot.report._
 
@@ -30,12 +36,12 @@ import scala.concurrent.duration._
 import scala.util.{Failure, Success, Try}
 
 class TradingSessionActor(strategyClassNames: Map[String, String],
-                          exchangeConfigs: Map[String, ExchangeConfig],
+                          getExchangeConfigs: () => Map[String, ExchangeConfig],
                           strategyKey: String,
                           strategyParams: Json,
-                          mode: Mode,
+                          mode: TradingSessionMode,
                           sessionEventsRef: ActorRef,
-                          initialPortfolio: Portfolio,
+                          portfolioRef: PortfolioRef,
                           initialReport: Report,
                           dataServer: ActorRef) extends Actor with ActorLogging {
 
@@ -61,21 +67,31 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
   def setup(): Future[SessionSetup] = {
 
     implicit val timeout: Timeout = Timeout(10 seconds)
+    val exchangeConfigs = getExchangeConfigs()
+
+    log.debug("Exchange configs: {}", exchangeConfigs)
 
     // Set the time. Using system time just this once.
     val sessionMicros = currentTimeMicros
+    val now = Instant.ofEpochMilli(sessionMicros / 1000)
 
     // Create the session loader
-    val sessionLoader: SessionLoader = new SessionLoader(exchangeConfigs, dataServer)
+    val sessionLoader: SessionLoader = new SessionLoader(getExchangeConfigs, dataServer)
+
+    val initialPortfolio = portfolioRef.getPortfolio
 
     // Create default instruments for each currency pair configured for an exchange.
-    // We have to cast it because apparently Set isn't covariant.
     def defaultInstruments(exchange: String): Set[Instrument] =
-      exchangeConfigs(exchange).pairs.asInstanceOf[Set[Instrument]]
+      exchangeConfigs(exchange).pairs.getOrElse(Seq.empty).map(CurrencyPair(_)).toSet
+
+    def streamSelection(path: DataPath): StreamSelection = mode match {
+      case Backtest(range) => StreamSelection(path, range.start, range.end)
+      case _ => StreamSelection(path, sessionMicros, polling = true)
+    }
 
     // Load a new instance of an exchange.
     def loadExchange(name: String): Try[Exchange] =
-      sessionLoader.loadNewExchange(exchangeConfigs(name))
+      sessionLoader.loadNewExchange(name)
         .map(plainInstance => {
           // Wrap it in our Simulator if necessary.
           val instance = if (mode == Live) plainInstance else new Simulator(plainInstance)
@@ -88,10 +104,14 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
           instance
         })
 
+    log.debug("Starting async setup")
+
     for {
       // Check that we have a config for the requested strategy.
       strategyClassName <- strategyClassNames.get(strategyKey)
         .toTry(s"Unknown strategy: $strategyKey").toFut
+
+      _ = { log.debug("Found strategy class") }
 
       // Load the strategy
       strategy <- Future.fromTry[Strategy](sessionLoader.loadNewStrategy(strategyClassName))
@@ -100,6 +120,9 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
         // Set the buffer
         strategy.buffer = new VarBuffer(initialReport.values.mapValues(_.value))
 
+        // Set the bar size
+        strategy.sessionBarSize = java.time.Duration.ofSeconds(initialReport.barSize.toSeconds)
+
         // Load params
         strategy.loadParams(strategyParams)
       }
@@ -107,40 +130,70 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
       // Initialize the strategy and collect data paths
       paths <- strategy.initialize(initialPortfolio, sessionLoader)
 
+      // See which of the paths can be resolved by the strategy itself.
+      selfPaths <- Future.sequence(paths.map { path =>
+        strategy.resolveMarketData(streamSelection(path))
+      }) map { ret =>
+        (paths zip ret) collect {
+          case (path, Some(value)) => path -> value
+        } toMap
+      }
+
+      _ = { log.debug("Resolved {} streams locally: {}.", selfPaths.size, selfPaths) }
+
+      // The rest of the paths which still need to be resolved.
+      remainingPaths = paths.diff(selfPaths.keys.toSeq)
+
       // Load the exchanges
-      exchangeNames: Set[String] = paths.toSet[DataPath].map(_.source).intersect(exchangeConfigs.keySet)
+      exchangeNames: Set[String] = paths.toSet[DataPath].map(_.source)
+        .intersect(exchangeConfigs.keySet)
+      _ = { log.debug("Loading exchanges: {}.", exchangeNames) }
+
       exchanges: Map[String, Exchange] <- Future.sequence(exchangeNames.map(n =>
         loadExchange(n).map(n -> _).toFut)).map(_.toMap)
+      _ = { log.debug("Loaded exchanges: {}.", exchanges) }
 
       // Load the instruments.
-      instruments <- Future.sequence(exchanges.map { case (exName, ex) =>
-        // Merge exchange provided instruments with default ones.
-        ex.instruments.map((is: Set[Instrument]) => exName -> (defaultInstruments(exName) ++ is))})
-
+      instruments <- Future.sequence(exchanges.map {
+          case (exName, ex) =>
+            // Merge exchange provided instruments with default ones.
+            ex.instruments
+              .map((is: Set[Instrument]) => exName -> (defaultInstruments(exName) ++ is))}
+        )
         // Filter out any instruments that were not mentioned as a topic
         // in any of the subscribed data paths.
         .map(_.toMap.mapValues(_.filter((inst: Instrument) =>
             paths.map(_.topic).contains(inst.symbol))))
-
         // Remove empties.
         .map(_.filter(_._2.nonEmpty))
 
       // Ask the local data server to stream the data at the given paths.
-      streams <- Future.sequence(paths.map((path: DataPath) => {
-        val selection = mode match {
-          case Backtest(range) => StreamSelection(path, range.from, range.to)
-          case _ => StreamSelection(path, sessionMicros, polling = true)
-        }
-        (dataServer ? DataStreamReq(selection, ClusterLocality))
-          .map { case se: StreamResponse[MarketData[_]] => se.toSource }
+      serverStreams <- Future.sequence(remainingPaths.map((path: DataPath) => {
+        val selection = streamSelection(path)
+        for {
+          mdOverrideSrc <- strategy.resolveMarketData(selection)
+          src <- mdOverrideSrc.map(Future.successful).getOrElse(
+            (dataServer ? DataStreamReq(selection, ClusterLocality))
+              .map { case se: StreamResponse[MarketData[_]] => se.toSource })
+        } yield src
       }))
+
+      // Combine the server and local streams.
+      streams = serverStreams ++ selfPaths.values
+      _ = { log.debug("Resolved {} market data streams out of" +
+        " {} paths requested by the strategy.", streams.size, paths.size) }
     } yield
-      SessionSetup(instruments, exchanges, strategy,
-        UUID.randomUUID.toString, streams, sessionMicros)
+      SessionSetup(new InstrumentIndex(instruments), exchanges, strategy,
+        UUID.randomUUID.toString, streams, sessionMicros, initialPortfolio)
   }
 
+  val gaussian = Gaussian(0, 1)
+  var lastEquity = 0d
+
   def runSession(sessionSetup: SessionSetup): String = sessionSetup match {
-    case SessionSetup(instruments, exchanges, strategy, sessionId, streams, sessionMicros) =>
+    case SessionSetup(instruments, exchanges, strategy, sessionId, streams,
+          sessionMicros, initialPortfolio) =>
+      implicit val conversions = GraphConversions
 
       /**
         * The trading session that we fold market data over.
@@ -149,10 +202,10 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
                     protected[engine] var portfolio: Portfolio = initialPortfolio,
                     protected[engine] var prices: PriceIndex = PriceIndex.empty,
                     protected[engine] var orderManagers: Map[String, TargetManager] =
-                        instruments.instruments.mapValues(_ => TargetManager(instruments)),
+                        instruments.byExchange.mapValues(_ => TargetManager(instruments)),
                     // Create action queue for every exchange
                     protected[engine] var actionQueues: Map[String, ActionQueue] =
-                        instruments.instruments.mapValues(_ => ActionQueue()),
+                        instruments.byExchange.mapValues(_ => ActionQueue()),
                     protected[engine] var emittedReportEvents: Seq[ReportEvent] = Seq.empty)
         extends TradingSession {
 
@@ -205,6 +258,10 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
         // Lift-off
         .scan(new Session()) { case (session, dataOrTick) =>
 
+          // Load the portfolio into the session from the PortfolioRef on every scan iteration.
+          val initPortfolio = portfolioRef.getPortfolio
+          session.portfolio = initPortfolio
+
           // First, setup the event buffer so that we can handle synchronous events.
           val thisEventBuffer: mutable.Buffer[Any] = new ArrayBuffer[Any]()
           eventBuffer.put(thisEventBuffer)
@@ -242,9 +299,10 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
           val exchange: Option[Exchange] = ex.map(exchanges(_))
 
           // If this data has price info attached, emit that price info.
-          data match {
-            case Some(md: MarketData[Priced]) =>
-              session.prices = session.prices.withPrice(Market(md.source, md.topic), md.data.price)
+          data.map(_.data) match {
+            case Some(pd: Priced) =>
+//              log.debug("Found priced data {}", data)
+              session.prices.setPrice(Market(data.get.source, data.get.topic), pd.price)
             case _ =>
           }
 
@@ -290,6 +348,15 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
           def acc(currency: String) = Account(ex.get, currency)
           session.portfolio = fills.foldLeft(session.portfolio) {
             case (portfolio, fill) =>
+
+              session.send(CollectionEvent("fill_size", fill.size.asJson))
+              session.send(CollectionEvent("gauss", (gaussian.draw() * 10 + 5).asJson))
+
+              if (data.isDefined) {
+                val dur = (data.get.micros - fill.micros) / 1000000
+//                log.debug(s"Diff between now and fill time: {} seconds", dur)
+              }
+
               // Execute the fill on the portfolio
               val instrument = instruments(ex.get, fill.instrument)
               val newPortfolio = instrument.settle(ex.get, fill, portfolio)
@@ -303,7 +370,7 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
               // The settlement account must be an asset
               val settlementAccount = acc(instrument.settledIn)
               session.send(BalanceEvent(settlementAccount,
-                newPortfolio.balance(settlementAccount), fill.micros))
+                newPortfolio.balance(settlementAccount).qty, fill.micros))
 
               // The security account may be a position or an asset
               val market = Market(ex.get, instrument.symbol)
@@ -313,12 +380,13 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
               } else {
                 val assetAccount = acc(instrument.security.get)
                 session.send(BalanceEvent(assetAccount,
-                  portfolio.balance(assetAccount), fill.micros))
+                  portfolio.balance(assetAccount).qty, fill.micros))
               }
 
+              val equity = newPortfolio.equity()(session.prices, instruments).qty
+              lastEquity = equity
               // And calculate our equity.
-              session.send(TimeSeriesEvent("equity_usd",
-                newPortfolio.equity()(session.prices), fill.micros))
+              session.send(BalanceEvent(Account("all", "equity"), equity, fill.micros))
 
               // Return updated portfolio
               newPortfolio
@@ -343,12 +411,12 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
           // Process the events.
           events foreach {
             // Send report events to the events actor ref.
-            case SessionReportEvent(reportEvent) =>
+            case reportEvent: ReportEvent =>
               val re = reportEvent match {
-                case tsEvent: TimeSeriesEvent =>
-                  tsEvent.copy(key = "local." + tsEvent.key)
-                case tsCandle: TimeSeriesCandle =>
-                  tsCandle.copy(key = "local." + tsCandle.key)
+                case ce: CandleEvent => ce match {
+                  case ev: CandleAdd => ev.copy("local." + ev.series)
+                  case ev: CandleUpdate => ev.copy("local." + ev.series)
+                }
                 case otherReportEvent => otherReportEvent
               }
               sessionEventsRef ! re
@@ -392,7 +460,7 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
                     exchanges(exName)
                       .order(LimitOrderRequest(clientId, side, targetId.instrument, size, price, postOnly))
 
-                  case CancelLimitOrder(targetId) =>
+                  case action @ CancelLimitOrder(targetId) =>
                     session.orderManagers += (exName ->
                       session.orderManagers(exName).initCancelOrder(targetId))
                     exchanges(exName).cancel(
@@ -401,6 +469,11 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
               case _ =>
             }
           }
+
+          // At the end of every scan iteration, we merge the resulting portfolio changes into
+          // the portfolio ref.
+          val portfolioDiff = session.portfolio.diff(initPortfolio)
+          portfolioRef.mergePortfolio(portfolioDiff)
 
           session
         }
@@ -413,10 +486,10 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
       fut.onComplete {
         case Success(_) =>
           log.info("session success")
-          sessionEventsRef ! PoisonPill
+          sessionEventsRef ! SessionComplete(error = None)
         case Failure(err) =>
           log.error(err, "session failed")
-          sessionEventsRef ! PoisonPill
+          sessionEventsRef ! SessionComplete(error = Some(ReportError(err)))
       }
 
       // Return the session id
@@ -425,12 +498,15 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
 
   override def receive: Receive = {
     case "start" =>
+      val origSender = sender
       setup().onComplete {
         case Success(sessionSetup) =>
-          sender ! (sessionSetup.sessionId, sessionSetup.sessionMicros)
+          log.debug("Session setup success")
+          origSender ! (sessionSetup.sessionId, sessionSetup.sessionMicros)
           runSession(sessionSetup)
         case Failure(err) =>
-          sender ! err
+          log.error(err, "Session setup failure")
+          origSender ! err
       }
   }
 }
