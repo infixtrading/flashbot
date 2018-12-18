@@ -42,7 +42,7 @@ object FixedSize {
   implicit class ConvertFixedSizeOps(size: FixedSizeD) {
     def as(key: AssetKey)(implicit prices: PriceIndex,
                           instruments: InstrumentIndex): FixedSizeD =
-      FixedSize(prices.conversions(size.security, key).price * size.qty, key.security)
+      FixedSize(prices.convert(size.security, key).get.price * size.qty, key.security)
   }
 
   implicit class ToFixedSizeOps(qty: Double) {

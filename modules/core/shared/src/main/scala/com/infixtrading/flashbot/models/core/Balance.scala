@@ -10,9 +10,9 @@ object Balance {
   implicit class ConvertBalanceOps(balance: Balance) {
     def as(key: AssetKey)(implicit prices: PriceIndex,
                           instruments: InstrumentIndex): Balance = {
-      val newPrice: FixedPrice = prices.conversions(balance.assetKey, key)
-//      println("BALANCE", balance, key, newPrice)
-      Balance(newPrice.pair._2.account.get, newPrice.price * balance.qty)
+      val newPrice = prices.convert(balance.assetKey, key).get
+      val quoteKey = newPrice.pair._2
+      Balance(quoteKey.account.getOrElse(balance.account), newPrice.price * balance.qty)
     }
   }
 }

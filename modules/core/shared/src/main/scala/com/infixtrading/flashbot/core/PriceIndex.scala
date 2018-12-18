@@ -17,8 +17,8 @@ class PriceIndex(private val priceMap: mutable.Map[Market, Double] = mutable.Map
                     concurrent.TrieMap.empty[CacheKey, Seq[FixedPrice[Account]]])
                 (implicit val conversions: Conversions) {
 
-  def pricePathOpt(from: AssetKey, to: AssetKey, approx: Boolean)
-                  (implicit instruments: InstrumentIndex): Option[Seq[FixedPrice[Account]]] = {
+  private def pricePathOpt(from: AssetKey, to: AssetKey, approx: Boolean)
+                          (implicit instruments: InstrumentIndex): Option[Seq[FixedPrice[Account]]] = {
     val mentionedExchanges = Seq(from.exchange, to.exchange).collect { case Some(ex) => ex }
     val filteredPrices =
       if (approx) markets
@@ -31,7 +31,9 @@ class PriceIndex(private val priceMap: mutable.Map[Market, Double] = mutable.Map
       // but the prices are probably outdated, so update them using the current price map.
       .map(_.map(fp => {
         val priceForward = instruments.findMarket(fp.base, fp.quote).flatMap(priceMap.get)
-        val priceBackward = instruments.findMarket(fp.quote, fp.base).flatMap(priceMap.get)
+        val priceBackward = instruments.findMarket(fp.quote, fp.base)
+          .flatMap(priceMap.get).map(1.0 / _)
+
         fp.copy(price = priceForward.orElse(priceBackward).get)
       }))
       // If not coming from the cache, the prices must be correct already.
@@ -44,14 +46,31 @@ class PriceIndex(private val priceMap: mutable.Map[Market, Double] = mutable.Map
     pathOpt
   }
 
-  //  def convert(account: Account, value: Double, targetAsset: String): Double = ???
+  /**
+    * Convert using only the prices on this exchange, unless `approx` is true. In that
+    * case, we fallback to other exchanges in case we can't find a conversion on this one.
+    */
+  def convert(source: AssetKey, target: AssetKey, approx: Boolean)
+             (implicit instruments: InstrumentIndex): Option[FixedPrice[AssetKey]] = {
+    val default = FixedPrice(1.0, (source, target))
+    if (equiv(source.security, target.security) && (source.exchange == target.exchange)) {
+      Some(default)
+    } else {
+      implicit val pi: PriceIndex = this
+      val pathOpt = pricePathOpt(source, target, approx)
 
-  //  def filterBase(fn: String => Boolean): PriceMap = prices.filterKeys(p => fn(p.product.base))
-  //  def filterQuote(fn: String => Boolean): PriceMap = prices.filterKeys(p => fn(p.product.quote))
+      pathOpt map (path =>
+        if (path isEmpty) default
+        else path reduce (_ compose _) map AssetKey.apply)
+    }
+  }
 
-//  private
-
-//  def markets = priceMap.keySet
+  /**
+    * Try to convert using only the prices on this exchange. Then, fallback to all exchanges.
+    */
+  def convert(source: AssetKey, target: AssetKey)
+             (implicit instruments: InstrumentIndex): Option[FixedPrice[AssetKey]] =
+    convert(source, target, approx = false).orElse(convert(source, target, approx = true))
 
   def get(symbol: String): Option[Double] = {
     val matches = markets.filter(_.symbol == symbol)

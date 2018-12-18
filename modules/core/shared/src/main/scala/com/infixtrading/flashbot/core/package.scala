@@ -13,8 +13,12 @@ import scala.concurrent.duration.Duration
 
 package object core {
 
-  trait HasSecurity {
+  trait HasSecurity extends Any {
     def security: String
+  }
+
+  trait MaybeHasAccount extends Any {
+    def account: Option[Account]
   }
 
   sealed trait PairRole

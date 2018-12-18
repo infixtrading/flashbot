@@ -10,14 +10,12 @@ import json.Schema
 import com.github.andyglow.jsonschema.AsCirce._
 import io.circe._
 import io.circe.generic.semiauto._
-import com.infixtrading.flashbot.core.Conversions._
 import com.infixtrading.flashbot.core.DataSource.StreamSelection
 import com.infixtrading.flashbot.core.Instrument.CurrencyPair
 import com.infixtrading.flashbot.core._
 import com.infixtrading.flashbot.models.api.OrderTarget
 import com.infixtrading.flashbot.models.core.FixedSize.FixedSizeD
 import com.infixtrading.flashbot.models.core._
-import com.infixtrading.flashbot.report.ReportEvent._
 
 import scala.concurrent.Future
 

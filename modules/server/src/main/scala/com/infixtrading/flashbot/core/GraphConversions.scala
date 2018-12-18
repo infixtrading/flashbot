@@ -137,19 +137,21 @@ object GraphConversions extends Conversions {
 
     val dijkstras = new DijkstraShortestPath[AssetKey, Edge[_]](graph)
 
-//    printGraph
-
     var edgeSol: Option[Seq[FixedPrice[Account]]] = None
     try {
       val foo = dijkstras.getPath(baseKey, quoteKey)
-      val sol = foo.getEdgeList
-      edgeSol = Option(sol.asScala.toVector.collect {
-        case pe: PriceEdge => pe.fp
-      })
+      val sol: util.List[Edge[_]] = foo.getEdgeList
+      val solScala: Seq[Edge[_]] = sol.asScala.toVector
+      val priceEdges: Seq[PriceEdge] = solScala.map {
+        case _: Equiv => None
+        case pe: PriceEdge => Some(pe)
+      } collect { case Some(x) => x }
+      edgeSol = Option(priceEdges.map(_.fp))
     } catch {
       case npe: NullPointerException =>
         println(s"Warning: No solution found for $baseKey -> $quoteKey conversion.")
     }
+
     edgeSol
   }
 }
