@@ -4,7 +4,7 @@ import java.io.File
 
 import akka.NotUsed
 import akka.actor.SupervisorStrategy.Restart
-import akka.actor.{Actor, ActorLogging, ActorPath, ActorRef, ActorSelection, OneForOneStrategy, Props, RootActorPath, SupervisorStrategy}
+import akka.actor.{Actor, ActorLogging, ActorPath, ActorRef, ActorRefFactory, ActorSelection, OneForOneStrategy, Props, RootActorPath, SupervisorStrategy}
 import akka.cluster.{Cluster, Member}
 import akka.cluster.ClusterEvent.{InitialStateAsEvents, MemberUp}
 import akka.pattern._
@@ -12,7 +12,7 @@ import akka.stream.{ActorMaterializer, SourceRef}
 import akka.stream.scaladsl.{Source, StreamRefs}
 import akka.util.Timeout
 import com.infixtrading.flashbot.core.DataSource._
-import com.infixtrading.flashbot.core.{DeltaFmt, DeltaFmtJson, MarketData}
+import com.infixtrading.flashbot.core.{DeltaFmt, DeltaFmtJson, FlashbotConfig, MarketData}
 import com.infixtrading.flashbot.core.DeltaFmt._
 import com.infixtrading.flashbot.core.FlashbotConfig.{DataSourceConfig, ExchangeConfig, IngestConfig}
 import com.infixtrading.flashbot.util.stream._
@@ -64,6 +64,15 @@ object DataServer {
   case object ClusterLocality extends Locality
 
   case class DataSourceTerminated(key: String)
+
+  def props: Props = {
+    val fbConfig = FlashbotConfig.load
+    Props(new DataServer(
+      new File(fbConfig.`market-data-root`),
+      fbConfig.sources,
+      fbConfig.exchanges,
+      None, useCluster = false))
+  }
 }
 
 class DataServer(marketDataPath: File,
@@ -76,8 +85,6 @@ class DataServer(marketDataPath: File,
 
   implicit val mat = ActorMaterializer()(context)
   implicit val ec: ExecutionContext = context.system.dispatcher
-
-  println("data server")
 
   // Subscribe to cluster MemberUp events to register ourselves with all other data servers.
   val cluster: Option[Cluster] = if (useCluster) Some(Cluster(context.system)) else None
@@ -250,3 +257,4 @@ class DataServer(marketDataPath: File,
       }
 
 }
+

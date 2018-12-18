@@ -25,6 +25,10 @@ case class TradingEngineState(bots: Map[String, BotState] = Map.empty,
     case EngineStarted(micros) =>
       copy(startedAtMicros = Some(micros))
 
+    case BotConfigured(micros, id, config) =>
+      val state = bots.getOrElse(id, BotState(None, Seq.empty)).copy(config = Some(config))
+      copy(bots = bots + (id -> state ))
+
     /**
       * A bot session started.
       */

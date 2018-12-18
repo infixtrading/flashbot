@@ -122,9 +122,9 @@ class TradingEngineSpec
       val report = Await.result((engine ? BacktestQuery(
         "lookahead",
         params.asJson.pretty(Printer.noSpaces),
-        TimeRange.build(now, 10 minutes),
+        TimeRange.build(now, 1 hour),
         Portfolio(
-          Map(Account("bitfinex/eth") -> 8.0, Account("bitfinex/usd") -> 800),
+          Map(Account("bitfinex/eth") -> 0, Account("bitfinex/usd") -> 800),
           Map.empty
         ).asJson.pretty(Printer.noSpaces),
         Some(1 minute),
@@ -135,7 +135,8 @@ class TradingEngineSpec
 
       report.error shouldBe None
 
-      println(report.collections.keySet)
+      println("Collections: ", report.collections.keySet)
+      println("Time series: ", report.timeSeries.keySet)
 
       def reportTimePeriod(report: Report): Class[_ <: RegularTimePeriod] =
         (report.barSize.length, report.barSize.unit) match {
@@ -209,7 +210,11 @@ class TradingEngineSpec
         bp <- report.collections("all/equity").map(_.as[BalancePoint].right.get)
       } yield (bp.micros, bp.balance)
 
-      val mychart = XYLineChart(mydata)
+      val priceData =
+        for(price <- report.timeSeries("local.bitfinex.eth_usd").dropRight(1))
+        yield (price.micros / 1000, price.close)
+
+      val mychart = XYLineChart(priceData)
 
       mychart.show("Equity")
 

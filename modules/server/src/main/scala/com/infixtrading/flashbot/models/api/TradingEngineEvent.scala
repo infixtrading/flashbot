@@ -1,4 +1,5 @@
 package com.infixtrading.flashbot.models.api
+import com.infixtrading.flashbot.core.FlashbotConfig.BotConfig
 import com.infixtrading.flashbot.core.TradingSessionMode
 import com.infixtrading.flashbot.models.core.{Account, Market, Portfolio, Position}
 import com.infixtrading.flashbot.report.{Report, ReportDelta}
@@ -36,4 +37,6 @@ case class BalancesUpdated(botId: String,
 case class PositionUpdated(botId: String,
                            market: Market,
                            position: Position) extends SessionUpdated
+
+case class BotConfigured(micros: Long, id: String, config: BotConfig) extends TradingEngineEvent
 

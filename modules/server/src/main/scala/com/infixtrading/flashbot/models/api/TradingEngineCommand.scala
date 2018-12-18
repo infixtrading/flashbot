@@ -8,8 +8,6 @@ import io.circe.Json
 
 sealed trait TradingEngineCommand
 
-case object StartEngine extends TradingEngineCommand
-
 case class ConfigureBot(id: String,
                         strategyKey: String,
                         strategyParams: String,

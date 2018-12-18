@@ -385,9 +385,9 @@ lazy val server = flashbotModule("server", previousFBVersion).settings(
     "com.github.andyglow" % "scala-jsonschema-circe-json_2.12" % "0.0.8",
     "de.sciss" %% "fingertree" % "1.5.2",
 
-    "io.circe" %% "circe-config" % "0.5.0"
+    "io.circe" %% "circe-config" % "0.5.0",
 
-//    "com.twitter" %% "chill-akka" % "0.9.3"
+    "com.twitter" %% "chill-akka" % "0.9.3"
   ))
 ).dependsOn(core)
 

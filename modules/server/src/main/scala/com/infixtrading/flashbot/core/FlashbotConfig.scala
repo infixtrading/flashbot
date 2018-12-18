@@ -7,6 +7,8 @@ import io.circe._
 import io.circe.config.syntax._
 import io.circe.generic.auto._
 
+import scala.util.Try
+
 case class FlashbotConfig(`api-key`: Option[String],
                           `data-root`: String,
                           `market-data-root`: String,
@@ -15,7 +17,8 @@ case class FlashbotConfig(`api-key`: Option[String],
                           strategies: Map[String, String],
                           exchanges: Map[String, ExchangeConfig],
                           sources: Map[String, DataSourceConfig],
-                          bots: BotConfigJson)
+                          bots: BotConfigJson,
+                          akka: Config)
 
 object FlashbotConfig {
 
@@ -27,7 +30,7 @@ object FlashbotConfig {
   implicit val pd: Decoder[Position] = Position.postionDe
 
   case class BotConfig(strategy: String,
-                       mode: String,
+                       mode: TradingSessionMode,
                        params: Option[Json],
                        `initial-assets`: Option[Map[String, Double]],
                        `initial-positions`: Option[Map[String, Position]])
@@ -39,6 +42,12 @@ object FlashbotConfig {
 //  implicit val configEncoder: Encoder[FlashbotConfig] = deriveEncoder[FlashbotConfig]
 //  implicit val configDecoder: Decoder[FlashbotConfig] = deriveDecoder[FlashbotConfig]
 
-  def load(config: Config): Either[Error, FlashbotConfig] = config.as[FlashbotConfig]
-  def load(): Either[Error, FlashbotConfig] = load(ConfigFactory.load().getConfig("flashbot"))
+//  def load(config: Config): Either[Error, FlashbotConfig] =
+//    config.as[FlashbotConfig].map(c => c.copy(akka = ))
+  def tryLoad: Try[FlashbotConfig] = {
+    val app = ConfigFactory.load()
+    val fb = app.getConfig("flashbot")
+    fb.as[FlashbotConfig].map(c => c.copy(akka = fb.withFallback(app))).toTry
+  }
+  def load: FlashbotConfig = tryLoad.get
 }

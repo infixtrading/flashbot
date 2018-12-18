@@ -60,7 +60,7 @@ class LookAheadCandleStrategy extends Strategy
   val path1 = DataPath("bitfinex", "eth_usd", "candles_5s")
   def dataSeqs(tr: TimeRange)(implicit mat: Materializer): Map[DataPath, Seq[MarketData[Candle]]] = Map(
     path1 -> Await.result(
-      TimeSeriesTap.prices(100.0, .2, .6, tr, 30 seconds).map {
+      TimeSeriesTap.prices(100.0, .2, .6, tr, timeStep = 1 minute).map {
         case (instant, price) =>
           val micros = instant.toEpochMilli * 1000
           BaseMarketData(Candle(micros, price, price, price, price, 0), path1, micros, 1)
@@ -110,34 +110,17 @@ class LookAheadCandleStrategy extends Strategy
         val market = Market(md.source, md.topic)
         val pair = CurrencyPair(md.topic)
 
-        // Price about to go up, as much as we can.
+        def buy() = marketOrder(market,
+          ctx.getPortfolio.balance(Account(md.source, pair.quote)).size)
+
+        def sell() = marketOrder(market,
+          -ctx.getPortfolio.balance(Account(md.source, pair.base)).size)
+
+        // Price about to go up, buy as much as we can.
         if (prediction.get > candle.close) {
-          val account = Account(md.source, pair.quote)
-//          println(candle, prediction)
-//          println("buy")
-//          println(market)
-//          println(ctx.getPortfolio)
-//          println(ctx.getPortfolio.balance(account))
-//          println(ctx.getPortfolio.balance(account).size)
-          val amt = ctx.getPortfolio.balance(account).size
-          println(s"BUY $amt at ${ctx.getPrices.get(market)}. Prediction: ${prediction.get}", ctx.getPortfolio.balances)
-          marketOrder(market, amt)
-//          marketOrder(market,
-//            FixedSize(ctx.getPortfolio.assets(Account(md.source, pair.quote)), pair.quote))
+          if (params.sabotage) sell() else buy()
         } else if (prediction.get < candle.close) {
-          val account = Account(md.source, pair.base)
-//          println(candle, prediction)
-//          println("sell")
-//          println(market)
-//          println(ctx.getPortfolio)
-//          println(ctx.getPortfolio.balance(account))
-//          println(-ctx.getPortfolio.balance(account).size)
-          // Price about to go down, sell everything!
-          val amt = -ctx.getPortfolio.balance(account).size
-          println(s"SELL $amt at ${ctx.getPrices.get(market)}. Prediction: ${prediction.get}", ctx.getPortfolio.balances)
-          marketOrder(market, amt)
-//          marketOrder(market,
-//            FixedSize(-ctx.getPortfolio.assets(Account(md.source, pair.base)), pair.base))
+          if (params.sabotage) buy() else sell()
         }
       } else {
         prediction = None

@@ -1,12 +1,14 @@
+package com.infixtrading.flashbot.strategies
+
 
 import com.infixtrading.flashbot.core.MarketData
 import com.infixtrading.flashbot.engine.{SessionLoader, Strategy, TradingSession}
-import com.infixtrading.flashbot.models.core.{Candle, DataPath, Portfolio}
+import com.infixtrading.flashbot.models.core.{Candle, Portfolio}
 import io.circe.Decoder
 import io.circe.generic.semiauto._
 
-import scala.concurrent.Future
 import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.Future
 
 class ScannerStrategy extends Strategy {
 

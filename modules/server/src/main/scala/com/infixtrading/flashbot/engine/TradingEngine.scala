@@ -39,7 +39,7 @@ class TradingEngine(engineId: String,
                     strategyClassNames: Map[String, String],
                     defaultExchangeConfigs: Map[String, ExchangeConfig],
                     defaultBotConfigs: Map[String, BotConfig],
-                    dataServer: ActorRef)
+                    dataServerInfo: Either[ActorRef, Props])
   extends PersistentActor with ActorLogging {
 
   private implicit val system: ActorSystem = context.system
@@ -47,9 +47,10 @@ class TradingEngine(engineId: String,
   private implicit val ec: ExecutionContext = system.dispatcher
   private implicit val timeout: Timeout = Timeout(5 seconds)
 
-  override def persistenceId: String = "trading-engine"
-
+  override def persistenceId: String = engineId
   private val snapshotInterval = 100000
+
+  val dataServer = dataServerInfo.left.getOrElse(context.actorOf(dataServerInfo.right.get))
 
   /**
     * The portfolio instance which represents your actual balances on all configured exchanges.
@@ -150,6 +151,14 @@ class TradingEngine(engineId: String,
           (Done, PositionUpdated(botId, market, position) :: deltas)
         case _ => (Done, deltas)
       })
+
+    case ConfigureBot(id, strategyKey, strategyParams, mode, initialPortfolio) =>
+      parse(strategyParams).toTry.toFut.map(params => (Done,
+        Seq(BotConfigured(currentTimeMicros, id,
+          BotConfig(strategyKey, mode, Some(params),
+            Some(initialPortfolio.assets.map { case (acc, dbl) => acc.toString -> dbl}),
+            Some(initialPortfolio.positions.map { case (m, pos) => m.toString -> pos } ))))))
+
   }
 
   /**
@@ -422,15 +431,13 @@ class TradingEngine(engineId: String,
     */
   private def startBot(name: String): Future[TradingEngineEvent] = {
     getBotConfigs(name) match {
-      case BotConfig(strategy, modeStr, paramsOpt, initial_assets, initial_positions) =>
+      case BotConfig(strategy, mode, paramsOpt, initial_assets, initial_positions) =>
 
         val params = paramsOpt.getOrElse(json"{}")
         val initialAssets = initial_assets.getOrElse(Map.empty)
           .map(kv => Account.parse(kv._1) -> kv._2)
         val initialPositions = initial_positions.getOrElse(Map.empty)
           .map(kv => Market.parse(kv._1) -> kv._2)
-
-        val mode = TradingSessionMode(modeStr)
 
         // Build our PortfolioRef. Paper trading bots have an isolated portfolio while live bots
         // share the global one.
@@ -504,4 +511,9 @@ class TradingEngine(engineId: String,
 }
 
 object TradingEngine {
+  def props(name: String): Props = {
+    val fbConfig = FlashbotConfig.load
+    Props(new TradingEngine(name, fbConfig.strategies, fbConfig.exchanges,
+      Map.empty, Right(DataServer.props)))
+  }
 }
