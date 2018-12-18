@@ -1,7 +1,7 @@
 package com.infixtrading.flashbot.core
 
 import com.infixtrading.flashbot.core.Instrument.CurrencyPair
-import com.infixtrading.flashbot.models.core.{FixedPrice, Market}
+import com.infixtrading.flashbot.models.core.{Account, FixedPrice, Market}
 
 import scala.collection.mutable
 import scala.collection
@@ -13,20 +13,31 @@ import PriceIndex._
   * typically be populated from the last trade price or a candle.
   */
 class PriceIndex(private val priceMap: mutable.Map[Market, Double] = mutable.Map.empty,
-                 private val pricePathCache: concurrent.Map[CacheKey, Seq[FixedPrice]] =
-                    concurrent.TrieMap.empty[CacheKey, Seq[FixedPrice]])
+                 private val pricePathCache: concurrent.Map[CacheKey, Seq[FixedPrice[Account]]] =
+                    concurrent.TrieMap.empty[CacheKey, Seq[FixedPrice[Account]]])
                 (implicit val conversions: Conversions) {
 
   def pricePathOpt(from: AssetKey, to: AssetKey, approx: Boolean)
-                  (implicit instruments: InstrumentIndex): Option[Seq[FixedPrice]] = {
+                  (implicit instruments: InstrumentIndex): Option[Seq[FixedPrice[Account]]] = {
     val mentionedExchanges = Seq(from.exchange, to.exchange).collect { case Some(ex) => ex }
     val filteredPrices =
       if (approx) markets
       else markets.filter(mentionedExchanges contains _.exchange)
     val exchanges = filteredPrices.map(_.exchange)
     val key = CacheKey(from, to, exchanges)
-    val pathOpt = pricePathCache.get(key).orElse(
-      conversions.findPricePath(from, to)(this, instruments))
+
+    val pathOpt = pricePathCache.get(key)
+      // If this is coming from the cache, then the structure of the price path is useful for us,
+      // but the prices are probably outdated, so update them using the current price map.
+      .map(_.map(fp => {
+        val priceForward = instruments.findMarket(fp.base, fp.quote).flatMap(priceMap.get)
+        val priceBackward = instruments.findMarket(fp.quote, fp.base).flatMap(priceMap.get)
+        fp.copy(price = priceForward.orElse(priceBackward).get)
+      }))
+      // If not coming from the cache, the prices must be correct already.
+      .orElse(conversions.findPricePath(from, to)(this, instruments))
+
+    // Update the cache
     if (pathOpt.isDefined) {
       pricePathCache.update(key, pathOpt.get)
     }

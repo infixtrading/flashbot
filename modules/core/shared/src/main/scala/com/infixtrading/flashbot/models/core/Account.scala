@@ -1,11 +1,13 @@
 package com.infixtrading.flashbot.models.core
 
+import com.infixtrading.flashbot.core.HasSecurity
 import io.circe._
 import io.circe.generic.semiauto._
 
-case class Account(exchange: String, security: String) {
+case class Account(exchange: String, security: String) extends HasSecurity {
   override def toString = s"$exchange/$security"
 }
+
 object Account {
   def apply(str: String): Account = parse(str)
 

@@ -36,8 +36,8 @@ case class Portfolio(assets: Map[Account, Double],
             (implicit prices: PriceIndex,
              instruments: InstrumentIndex): FixedSizeD = {
     import FixedSize.dNumeric._
-    val assetsEquity: FixedSizeD = balances.map(_ as targetAsset size).sum
-    val PNLs: FixedSizeD = positions.keys.map(positionPNL(_) as targetAsset).sum
+    val assetsEquity = balances.map(_ as targetAsset size).sum
+    val PNLs = positions.keys.map(positionPNL(_) as targetAsset).sum
     assetsEquity + PNLs
   }
 

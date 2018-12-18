@@ -122,7 +122,7 @@ class TradingEngineSpec
       val report = Await.result((engine ? BacktestQuery(
         "lookahead",
         params.asJson.pretty(Printer.noSpaces),
-        TimeRange.build(now, 20 minutes),
+        TimeRange.build(now, 10 minutes),
         Portfolio(
           Map(Account("bitfinex/eth") -> 8.0, Account("bitfinex/usd") -> 800),
           Map.empty
@@ -133,8 +133,6 @@ class TradingEngineSpec
         case ReportResponse(report: Report) => report
       }, timeout.duration)
 
-      // We should have 60 days worth of report data.
-//      val timeSeriesBarCount = 3
       report.error shouldBe None
 
       println(report.collections.keySet)
@@ -152,22 +150,15 @@ class TradingEngineSpec
         val priceSeries = new OHLCSeries(key)
         val timeClass = reportTimePeriod(report)
         report.timeSeries(key).foreach { candle =>
-          val time =  RegularTimePeriod.createInstance(timeClass, new Date(candle.micros / 1000), TimeZone.getDefault)
+          val time =  RegularTimePeriod.createInstance(timeClass,
+            new Date(candle.micros / 1000), TimeZone.getDefault)
 //          println("adding", timeClass, time, candle)
           priceSeries.add(time, candle.open, candle.high, candle.low, candle.close)
         }
         priceSeries
       }
 
-//      def buildBalanceSeries(report: Report, key: String): TimeSeries = {
-//        val balanceTS = new TimeSeries("key")
-//        report.collections(key).map(_.as[BalancePoint].right.get).foreach { bp =>
-//          val time =  RegularTimePeriod.createInstance(timeClass, new Date(candle.micros / 1000), TimeZone.getDefault)
-//        }
-//      }
-
       val equityCollection = new TimeSeriesCollection()
-
 
       val priceCollection = new OHLCSeriesCollection()
 //      priceCollection.addSeries(buildCandleSeries(report, "local.equity_usd"))
@@ -221,7 +212,6 @@ class TradingEngineSpec
       val mychart = XYLineChart(mydata)
 
       mychart.show("Equity")
-
 
       val fut = Future {
         Thread.sleep((2 days).toMillis)

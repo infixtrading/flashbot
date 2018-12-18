@@ -13,10 +13,8 @@ import scala.concurrent.duration.Duration
 
 package object core {
 
-  case class IMarket(exchange: String, instrument: Instrument) {
-    def market = Market(exchange, instrument.symbol)
-    def security = instrument.security.get
-    def settledIn = instrument.settledIn
+  trait HasSecurity {
+    def security: String
   }
 
   sealed trait PairRole

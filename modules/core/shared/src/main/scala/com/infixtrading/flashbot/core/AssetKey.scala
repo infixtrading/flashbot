@@ -5,8 +5,8 @@ import com.infixtrading.flashbot.models.core.Account
 // an exchange too via an account, such as Account("bitmex", "xbt").
 //type AssetKey = Either[Account, String]
 
-class AssetKey(val value: Either[Account, String]) extends AnyVal {
-  def symbol: String = value match {
+class AssetKey(val value: Either[Account, String]) extends AnyVal with HasSecurity {
+  def security: String = value match {
     case Left(acc) => acc.security
     case Right(sym) => sym
   }
@@ -20,7 +20,7 @@ class AssetKey(val value: Either[Account, String]) extends AnyVal {
     case Right(str) => str
   }
 
-  def withExchange(exchange: String): AssetKey = AssetKey(Account(exchange, symbol))
+  def withExchange(exchange: String): AssetKey = AssetKey(Account(exchange, security))
 }
 
 object AssetKey {

@@ -188,6 +188,7 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
   }
 
   val gaussian = Gaussian(0, 1)
+  var lastEquity = 0d
 
   def runSession(sessionSetup: SessionSetup): String = sessionSetup match {
     case SessionSetup(instruments, exchanges, strategy, sessionId, streams,
@@ -273,11 +274,14 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
               val buf = eventBuffer.get(5L)
               // Check the syncvar for reference equality with our buffer.
               if (buf.isDefined && (buf.get eq thisEventBuffer)) {
+//                println("Synchronous events", events)
                 thisEventBuffer ++= events
               } else {
+                println("ASYNC!!!!!! events", events)
                 emitTick(Tick(events))
               }
             } else {
+              println("ASYNC 2!!!!!! events", events)
               emitTick(Tick(events))
             }
           }
@@ -300,7 +304,8 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
           // If this data has price info attached, emit that price info.
           data.map(_.data) match {
             case Some(pd: Priced) =>
-              log.debug("Found priced data {}", data)
+//              log.debug("Found priced data {}", data)
+              println(s"Price ${data.get.path}: ${pd.price}")
               session.prices.setPrice(Market(data.get.source, data.get.topic), pd.price)
             case _ =>
           }
@@ -353,12 +358,16 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
 
               if (data.isDefined) {
                 val dur = (data.get.micros - fill.micros) / 1000000
-                log.debug(s"Diff between now and fill time: {} seconds", dur)
+//                log.debug(s"Diff between now and fill time: {} seconds", dur)
               }
 
               // Execute the fill on the portfolio
               val instrument = instruments(ex.get, fill.instrument)
               val newPortfolio = instrument.settle(ex.get, fill, portfolio)
+
+              println("FILL", fill)
+              println(portfolio)
+              println("--->", newPortfolio)
 
               // Emit a trade event when we see a fill
               session.send(TradeEvent(
@@ -382,9 +391,14 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
                   portfolio.balance(assetAccount).qty, fill.micros))
               }
 
+              val equity = newPortfolio.equity()(session.prices, instruments).qty
+              println(s"EQUITY: $equity - Using price ${session.prices.get(market)} and new portfolio: ${newPortfolio}")
+              if (equity < lastEquity) {
+                println(equity)
+              }
+              lastEquity = equity
               // And calculate our equity.
-              session.send(BalanceEvent(Account("all", "equity"),
-                newPortfolio.equity()(session.prices, instruments).qty, fill.micros))
+              session.send(BalanceEvent(Account("all", "equity"), equity, fill.micros))
 
               // Return updated portfolio
               newPortfolio
@@ -421,6 +435,7 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
 
             // Send order targets to their corresponding order manager.
             case target: OrderTarget =>
+              println(s"Handling order target: $target")
               session.orderManagers += (target.market.exchange ->
                 session.orderManagers(target.market.exchange).submitTarget(target))
 
@@ -435,6 +450,7 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
               om.enqueueActions(exchanges(exName), session.actionQueues(exName))(
                 session.prices, session.instruments) match {
                   case (newOm, newActions) =>
+                    println(s"Expanded actions. New actions: ${newActions}")
                     session.orderManagers += (exName -> newOm)
                     session.actionQueues += (exName -> newActions)
                 }
@@ -447,18 +463,21 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
                 session.actionQueues += (exName -> ActionQueue(Some(next), rest))
                 next match {
                   case action @ PostMarketOrder(clientId, targetId, side, size, funds) =>
+                    println(action)
                     session.orderManagers += (exName ->
                       session.orderManagers(exName).initCreateOrder(targetId, clientId, action))
                     exchanges(exName).order(
                       MarketOrderRequest(clientId, side, targetId.instrument, size, funds))
 
                   case action @ PostLimitOrder(clientId, targetId, side, size, price, postOnly) =>
+                    println(action)
                     session.orderManagers += (exName ->
                       session.orderManagers(exName).initCreateOrder(targetId, clientId, action))
                     exchanges(exName)
                       .order(LimitOrderRequest(clientId, side, targetId.instrument, size, price, postOnly))
 
-                  case CancelLimitOrder(targetId) =>
+                  case action @ CancelLimitOrder(targetId) =>
+                    println(action)
                     session.orderManagers += (exName ->
                       session.orderManagers(exName).initCancelOrder(targetId))
                     exchanges(exName).cancel(

@@ -10,7 +10,16 @@ import org.jgrapht.io.{ComponentNameProvider, DOTExporter}
 import scala.collection.JavaConverters._
 
 object GraphConversions extends Conversions {
-  import Conversions._
+  abstract class Edge[T <: HasSecurity] {
+    def fp: FixedPrice[T]
+  }
+  class Equiv(val fp: FixedPrice[AssetKey]) extends Edge[AssetKey] {
+    override def toString = "Equiv"
+  }
+  class PriceEdge(val fp: FixedPrice[Account]) extends Edge[Account] {
+    def flip = new PriceEdge(fp.flip)
+    override def toString = fp.toString
+  }
 
   /**
     * Find a base to quote price path using all markets defined in the index.
@@ -25,12 +34,11 @@ object GraphConversions extends Conversions {
     *    - For equivalent nodes (Weight 0)
     *      A node is equivalent to another one if their symbols are equal or pegged to each other.
     */
-  def findPricePath(baseKey: AssetKey, quoteKey: AssetKey)
-                   (implicit prices: PriceIndex,
-                    instruments: InstrumentIndex): Option[Seq[FixedPrice]] = {
+  override def findPricePath(baseKey: AssetKey, quoteKey: AssetKey)
+                            (implicit prices: PriceIndex,
+                             instruments: InstrumentIndex): Option[Seq[FixedPrice[Account]]] = {
 
-
-    val graph = new SimpleDirectedWeightedGraph[AssetKey, Edge](classOf[Edge])
+    val graph = new SimpleDirectedWeightedGraph[AssetKey, Edge[_]](classOf[Edge[_]])
 
     // Add sink and source symbols
     graph.addVertex(baseKey)
@@ -51,8 +59,8 @@ object GraphConversions extends Conversions {
       override def getName(component: AssetKey) = component.toString.replace("""/""", "_")
     }
 
-    val edgeLabelProvider = new ComponentNameProvider[Edge] {
-      override def getName(component: Edge) = component.toString
+    val edgeLabelProvider = new ComponentNameProvider[Edge[_]] {
+      override def getName(component: Edge[_]) = component.toString
     }
 
     import java.io.StringWriter
@@ -85,7 +93,8 @@ object GraphConversions extends Conversions {
         if (prices.get(market).isDefined) {
           val b = accountNodes(securityAccount)
           val q = accountNodes(settlementAccount)
-          val forwardEdge = new PriceEdge(FixedPrice(prices(market), (b, q)))
+          val forwardEdge = new PriceEdge(
+            FixedPrice(prices(market), (securityAccount, settlementAccount)))
           if (graph.addEdge(b, q, forwardEdge)) {
 //            printGraph
           }
@@ -103,13 +112,13 @@ object GraphConversions extends Conversions {
       // For the security + each of it's pegs.
       (prices.pegs.of(sec) + sec).foreach { sym =>
         // If sym is the sink or source, link it
-        if (sym == baseKey.symbol && baseKey.exchange.isEmpty) {
-          val e: Edge = new Equiv(FixedPrice(1, (baseKey.withExchange(node.exchange.get), node)))
+        if (sym == baseKey.security && baseKey.exchange.isEmpty) {
+          val e = new Equiv(FixedPrice(1, (baseKey.withExchange(node.exchange.get), node)))
           graph.addEdge(baseKey, node, e)
           graph.setEdgeWeight(baseKey, node, 0)
         }
-        if (sym == quoteKey.symbol && quoteKey.exchange.isEmpty) {
-          val e: Edge = new Equiv(FixedPrice(1, (node, quoteKey.withExchange(node.exchange.get))))
+        if (sym == quoteKey.security && quoteKey.exchange.isEmpty) {
+          val e = new Equiv(FixedPrice(1, (node, quoteKey.withExchange(node.exchange.get))))
           graph.addEdge(node, quoteKey, e)
           graph.setEdgeWeight(node, quoteKey, 0)
         }
@@ -126,15 +135,17 @@ object GraphConversions extends Conversions {
       }
     }
 
-    val dijkstras = new DijkstraShortestPath[AssetKey, Edge](graph)
+    val dijkstras = new DijkstraShortestPath[AssetKey, Edge[_]](graph)
 
 //    printGraph
 
-    var edgeSol: Option[Seq[FixedPrice]] = None
+    var edgeSol: Option[Seq[FixedPrice[Account]]] = None
     try {
       val foo = dijkstras.getPath(baseKey, quoteKey)
       val sol = foo.getEdgeList
-      edgeSol = Option(sol.asScala.toVector.map(_.fp))
+      edgeSol = Option(sol.asScala.toVector.collect {
+        case pe: PriceEdge => pe.fp
+      })
     } catch {
       case npe: NullPointerException =>
         println(s"Warning: No solution found for $baseKey -> $quoteKey conversion.")
