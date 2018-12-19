@@ -24,6 +24,7 @@ abstract class Exchange {
   // API requests submitted to the exchange are fire-and-forget, hence the Unit return type
   def order(req: OrderRequest): Unit
   def cancel(id: String, pair: Instrument): Unit
+  def transactionHistory(): Future[Seq[Transaction]]
 
   def baseAssetPrecision(pair: Instrument): Int
   def quoteAssetPrecision(pair: Instrument): Int
