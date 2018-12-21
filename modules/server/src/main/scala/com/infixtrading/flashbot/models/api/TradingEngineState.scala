@@ -1,6 +1,10 @@
 package com.infixtrading.flashbot.models.api
 import com.infixtrading.flashbot.core.FlashbotConfig.{BotConfig, ExchangeConfig}
+import com.infixtrading.flashbot.core.Transaction
+import com.infixtrading.flashbot.models.core.Account
 import io.circe.Json
+
+import scala.collection.SortedSet
 
 case class ExchangeState(params: Json)
 
@@ -16,6 +20,7 @@ object BotState {
 
 case class TradingEngineState(bots: Map[String, BotState] = Map.empty,
                               exchanges: Map[String, ExchangeState] = Map.empty,
+                              transactions: Map[String, SortedSet[Transaction]] = Map.empty,
                               startedAtMicros: Option[Long] = None) {
   /**
     * A pure function that updates the state in response to an event that occurred in the

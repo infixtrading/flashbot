@@ -1,9 +1,10 @@
 package com.infixtrading.flashbot.engine
 
 import java.security.InvalidParameterException
+import java.time.Instant
 
 import akka.Done
-import akka.actor.{ActorInitializationException, ActorLogging, ActorRef, ActorSystem, PoisonPill, Props}
+import akka.actor.{ActorLogging, ActorRef, ActorSystem, PoisonPill, Props}
 import akka.pattern.{ask, pipe}
 import akka.persistence._
 import akka.stream.scaladsl.{Keep, Sink, Source}
@@ -21,7 +22,7 @@ import com.infixtrading.flashbot.util.stream.buildMaterializer
 import com.infixtrading.flashbot.util.json._
 import com.infixtrading.flashbot.util._
 import com.infixtrading.flashbot.models.api._
-import com.infixtrading.flashbot.models.core.{Account, Market, Portfolio, TimeRange}
+import com.infixtrading.flashbot.models.core._
 import com.infixtrading.flashbot.report.ReportEvent.{BalanceEvent, PositionEvent, SessionComplete}
 import com.infixtrading.flashbot.report._
 
@@ -122,13 +123,6 @@ class TradingEngine(engineId: String,
   : Future[(Any, Seq[TradingEngineEvent])] = command match {
 
     /**
-      * Fetch portfolios from all exchanges on start.
-      * Wrap failures from individual exchanges as events.
-      * TODO: Notify user of errors and/or set the ExchangeState to some error state.
-      */
-//    case StartEngine =>
-
-    /**
       * A bot session emitted a ReportEvent. Here is where we decide what to do about it by
       * emitting the ReportDeltas that we'd like to persist in state. Specifically, if there
       * is a balance event, we want to save that to state. In addition to that, we always
@@ -221,11 +215,47 @@ class TradingEngine(engineId: String,
       case StrategyInfoQuery(name) =>
         val sessionLoader = new SessionLoader(getExchangeConfigs, dataServer)
         (for {
-          className <- strategyClassNames.get(name).toFut(s"Unknown strategy $name.")
+          className <- strategyClassNames.get(name).toFut(s"Unknown strategy $name")
           strategy <- Future.fromTry(sessionLoader.loadNewStrategy(className))
           title = strategy.title
           info <- strategy.info(sessionLoader)
         } yield StrategyInfoResponse(title, name, info)) pipeTo sender
+
+      /**
+        * Starts with the current portfolio, and traverses the transaction history backwards
+        * to reconstruct the portfolio.
+        */
+      case GetPortfolioHistory(from, timeStep) =>
+        val portfolio = globalPortfolio.get
+        val key = Withdraw("", from.toEpochMilli * 1000, "5 xyz")
+        val transactions = state.transactions.toSeq.flatMap {
+          case (exchange, txs) =>
+            txs.from(key).map((exchange, _))
+        }.sortBy(_._2.micros).reverse
+
+        var portfolios = Seq(portfolio)
+        transactions.foreach { tx =>
+          val p = portfolios.last
+          val newP = tx match {
+            case (exchange, Withdraw(id, micros, size)) =>
+              if (p.assets.isDefinedAt(Account(exchange, size.security))) {
+              } else if (p.positions.isDefinedAt(account)) {
+              } else {
+                throw new RuntimeException(s"Position not found: $account")
+              }
+          }
+          portfolios :+ newP
+        }
+
+      case GetExchangeTxHistory(exchange, from) =>
+        val allOpt = state.transactions.get(exchange)
+        val ret = allOpt.map(_ filter (_.micros >= from.toEpochMilli * 1000))
+        (if (ret.isDefined) Future.successful(ret.get)
+         else Future.failed(new InvalidParameterException(
+          s"Exchange $exchange not found"))) pipeTo sender
+
+      case GetTxHistory(from) =>
+        sender ! state.transactions.mapValues(_ filter (_.micros >= from.toEpochMilli * 1000))
 
       /**
         * For all configured exchanges, try to fetch the portfolio. Swallow future failures here
@@ -289,7 +319,8 @@ class TradingEngine(engineId: String,
 
           // TODO: Handle parse errors
           val paramsJson = parse(params).right.get
-          val report = Report.empty(strategyName, paramsJson, barSize)
+          val report = Report.empty(strategyName, paramsJson,
+            barSize.map(d => Duration.fromNanos(d.toNanos)))
 
           val portfolio = parseJson[Portfolio](portfolioStr).right.get
 

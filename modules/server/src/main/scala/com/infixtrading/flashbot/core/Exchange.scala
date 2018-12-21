@@ -58,6 +58,8 @@ abstract class Exchange {
 
   def fetchPortfolio: Future[(Map[String, Double], Map[String, Position])]
 
+  def fetchTxHistory(cursor: Option[String]): Future[(Set[Transaction], String)]
+
   def genOrderId: String = randomUUID.toString
 
   def instruments: Future[Set[Instrument]] = Future.successful(Set.empty)
