@@ -225,37 +225,37 @@ class TradingEngine(engineId: String,
         * Starts with the current portfolio, and traverses the transaction history backwards
         * to reconstruct the portfolio.
         */
-      case GetPortfolioHistory(from, timeStep) =>
-        val portfolio = globalPortfolio.get
-        val key = Withdraw("", from.toEpochMilli * 1000, "5 xyz")
-        val transactions = state.transactions.toSeq.flatMap {
-          case (exchange, txs) =>
-            txs.from(key).map((exchange, _))
-        }.sortBy(_._2.micros).reverse
+//      case GetPortfolioHistory(from, timeStep) =>
+//        val portfolio = globalPortfolio.get
+//        val key = Withdraw("", from.toEpochMilli * 1000, "5 xyz")
+//        val transactions = state.transactions.toSeq.flatMap {
+//          case (exchange, txs) =>
+//            txs.from(key).map((exchange, _))
+//        }.sortBy(_._2.micros).reverse
 
-        var portfolios = Seq(portfolio)
-        transactions.foreach { tx =>
-          val p = portfolios.last
-          val newP = tx match {
-            case (exchange, Withdraw(id, micros, size)) =>
-              if (p.assets.isDefinedAt(Account(exchange, size.security))) {
-              } else if (p.positions.isDefinedAt(account)) {
-              } else {
-                throw new RuntimeException(s"Position not found: $account")
-              }
-          }
-          portfolios :+ newP
-        }
+//        var portfolios = Seq(portfolio)
+//        transactions.foreach { tx =>
+//          val p = portfolios.last
+//          val newP = tx match {
+//            case (exchange, Withdraw(id, micros, size)) =>
+//              if (p.assets.isDefinedAt(Account(exchange, size.security))) {
+//              } else if (p.positions.isDefinedAt(account)) {
+//              } else {
+//                throw new RuntimeException(s"Position not found: $account")
+//              }
+//          }
+//          portfolios :+ newP
+//        }
 
-      case GetExchangeTxHistory(exchange, from) =>
-        val allOpt = state.transactions.get(exchange)
-        val ret = allOpt.map(_ filter (_.micros >= from.toEpochMilli * 1000))
-        (if (ret.isDefined) Future.successful(ret.get)
-         else Future.failed(new InvalidParameterException(
-          s"Exchange $exchange not found"))) pipeTo sender
-
-      case GetTxHistory(from) =>
-        sender ! state.transactions.mapValues(_ filter (_.micros >= from.toEpochMilli * 1000))
+//      case GetExchangeTxHistory(exchange, from) =>
+//        val allOpt = state.transactions.get(exchange)
+//        val ret = allOpt.map(_ filter (_.micros >= from.toEpochMilli * 1000))
+//        (if (ret.isDefined) Future.successful(ret.get)
+//         else Future.failed(new InvalidParameterException(
+//          s"Exchange $exchange not found"))) pipeTo sender
+//
+//      case GetTxHistory(from) =>
+//        sender ! state.transactions.mapValues(_ filter (_.micros >= from.toEpochMilli * 1000))
 
       /**
         * For all configured exchanges, try to fetch the portfolio. Swallow future failures here
