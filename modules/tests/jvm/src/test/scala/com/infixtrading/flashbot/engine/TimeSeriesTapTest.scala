@@ -19,7 +19,7 @@ class TimeSeriesTapTest extends FlatSpec with Matchers {
     implicit val mat = ActorMaterializer()
     val src: Source[Instant, NotUsed] =
       TimeSeriesTap(TimeRange.build(Instant.now(), 2 days), 5 minutes, false)
-    val done: Future[Done] = src.zipWithIndex.runForeach(println)
+    val done: Future[Done] = src.zipWithIndex.runForeach(x => {})
     println(Await.result(done, 30 seconds))
   }
 
@@ -32,7 +32,7 @@ class TimeSeriesTapTest extends FlatSpec with Matchers {
     val src: Source[(Instant, Double), NotUsed] =
       TimeSeriesTap.prices(200, .55, .35, timerange, 5 minutes)
 
-    val done: Future[Done] = src.zipWithIndex.runForeach(println)
+    val done: Future[Done] = src.zipWithIndex.runForeach(x => {})
     println(Await.result(done, 30 seconds))
   }
 
@@ -42,7 +42,7 @@ class TimeSeriesTapTest extends FlatSpec with Matchers {
     val fut = TimeSeriesTap.prices(1 hour)
       .via(TimeSeriesTap.aggregateCandles(12 hours))
       .throttle(1, 1 second)
-      .runForeach(println)
+      .runForeach(x => {})
 
 //    Await.ready(fut, 1 minute)
   }
