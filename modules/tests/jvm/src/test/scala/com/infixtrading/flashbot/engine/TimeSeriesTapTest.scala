@@ -37,6 +37,13 @@ class TimeSeriesTapTest extends FlatSpec with Matchers {
   }
 
   "TimeSeriesTap" should "emit candles" in {
+    implicit val system = ActorSystem("test")
+    implicit val mat = ActorMaterializer()
+    val fut = TimeSeriesTap.prices(1 hour)
+      .via(TimeSeriesTap.aggregateCandles(12 hours))
+      .throttle(1, 1 second)
+      .runForeach(println)
 
+//    Await.ready(fut, 1 minute)
   }
 }

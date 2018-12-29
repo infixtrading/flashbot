@@ -56,6 +56,9 @@ case class TradingEngineState(bots: Map[String, BotState] = Map.empty,
     case BotHeartbeatEvent(id, micros) =>
       copy(bots = bots + (id -> bots(id).copy(lastHeartbeatMicros = micros)))
 
+    case BotExpired(id) =>
+      copy(bots = bots - id)
+
     /**
       * A bot session started.
       */
@@ -89,7 +92,7 @@ case class TradingEngineState(bots: Map[String, BotState] = Map.empty,
   def expireBots(now: Instant): TradingEngineState =
     copy(bots = bots.filter {
       case (id, bot) =>
-        bot.config.flatMap(_.ttl).forall { ttl =>
+        !bot.enabled || bot.config.flatMap(_.ttl).forall { ttl =>
           bot.lastHeartbeatMicros + ttl.toMicros >= now.toEpochMilli * 1000
         }
     })

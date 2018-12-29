@@ -17,7 +17,6 @@ import io.circe.literal._
 import io.circe.parser.parse
 import com.infixtrading.flashbot.core.FlashbotConfig.{BotConfig, ExchangeConfig}
 import com.infixtrading.flashbot.core._
-import com.infixtrading.flashbot.engine.TradingEngine.Tick
 import com.infixtrading.flashbot.engine.TradingSessionActor.{SessionPing, SessionPong, StartSession, StopSession}
 import com.infixtrading.flashbot.util.time.currentTimeMicros
 import com.infixtrading.flashbot.util.stream.buildMaterializer
@@ -73,7 +72,7 @@ class TradingEngine(engineId: String,
 
   var botSessions = Map.empty[String, ActorRef]
 
-  system.scheduler.schedule(200 millis, 200 millis, self, Tick)
+  system.scheduler.schedule(200 millis, 200 millis, self, EngineTick)
 
   log.debug(s"About to initialize TradingEngine $engineId")
 
@@ -186,6 +185,13 @@ class TradingEngine(engineId: String,
           Future.successful((Done, Seq(BotDisabled(id))))
       }
 
+    /**
+      * Internal periodic tick.
+      */
+    case EngineTick =>
+      val expiredBots = state.bots.keySet -- state.expireBots(now).bots.keySet
+      expiredBots.foreach(shutdownBotSession)
+      Future.successful((Done, expiredBots.map(BotExpired).toSeq))
   }
 
   /**
@@ -196,13 +202,6 @@ class TradingEngine(engineId: String,
     * command are persisted and can be used to replay the state of the actor after a crash/restart.
     */
   override def receiveCommand: Receive = {
-
-    /**
-      * Internal periodic tick.
-      */
-    case Tick =>
-      // Shutdown orphaned bot sessions. This will happen when a bot expires past it's TTL.
-      (botSessions.keySet -- state.bots.keySet).foreach(shutdownBotSession)
 
     /**
       * Internal Akka Persistence commands
@@ -408,7 +407,7 @@ class TradingEngine(engineId: String,
 
   private def persistenceCallback(now: Instant) = { e: TradingEngineEvent =>
     log.debug("Persisted event {}", e)
-    state = state.update(e).expireBots(now)
+    state = state.update(e)
     if (lastSequenceNr % snapshotInterval == 0) {
       saveSnapshot(state)
     }
@@ -420,9 +419,7 @@ class TradingEngine(engineId: String,
   override def receiveRecover: Receive = {
     case SnapshotOffer(metadata, snapshot: TradingEngineState) =>
       state = snapshot
-    case RecoveryCompleted =>
-      val now = Instant.now
-      state = state.expireBots(now)
+    case RecoveryCompleted => // Ignore
     case event: TradingEngineEvent =>
       state = state.update(event)
   }
@@ -572,8 +569,6 @@ class TradingEngine(engineId: String,
 }
 
 object TradingEngine {
-
-  case object Tick
 
   def props(name: String): Props = {
     val fbConfig = FlashbotConfig.load

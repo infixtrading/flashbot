@@ -23,3 +23,4 @@ case class BotHeartbeat(id: String) extends TradingEngineCommand
 
 case class ProcessBotSessionEvent(botId: String, event: ReportEvent) extends TradingEngineCommand
 
+case object EngineTick extends TradingEngineCommand

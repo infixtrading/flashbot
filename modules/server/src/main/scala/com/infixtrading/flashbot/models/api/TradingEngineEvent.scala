@@ -44,3 +44,4 @@ case class BotEnabled(botId: String) extends TradingEngineEvent
 case class BotDisabled(botId: String) extends TradingEngineEvent
 case class BotHeartbeatEvent(botId: String, micros: Long) extends TradingEngineEvent
 
+case class BotExpired(botId: String) extends TradingEngineEvent
