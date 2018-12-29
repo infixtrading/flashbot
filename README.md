@@ -26,19 +26,19 @@ val pong = Await.result(engine ? Ping, timeout.duration) // = Pong(<timestamp>)
 
 The typical use case is to send strategy backtest requests to the engine, as well as to manage running bots by configuring, starting, and stopping them in either "live" or "paper" mode.
 
-[Read the source](https://github.com/infixtrading/flashbot/blob/docs/modules/server/src/main/scala/com/infixtrading/flashbot/engine/TradingEngine.scala) for a full overview of the supported commands.
+[Read the source](https://github.com/infixtrading/flashbot/blob/master/modules/server/src/main/scala/com/infixtrading/flashbot/engine/TradingEngine.scala) for a full overview of the supported commands.
 
 ### `DataServer`
 A `DataServer` is an actor that responds to market data requests. There is always one data server that is local to a TradingEngine (one will be created by default if not supplied) and there may also be any number of remote `DataServer` actors in the cluster that provide additional data sets.
 
-[Read the source](https://github.com/infixtrading/flashbot/blob/docs/modules/server/src/main/scala/com/infixtrading/flashbot/engine/DataServer.scala) for to get an idea of how it runs.
+[Read the source](https://github.com/infixtrading/flashbot/blob/master/modules/server/src/main/scala/com/infixtrading/flashbot/engine/DataServer.scala) for to get an idea of how it runs.
 
 ### `Strategy`
 A `Strategy` is a class that contains the logic of a trading algorithm. By definition, it does not know if it's running in backtest, paper trading, or live trading mode.
 
 [Read the source](https://github.com/infixtrading/flashbot/blob/master/modules/tests/jvm/src/main/scala/strategies/LookAheadCandleStrategy.scala) of an example strategy that is used in our unit tests. This is a strategy that sources itself with a randomly generated data stream of OHLC data and "cheats" by looking ahead by one time step to make a profitable trade. This is used in testing to ensure that a strategy with perfect information of the future never makes an unprofitable trade.
 
-[Read the source](https://github.com/infixtrading/flashbot/blob/docs/modules/server/src/main/scala/com/infixtrading/flashbot/engine/TradingSessionActor.scala) of the `TradingSessionActor` to fully understand how a `TradingSession` streams data to a `Strategy` and how a `Strategy` interacts with the session.
+[Read the source](https://github.com/infixtrading/flashbot/blob/master/modules/server/src/main/scala/com/infixtrading/flashbot/engine/TradingSessionActor.scala) of the `TradingSessionActor` to fully understand how a `TradingSession` streams data to a `Strategy` and how a `Strategy` interacts with the session.
 
 ## Configuration
 Check out the default [configuration file](https://github.com/infixtrading/flashbot/blob/master/modules/server/src/main/resources/reference.conf) to see a list of available options. You can override any of the settings in your own `application.conf` file.
