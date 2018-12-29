@@ -116,8 +116,15 @@ class TradingEngineSpec
       // Status should be running
       request(BotStatusQuery("mybot")) shouldBe Running
 
-      // Wait 2 seconds
-      Thread.sleep(2000)
+      // Send a heartbeat
+      request(BotHeartbeat("mybot")) shouldBe Done
+
+      // Status should still be running 1.5 seconds after heartbeat
+      Thread.sleep(1500)
+      request(BotStatusQuery("mybot")) shouldBe Running
+
+      // Wait 1 more second
+      Thread.sleep(1000)
 
       // Status should fail with "unknown bot"
       assertThrows[InvalidParameterException] {
