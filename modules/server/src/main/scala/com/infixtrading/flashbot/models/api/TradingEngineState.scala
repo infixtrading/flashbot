@@ -1,4 +1,6 @@
 package com.infixtrading.flashbot.models.api
+import java.time.Instant
+
 import com.infixtrading.flashbot.core.FlashbotConfig.{BotConfig, ExchangeConfig}
 import com.infixtrading.flashbot.core.Transaction
 import com.infixtrading.flashbot.models.core.Account
@@ -8,15 +10,26 @@ import scala.collection.SortedSet
 
 case class ExchangeState(params: Json)
 
-case class BotState(config: Option[BotConfig], sessions: Seq[TradingSessionState]) {
+case class BotState(config: Option[BotConfig],
+                    enabled: Boolean,
+                    lastHeartbeatMicros: Long,
+                    sessions: Seq[TradingSessionState]) {
   def pushSession(session: TradingSessionState) = copy(sessions = sessions :+ session)
   def updateLastSession(fn: TradingSessionState => TradingSessionState) =
     copy(sessions = sessions.updated(sessions.length - 1, fn(sessions.last)))
 }
 
 object BotState {
-  def empty: BotState = BotState(None, Seq())
+  def empty(micros: Long): BotState = BotState(None, enabled = false, micros, Seq())
 }
+
+sealed trait BotStatus
+// Enabled state and session responding to ping
+case object Running extends BotStatus
+// Enabled state but session not responding to ping
+case object Crashed extends BotStatus
+// Disabled state
+case object Disabled extends BotStatus
 
 case class TradingEngineState(bots: Map[String, BotState] = Map.empty,
                               exchanges: Map[String, ExchangeState] = Map.empty,
@@ -31,8 +44,17 @@ case class TradingEngineState(bots: Map[String, BotState] = Map.empty,
       copy(startedAtMicros = Some(micros))
 
     case BotConfigured(micros, id, config) =>
-      val state = bots.getOrElse(id, BotState(None, Seq.empty)).copy(config = Some(config))
+      val state = bots.getOrElse(id, BotState.empty(micros)).copy(config = Some(config))
       copy(bots = bots + (id -> state ))
+
+    case BotEnabled(id) =>
+      copy(bots = bots + (id -> bots(id).copy(enabled = true)))
+
+    case BotDisabled(id) =>
+      copy(bots = bots + (id -> bots(id).copy(enabled = false)))
+
+    case BotHeartbeatEvent(id, micros) =>
+      copy(bots = bots + (id -> bots(id).copy(lastHeartbeatMicros = micros)))
 
     /**
       * A bot session started.
@@ -41,7 +63,8 @@ case class TradingEngineState(bots: Map[String, BotState] = Map.empty,
         micros, portfolio, report) =>
       val session = TradingSessionState(id, strategyKey, strategyParams,
         mode, micros, portfolio, report)
-      copy(bots = bots + (botId -> bots.getOrElse(botId, BotState.empty).pushSession(session) ))
+      copy(bots = bots + (botId ->
+        bots.getOrElse(botId, BotState.empty(micros)).pushSession(session) ))
 
     /**
       * A bot session updated.
@@ -62,4 +85,12 @@ case class TradingEngineState(bots: Map[String, BotState] = Map.empty,
 
     }
   }
+
+  def expireBots(now: Instant): TradingEngineState =
+    copy(bots = bots.filter {
+      case (id, bot) =>
+        bot.config.flatMap(_.ttl).forall { ttl =>
+          bot.lastHeartbeatMicros + ttl.toMicros >= now.toEpochMilli * 1000
+        }
+    })
 }

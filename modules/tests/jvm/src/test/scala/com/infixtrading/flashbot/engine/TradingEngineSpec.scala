@@ -9,13 +9,14 @@ import akka.actor.{ActorSystem, Props}
 import akka.pattern.ask
 import akka.testkit.{ImplicitSender, TestKit}
 import akka.util.Timeout
-import com.infixtrading.flashbot.models.api.{BacktestQuery, Ping, Pong, ReportResponse}
+import com.infixtrading.flashbot.models.api._
 import com.infixtrading.flashbot.util.files.rmRf
 import com.typesafe.config.{Config, ConfigFactory}
 import org.scalatest._
 import akka.actor.{ActorSystem, PoisonPill}
+import akka.stream.ActorMaterializer
 import akka.testkit.{ImplicitSender, TestKit}
-import com.infixtrading.flashbot.core.{BalancePoint, FlashbotConfig}
+import com.infixtrading.flashbot.core.{BalancePoint, FlashbotConfig, TimeSeriesTap}
 import com.infixtrading.flashbot.models.core._
 import com.infixtrading.flashbot.report.Report
 import de.sciss.chart.api._
@@ -96,6 +97,37 @@ class TradingEngineSpec
         case _ =>
           fail("should respond with a Pong")
       }
+    }
+
+    "respect bot TTL" in {
+
+      implicit val mat = ActorMaterializer()
+      val fut = TimeSeriesTap.prices.throttle(1, 50 millis).runForeach(println)
+
+      Await.ready(fut, 20 seconds)
+
+//      val config = FlashbotConfig.load
+
+//      DataServer.props
+
+//      val engine = system.actorOf(TradingEngine.props("test-engine"))
+
+      // Configure bot with 2 second TTL
+//      Await.result(engine ? ConfigureBot("mybot", ))
+//      val result = Await.result(engine ? BotStatusQuery("foobar"), 5 seconds)
+//      println(result)
+
+      // Status should be "disabled"
+
+      // Enable bot
+
+      // Wait 1 second
+
+      // Status should be running
+
+      // Wait 2 seconds
+
+      // Status should fail with "unknown bot"
     }
 
     "be profitable when using lookahead" in {
@@ -208,7 +240,7 @@ class TradingEngineSpec
         for(price <- report.timeSeries("local.bitfinex.eth_usd").dropRight(1))
         yield (price.micros / 1000, price.close)
 
-      val mychart = XYLineChart(priceData)
+      val mychart = XYLineChart(mydata)
 
 //      mychart.show("Equity")
 

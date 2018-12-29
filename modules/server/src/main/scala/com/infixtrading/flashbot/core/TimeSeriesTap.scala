@@ -90,6 +90,10 @@ object TimeSeriesTap {
     }
   }
 
+  // Just some default parameters for when it doesn't matter
+  def prices: Source[(Instant, Double), NotUsed] =
+    prices(100, .5, .5, TimeRange.build(Instant.now, "now", "365d"), 1 day)
+
   sealed trait FirstState
   case object NotSet extends FirstState
   case class IsSet(first: Instant, data: (Instant, Double)) extends FirstState {
