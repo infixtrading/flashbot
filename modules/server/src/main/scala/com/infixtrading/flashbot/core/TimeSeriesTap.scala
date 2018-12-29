@@ -90,41 +90,38 @@ object TimeSeriesTap {
     }
   }
 
+  // Just some default parameters for when it doesn't matter
+  def prices: Source[(Instant, Double), NotUsed] =
+    prices(100, .5, .5, TimeRange.build(Instant.now, "now", "365d"), 1 day)
+
+  def prices(timeStep: Duration): Source[(Instant, Double), NotUsed] =
+    prices(100, .5, .5, TimeRange.build(Instant.now, "now", "365d"), timeStep)
+
   sealed trait FirstState
   case object NotSet extends FirstState
   case class IsSet(first: Instant, data: (Instant, Double)) extends FirstState {
     def barStart(i: Long, timeStep: Duration): Instant =
       first.plusMillis(i * timeStep.toMillis)
   }
-  def aggregateCandles(timeStep: Duration): Flow[(Instant, Double), Candle, NotUsed] =
-    Flow[(Instant, Double)]
-      // Scan to extract the first item into the stream.
-      .scan[FirstState](NotSet) {
-        case (NotSet, data @ (instant, price)) =>
-          IsSet(instant, data)
-        case (IsSet(first, prev), data @ (instant, price)) =>
-          IsSet(first, data)
-      }.collectType[IsSet].groupBy(2, {
-        case IsSet(first, (instant, _)) =>
-          val firstBarIndex = Math.floor(first.toEpochMilli.toDouble / timeStep.toMillis)
-          val thisBarIndex = Math.floor(instant.toEpochMilli.toDouble / timeStep.toMillis)
-          thisBarIndex - firstBarIndex
-      // Set to true because we don't want to use up memory to hold to references of closed
-      // substreams
-      }, allowClosedSubstreamRecreation = true)
-      .zipWithIndex
-      .fold[Option[Candle]](None) {
-        // Base case
-        case (None, (is @ IsSet(_, data), zero)) if zero == 0 =>
-          Some(Candle(
-            is.barStart(0, timeStep).toEpochMilli * 1000,
-            data._2, data._2, data._2, data._2, 0
-          ))
 
-        // Rest
-        case (Some(candle), (is @ IsSet(_, data), i)) =>
-          Some(candle.add(data._2))
-      }.collect { case Some(value: Candle) => value}.concatSubstreams
-
-
+  def aggregateCandles(timeStep: Duration): Flow[(Instant, Double), Candle, NotUsed] = {
+    Flow[(Instant, Double)].statefulMapConcat { () =>
+      var currentCandle: Option[Candle] = None
+      (x: (Instant, Double)) => {
+        val (instant, price) = x
+        val singleCandle = Candle.single(instant.toEpochMilli * 1000, x._2)
+        if (currentCandle.isEmpty) {
+          currentCandle = Some(singleCandle)
+          List()
+        } else {
+          val prevCandle = currentCandle.get
+          currentCandle = Some(
+            if (prevCandle.micros + timeStep.toMicros < x._1.toEpochMilli * 1000) singleCandle
+            else prevCandle.addPrice(price))
+          if (prevCandle.micros == currentCandle.get.micros) List()
+          else List(prevCandle)
+        }
+      }
+    }
+  }
 }

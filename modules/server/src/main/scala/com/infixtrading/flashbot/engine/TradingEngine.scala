@@ -1,9 +1,10 @@
 package com.infixtrading.flashbot.engine
 
 import java.security.InvalidParameterException
+import java.time.Instant
 
 import akka.Done
-import akka.actor.{ActorInitializationException, ActorLogging, ActorRef, ActorSystem, PoisonPill, Props}
+import akka.actor.{ActorLogging, ActorRef, ActorSystem, PoisonPill, Props}
 import akka.pattern.{ask, pipe}
 import akka.persistence._
 import akka.stream.scaladsl.{Keep, Sink, Source}
@@ -16,12 +17,13 @@ import io.circe.literal._
 import io.circe.parser.parse
 import com.infixtrading.flashbot.core.FlashbotConfig.{BotConfig, ExchangeConfig}
 import com.infixtrading.flashbot.core._
+import com.infixtrading.flashbot.engine.TradingSessionActor.{SessionPing, SessionPong, StartSession, StopSession}
 import com.infixtrading.flashbot.util.time.currentTimeMicros
 import com.infixtrading.flashbot.util.stream.buildMaterializer
 import com.infixtrading.flashbot.util.json._
 import com.infixtrading.flashbot.util._
 import com.infixtrading.flashbot.models.api._
-import com.infixtrading.flashbot.models.core.{Account, Market, Portfolio, TimeRange}
+import com.infixtrading.flashbot.models.core._
 import com.infixtrading.flashbot.report.ReportEvent.{BalanceEvent, PositionEvent, SessionComplete}
 import com.infixtrading.flashbot.report._
 
@@ -29,7 +31,6 @@ import scala.concurrent.duration._
 import scala.concurrent._
 import scala.collection.immutable
 import scala.util.{Failure, Success, Try}
-
 
 /**
   * Creates and runs bots concurrently by instantiating strategies, loads data sources, handles
@@ -69,12 +70,15 @@ class TradingEngine(engineId: String,
     */
   var state = TradingEngineState()
 
+  var botSessions = Map.empty[String, ActorRef]
+
+  system.scheduler.schedule(200 millis, 200 millis, self, EngineTick)
+
   log.debug(s"About to initialize TradingEngine $engineId")
 
   /**
     * Initialization.
     */
-
   val getExchangeConfigs = () => defaultExchangeConfigs.map {
     case (name, _) => name -> configForExchange(name).get
   }
@@ -100,10 +104,11 @@ class TradingEngine(engineId: String,
           case Some(value: Portfolio) => value
         }.foldLeft(Portfolio.empty)(_ merge _))
 
-      // Set it in-memory state
+      // Set it in-memory portfolio state
       _ = { globalPortfolio.put(fetchedPortfolio) }
 
-      // Start the bots. Notify of any bots that failed to start a session.
+      // Start the bots.
+      // TODO: Notify of any bots that failed to start a session.
       sessionStartEvents <- startBots
       (keys, events) = sessionStartEvents.unzip
       engineStarted = EngineStarted(currentTimeMicros)
@@ -118,15 +123,8 @@ class TradingEngine(engineId: String,
     * persist the events. This only applies to commands. Queries, which are read-only, bypass Akka
     * persistence and hence are free to be fully-async.
     */
-  def processCommand(command: TradingEngineCommand)
+  def processCommand(command: TradingEngineCommand, now: Instant)
   : Future[(Any, Seq[TradingEngineEvent])] = command match {
-
-    /**
-      * Fetch portfolios from all exchanges on start.
-      * Wrap failures from individual exchanges as events.
-      * TODO: Notify user of errors and/or set the ExchangeState to some error state.
-      */
-//    case StartEngine =>
 
     /**
       * A bot session emitted a ReportEvent. Here is where we decide what to do about it by
@@ -152,21 +150,56 @@ class TradingEngine(engineId: String,
         case _ => (Done, deltas)
       })
 
-    case ConfigureBot(id, strategyKey, strategyParams, mode, initialPortfolio) =>
+    /**
+      * TODO: Check that the bot is not running. Cannot configure a running bot.
+      */
+    case ConfigureBot(id, strategyKey, strategyParams, mode, ttl, initialPortfolio) =>
       parse(strategyParams).toTry.toFut.map(params => (Done,
         Seq(BotConfigured(currentTimeMicros, id,
-          BotConfig(strategyKey, mode, Some(params),
+          BotConfig(strategyKey, mode, Some(params), ttl,
             Some(initialPortfolio.assets.map { case (acc, dbl) => acc.toString -> dbl}),
             Some(initialPortfolio.positions.map { case (m, pos) => m.toString -> pos } ))))))
 
+    case BotHeartbeat(id) =>
+      Future.successful((Done, Seq(BotHeartbeatEvent(id, now.toEpochMilli * 1000))))
+
+    case EnableBot(id) =>
+      state.bots.get(id) match {
+        case None => Future.failed(new InvalidParameterException(s"Unknown bot $id"))
+        case Some(bot) if bot.enabled =>
+          Future.failed(new InvalidParameterException(s"Bot $id is already enabled"))
+        case Some(_) =>
+          startBot(id).map(sessionStartedEvent =>
+            (Done, Seq(BotEnabled(id), sessionStartedEvent)))
+      }
+
+    case DisableBot(id) =>
+      state.bots.get(id) match {
+        case None => Future.failed(new InvalidParameterException(s"Unknown bot $id"))
+        case Some(bot) if !bot.enabled =>
+          Future.failed(new InvalidParameterException(s"Bot $id is already disabled"))
+        case Some(_) =>
+          if (botSessions.isDefinedAt(id)) {
+            shutdownBotSession(id)
+          }
+          Future.successful((Done, Seq(BotDisabled(id))))
+      }
+
+    /**
+      * Internal periodic tick.
+      */
+    case EngineTick =>
+      val expiredBots = state.bots.keySet -- state.expireBots(now).bots.keySet
+      expiredBots.foreach(shutdownBotSession)
+      Future.successful((Done, expiredBots.map(BotExpired).toSeq))
   }
 
   /**
     * The main message handler. This is how the outside world interacts with the engine. First
-    * we match on supported message types for PersistentActor management and reponding to queries.
-    * Finally we match on supported engine Commands which are processed *synchronously*. The events
-    * resulting from processing the command are persisted and can be used to replay the state of
-    * the actor after a crash/restart.
+    * we match on supported message types for PersistentActor management. Then match on supported
+    * query types to respond to queries using engine state. Finally we match on supported engine
+    * Commands which are processed *synchronously*. The events resulting from processing the
+    * command are persisted and can be used to replay the state of the actor after a crash/restart.
     */
   override def receiveCommand: Receive = {
 
@@ -200,6 +233,9 @@ class TradingEngine(engineId: String,
       case Ping =>
         sender ! Pong(bootRsp.micros)
 
+      case BotStatusQuery(botId) =>
+        botStatus(botId) pipeTo sender
+
       case BotSessionsQuery(id) =>
         state.bots.get(id)
           .map(bot => Future.successful(BotSessionsResponse(id, bot.sessions)))
@@ -221,7 +257,7 @@ class TradingEngine(engineId: String,
       case StrategyInfoQuery(name) =>
         val sessionLoader = new SessionLoader(getExchangeConfigs, dataServer)
         (for {
-          className <- strategyClassNames.get(name).toFut(s"Unknown strategy $name.")
+          className <- strategyClassNames.get(name).toFut(s"Unknown strategy $name")
           strategy <- Future.fromTry(sessionLoader.loadNewStrategy(className))
           title = strategy.title
           info <- strategy.info(sessionLoader)
@@ -289,7 +325,8 @@ class TradingEngine(engineId: String,
 
           // TODO: Handle parse errors
           val paramsJson = parse(params).right.get
-          val report = Report.empty(strategyName, paramsJson, barSize)
+          val report = Report.empty(strategyName, paramsJson,
+            barSize.map(d => Duration.fromNanos(d.toNanos)))
 
           val portfolio = parseJson[Portfolio](portfolioStr).right.get
 
@@ -327,7 +364,7 @@ class TradingEngine(engineId: String,
 
           // Start the trading session
           startTradingSession(None, strategyName, paramsJson, Backtest(timeRange),
-            ref, new flashbot.engine.PortfolioRef.Isolated(portfolio), report) onComplete {
+              ref, new flashbot.engine.PortfolioRef.Isolated(portfolio), report)._2 onComplete {
             case Success(event: TradingEngineEvent) =>
               log.debug("Trading session started")
               eventsOut.foreach(_ ! event)
@@ -354,13 +391,13 @@ class TradingEngine(engineId: String,
       * The main command handling block.
       */
     case cmd: TradingEngineCommand =>
+      val now = Instant.now
       // Blocking!
-      val result = Await.ready(processCommand(cmd), timeout.duration).value.get
+      val result = Await.ready(processCommand(cmd, now), timeout.duration).value.get
       result match {
-
         case Success((response, events)) =>
           val immutableSeq = events.asInstanceOf[immutable.Seq[TradingEngineEvent]]
-          persistAll(immutableSeq)(persistenceCallback)
+          persistAll(immutableSeq)(persistenceCallback(now))
           sender ! response
 
         case Failure(err) =>
@@ -368,7 +405,7 @@ class TradingEngine(engineId: String,
       }
   }
 
-  private def persistenceCallback = { e: TradingEngineEvent =>
+  private def persistenceCallback(now: Instant) = { e: TradingEngineEvent =>
     log.debug("Persisted event {}", e)
     state = state.update(e)
     if (lastSequenceNr % snapshotInterval == 0) {
@@ -382,7 +419,7 @@ class TradingEngine(engineId: String,
   override def receiveRecover: Receive = {
     case SnapshotOffer(metadata, snapshot: TradingEngineState) =>
       state = snapshot
-    case RecoveryCompleted => // ignore
+    case RecoveryCompleted => // Ignore
     case event: TradingEngineEvent =>
       state = state.update(event)
   }
@@ -393,7 +430,7 @@ class TradingEngine(engineId: String,
                                   mode: TradingSessionMode,
                                   sessionEventsRef: ActorRef,
                                   portfolioRef: PortfolioRef,
-                                  report: Report): Future[TradingEngineEvent] = {
+                                  report: Report): (ActorRef, Future[TradingEngineEvent]) = {
 
     val sessionActor = context.actorOf(Props(new TradingSessionActor(
       strategyClassNames,
@@ -412,7 +449,7 @@ class TradingEngine(engineId: String,
     // Start the session. We are only waiting for an initialization error, or a confirmation
     // that the session was started, so we don't wait for too long.
     log.debug("Sending start")
-    (sessionActor ? "start").map[TradingEngineEvent] {
+    val fut = (sessionActor ? StartSession).map[TradingEngineEvent] {
       case (sessionId: String, micros: Long) =>
         log.debug("Session started")
         SessionStarted(sessionId, botId, strategyKey, strategyParams,
@@ -423,15 +460,12 @@ class TradingEngine(engineId: String,
         SessionInitializationError(err, botId, strategyKey, strategyParams,
           mode, initialPortfolio, report)
     }
+    (sessionActor, fut)
   }
 
-  /**
-    * TODO: We definitely want to encapsulate bots in their own actor so we can get supervision
-    *       and lifecycle management for free.
-    */
   private def startBot(name: String): Future[TradingEngineEvent] = {
     getBotConfigs(name) match {
-      case BotConfig(strategy, mode, paramsOpt, initial_assets, initial_positions) =>
+      case BotConfig(strategy, mode, paramsOpt, _, initial_assets, initial_positions) =>
 
         val params = paramsOpt.getOrElse(json"{}")
         val initialAssets = initial_assets.getOrElse(Map.empty)
@@ -479,14 +513,38 @@ class TradingEngine(engineId: String,
             log.error(err, s"Bot $name failed")
         }
 
-        startTradingSession(Some(name), strategy, params, mode, ref, portfolioRef,
-          Report.empty(strategy, params))
+        val (sessionActor, startFut) =
+          startTradingSession(Some(name), strategy, params, mode, ref, portfolioRef,
+            Report.empty(strategy, params))
+
+        botSessions += (name -> sessionActor)
+
+        startFut
     }
   }
 
   def startBots: Future[Map[String, TradingEngineEvent]] = {
     val keys = getBotConfigs.keys
     Future.sequence(keys.map(startBot)).map(keys zip _).map(_.toMap)
+  }
+
+  def shutdownBotSession(name: String) = {
+    log.info(s"Shutting down bot $name")
+    botSessions(name) ! StopSession
+    botSessions -= name
+  }
+
+  def pingBot(name: String) = Future {
+    Await.result(botSessions(name) ? SessionPing, 5 seconds).asInstanceOf[SessionPong.type]
+  }
+
+  def botStatus(name: String) = state.bots.get(name) match {
+    case None => Future.failed(new InvalidParameterException(s"Unknown bot $name"))
+    case Some(BotState(_, true, _, _)) => pingBot(name).transform {
+      case Success(SessionPong) => Success(Running)
+      case _ => Success(Crashed)
+    }
+    case Some(BotState(_, false, _, _)) => Future.successful(Disabled)
   }
 
   /**
@@ -511,6 +569,7 @@ class TradingEngine(engineId: String,
 }
 
 object TradingEngine {
+
   def props(name: String): Props = {
     val fbConfig = FlashbotConfig.load
     Props(new TradingEngine(name, fbConfig.strategies, fbConfig.exchanges,

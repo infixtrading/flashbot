@@ -5,8 +5,10 @@ import com.infixtrading.flashbot.models.core.Position
 import com.typesafe.config.{Config, ConfigFactory}
 import io.circe._
 import io.circe.config.syntax._
+import io.circe.generic.semiauto._
 import io.circe.generic.auto._
 
+import scala.concurrent.duration.Duration
 import scala.util.Try
 
 case class FlashbotConfig(`api-key`: Option[String],
@@ -29,11 +31,20 @@ object FlashbotConfig {
   implicit val pe: Encoder[Position] = Position.postionEn
   implicit val pd: Decoder[Position] = Position.postionDe
 
+  import com.infixtrading.flashbot.util.time._
+
   case class BotConfig(strategy: String,
                        mode: TradingSessionMode,
                        params: Option[Json],
+                       ttl: Option[Duration],
                        `initial-assets`: Option[Map[String, Double]],
                        `initial-positions`: Option[Map[String, Position]])
+
+  object BotConfig {
+
+    implicit val botConfigEncoder: Encoder[BotConfig] = deriveEncoder[BotConfig]
+    implicit val botConfigDecoder: Decoder[BotConfig] = deriveDecoder[BotConfig]
+  }
 
   case class BotConfigJson(default: Seq[String], configs: Map[String, BotConfig])
 
@@ -44,6 +55,7 @@ object FlashbotConfig {
 
 //  def load(config: Config): Either[Error, FlashbotConfig] =
 //    config.as[FlashbotConfig].map(c => c.copy(akka = ))
+
   def tryLoad: Try[FlashbotConfig] = {
     val app = ConfigFactory.load()
     val fb = app.getConfig("flashbot")

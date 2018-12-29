@@ -71,7 +71,8 @@ object DataServer {
       new File(fbConfig.`market-data-root`),
       fbConfig.sources,
       fbConfig.exchanges,
-      None, useCluster = false))
+      ingestConfig = None,
+      useCluster = false))
   }
 }
 

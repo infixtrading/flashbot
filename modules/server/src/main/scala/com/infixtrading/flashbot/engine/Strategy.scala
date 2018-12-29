@@ -70,33 +70,10 @@ abstract class Strategy {
     */
   def handleCommand(command: StrategyCommand)(implicit ctx: TradingSession): Unit = {}
 
-//  def orderTargetRatio(exchangeName: String,
-//                       product: String,
-//                       ratio: Double,
-//                       price: Option[Double] = None,
-//                       key: String = DEFAULT,
-//                       postOnly: Boolean = false)
-//                      (implicit ctx: TradingSession): Unit = {
-//    val market = Market(exchangeName, product)
-//    val instrument = ctx.instruments(market)
-//    val targetNotionalPosition = PositionManager.percentGroup(ctx.getPortfolio,
-//      Seq(market),
-//      Map(instrument.security.get -> ratio),
-//      ctx.getPrices,
-//      equityDenomination = instrument.settledIn
-//    )(market)
-//
-//    ctx.send(OrderTarget(
-//      exchangeName,
-//      TargetId(instrument, key),
-//      Quantity(???),
-//      price,
-//      postOnly
-//    ))
-//  }
-
   /**
-    * Usage:
+    * RANDOM COMMENT:
+    *
+    * Example usage of a hypothetical strategy DSL.
     *
     * val up = order("up_limit", size = "10 usd")
     * val downOrder = order(size = "20 usd", market = "btc/usd")
@@ -179,16 +156,6 @@ abstract class Strategy {
     ctx.send(target)
     target.id
   }
-
-//  def record(name: String, value: Double, micros: Long)
-//            (implicit ctx: TradingSession): Unit = {
-//    ctx.send(TimeSeriesEvent(name, value, micros))
-//  }
-//
-//  def record(name: String, candle: Candle)
-//            (implicit ctx: TradingSession): Unit = {
-//    ctx.send(TimeSeriesCandle(name, candle))
-//  }
 
   def resolveMarketData(streamSelection: StreamSelection)(implicit mat: Materializer)
       : Future[Option[Source[MarketData[_], NotUsed]]] =

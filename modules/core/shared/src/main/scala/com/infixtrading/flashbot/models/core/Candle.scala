@@ -7,11 +7,10 @@ case class Candle(micros: Long,
                   low: Double,
                   close: Double,
                   volume: Double) extends Timestamped with Priced {
-  def add(value: Double, newVolume: Option[Double] = None): Candle = copy(
+  def addPrice(value: Double): Candle = copy(
     high = math.max(high, value),
     low = math.min(low, value),
-    close = value,
-    volume = newVolume.getOrElse(volume)
+    close = value
   )
 
   override def price = close
@@ -23,6 +22,9 @@ object Candle {
 
   implicit val candleEn: Encoder[Candle] = deriveEncoder
   implicit val candleDe: Decoder[Candle] = deriveDecoder
+
+  def single(micros: Long, price: Double, volume: Double = 0) =
+    Candle(micros, price, price, price, price, volume)
 
 //  case class CandleMD(source: String, topic: String, data: Candle)
 //    extends GenMD[Candle] with Priced with HasProduct {

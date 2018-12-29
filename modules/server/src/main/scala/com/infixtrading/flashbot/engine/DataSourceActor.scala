@@ -203,7 +203,7 @@ class DataSourceActor(marketDataPath: File,
     /**
       * Returns a SourceRspList of MarketData. One stream for each bundle matched.
       */
-    case StreamMarketData(StreamSelection(path, from, to, polling), sliceMatch) =>
+    case StreamMarketData(selection @ StreamSelection(path, from, to, polling), sliceMatch) =>
       def buildRsp[T](implicit fmt: DeltaFmtJson[T]): Future[SourceRspList[MarketData[T]]] =
         StreamResponse.buildList(bundleStreams(path.topic, from, to, polling, sliceMatch), sender)
       buildRsp(types(path.dataType)) pipeTo sender

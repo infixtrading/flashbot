@@ -1,45 +1,37 @@
 package com.infixtrading.flashbot.engine
 
-import java.awt.BorderLayout
 import java.io.File
+import java.security.InvalidParameterException
 import java.time.Instant
 import java.util.{Date, TimeZone}
 
+import akka.Done
 import akka.actor.{ActorSystem, Props}
 import akka.pattern.ask
 import akka.testkit.{ImplicitSender, TestKit}
 import akka.util.Timeout
-import com.infixtrading.flashbot.models.api.{BacktestQuery, Ping, Pong, ReportResponse}
-import com.infixtrading.flashbot.util.files.rmRf
-import com.typesafe.config.{Config, ConfigFactory}
-import org.scalatest._
-import akka.actor.{ActorSystem, PoisonPill}
-import akka.testkit.{ImplicitSender, TestKit}
-import com.infixtrading.flashbot.core.{BalancePoint, FlashbotConfig}
+import com.infixtrading.flashbot.core.{BalancePoint, FlashbotConfig, Paper}
+import com.infixtrading.flashbot.util.files
+import com.infixtrading.flashbot.models.api._
 import com.infixtrading.flashbot.models.core._
 import com.infixtrading.flashbot.report.Report
+import com.typesafe.config.ConfigFactory
 import de.sciss.chart.api._
-import de.sciss.chart.module.ChartFactories
-import org.jfree.data.time._
-import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpecLike}
-import io.circe._
 import io.circe.Printer
 import io.circe.literal._
 import io.circe.syntax._
-import javafx.scene.chart.NumberAxis
-import javax.swing.{JFrame, JPanel}
+import org.jfree.chart.ChartFactory
 import org.jfree.chart.plot.PlotOrientation
 import org.jfree.chart.renderer.xy.{CandlestickRenderer, StandardXYBarPainter, XYBarRenderer}
-import org.jfree.chart.{ChartFactory, ChartFrame, ChartPanel}
 import org.jfree.data.statistics.{HistogramDataset, HistogramType}
-import org.jfree.data.time.ohlc.{OHLCItem, OHLCSeries, OHLCSeriesCollection}
-
-import scala.concurrent.{Await, Future}
-import scala.concurrent.duration._
-import scala.concurrent.ExecutionContext.Implicits.global
-import org.scalacheck.Properties
-import org.scalacheck.Prop.forAll
+import org.jfree.data.time._
+import org.jfree.data.time.ohlc.{OHLCSeries, OHLCSeriesCollection}
+import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpecLike}
 import strategies.LookaheadParams
+
+import scala.concurrent.Await
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.duration._
 
 class TradingEngineSpec
   extends TestKit(ActorSystem("TradingEngineSpec",
@@ -50,9 +42,6 @@ class TradingEngineSpec
         ConfigFactory.defaultApplication()
           .withFallback(fbConf)
           .withFallback(conf)
-
-      println(finalConf.getConfig("akka.persistence.journal.leveldb"))
-      println(finalConf.getConfig("flashbot.strategies"))
       finalConf
     }
   )) with WordSpecLike
@@ -61,6 +50,8 @@ class TradingEngineSpec
     with ImplicitSender {
 
   override def afterAll: Unit = {
+    val dataDir = new File(FlashbotConfig.load.`data-root`)
+    files.rmRf(dataDir)
     TestKit.shutdownActorSystem(system)
     super.afterAll()
   }
@@ -95,6 +86,49 @@ class TradingEngineSpec
           println(Instant.ofEpochMilli(micros/1000))
         case _ =>
           fail("should respond with a Pong")
+      }
+    }
+
+    "respect bot TTL" in {
+      val engine = system.actorOf(TradingEngine.props("test-engine"))
+      def request(query: Any) = Await.result(engine ? query, 5 seconds)
+
+      // Configure bot with 2 second TTL
+      Await.result(engine ? ConfigureBot(
+        "mybot",
+        "candlescanner",
+        "{}",
+        Paper(0 seconds),
+        Some(2 seconds),
+        Portfolio.empty
+      ), 5 seconds)
+
+
+      // Status should be Disabled
+      request(BotStatusQuery("mybot")) shouldBe Disabled
+
+      // Enable bot
+      request(EnableBot("mybot")) shouldBe Done
+
+      // Wait 1 second
+      Thread.sleep(1000)
+
+      // Status should be running
+      request(BotStatusQuery("mybot")) shouldBe Running
+
+      // Send a heartbeat
+      request(BotHeartbeat("mybot")) shouldBe Done
+
+      // Status should still be running 1.5 seconds after heartbeat
+      Thread.sleep(1500)
+      request(BotStatusQuery("mybot")) shouldBe Running
+
+      // Wait 1 more second
+      Thread.sleep(1000)
+
+      // Status should fail with "unknown bot"
+      assertThrows[InvalidParameterException] {
+        request(BotStatusQuery("mybot"))
       }
     }
 
@@ -208,7 +242,7 @@ class TradingEngineSpec
         for(price <- report.timeSeries("local.bitfinex.eth_usd").dropRight(1))
         yield (price.micros / 1000, price.close)
 
-      val mychart = XYLineChart(priceData)
+      val mychart = XYLineChart(mydata)
 
 //      mychart.show("Equity")
 

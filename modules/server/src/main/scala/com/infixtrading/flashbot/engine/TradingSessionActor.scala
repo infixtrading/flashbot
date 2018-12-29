@@ -6,7 +6,7 @@ import java.util.UUID
 import akka.NotUsed
 import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem, PoisonPill}
 import akka.stream.scaladsl.{Keep, Sink, Source}
-import akka.stream.{ActorMaterializer, OverflowStrategy}
+import akka.stream._
 import akka.pattern.ask
 import akka.util.Timeout
 import breeze.stats.distributions.Gaussian
@@ -22,6 +22,7 @@ import com.infixtrading.flashbot.util.time.currentTimeMicros
 import com.infixtrading.flashbot.core.{DataSource, _}
 import com.infixtrading.flashbot.engine.DataServer.{ClusterLocality, DataStreamReq}
 import com.infixtrading.flashbot.engine.TradingSession._
+import com.infixtrading.flashbot.engine.TradingSessionActor.{SessionPing, SessionPong, StartSession, StopSession}
 import com.infixtrading.flashbot.exchanges.Simulator
 import com.infixtrading.flashbot.models.api.{LogMessage, OrderTarget}
 import com.infixtrading.flashbot.models.core.{Account, DataPath, Market, Portfolio}
@@ -63,6 +64,8 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
       case None => log.warning(s"Ignoring tick $tick because the tick ref actor is not loaded.")
     }
   }
+
+  var killSwitch: Option[SharedKillSwitch] = None
 
   def setup(): Future[SessionSetup] = {
 
@@ -171,7 +174,9 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
       serverStreams <- Future.sequence(remainingPaths.map((path: DataPath) => {
         val selection = streamSelection(path)
         for {
+          // First check if the strategy can resolve this selection.
           mdOverrideSrc <- strategy.resolveMarketData(selection)
+
           src <- mdOverrideSrc.map(Future.successful).getOrElse(
             (dataServer ? DataStreamReq(selection, ClusterLocality))
               .map { case se: StreamResponse[MarketData[_]] => se.toSource })
@@ -194,6 +199,8 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
     case SessionSetup(instruments, exchanges, strategy, sessionId, streams,
           sessionMicros, initialPortfolio) =>
       implicit val conversions = GraphConversions
+
+      killSwitch = Some(KillSwitches.shared(sessionId))
 
       /**
         * The trading session that we fold market data over.
@@ -242,7 +249,7 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
         // the tick stream.
         .watchTermination()(Keep.right)
         .mapMaterializedValue(_.onComplete(res => {
-          tickRefOpt.get ! PoisonPill
+          killSwitch.get.shutdown()
           res
         }))
 
@@ -254,6 +261,9 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
           case md: MarketData[_] => Left(md)
           case tick: Tick => Right(tick)
         }
+
+        // Hookup the kill switch
+        .via(killSwitch.get.flow)
 
         // Lift-off
         .scan(new Session()) { case (session, dataOrTick) =>
@@ -487,9 +497,11 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
         case Success(_) =>
           log.info("session success")
           sessionEventsRef ! SessionComplete(error = None)
+          context.stop(self)
         case Failure(err) =>
           log.error(err, "session failed")
           sessionEventsRef ! SessionComplete(error = Some(ReportError(err)))
+          context.stop(self)
       }
 
       // Return the session id
@@ -497,7 +509,17 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
   }
 
   override def receive: Receive = {
-    case "start" =>
+
+    case SessionPing =>
+      sender ! SessionPong
+
+    case StopSession =>
+      killSwitch.foreach { killSwitch =>
+        log.debug("Shutting down session")
+        killSwitch.shutdown()
+      }
+
+    case StartSession =>
       val origSender = sender
       setup().onComplete {
         case Success(sessionSetup) =>
@@ -511,3 +533,9 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
   }
 }
 
+object TradingSessionActor {
+  case object StopSession
+  case object StartSession
+  case object SessionPing
+  case object SessionPong
+}
