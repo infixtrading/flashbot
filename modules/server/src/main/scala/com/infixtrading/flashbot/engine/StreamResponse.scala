@@ -55,6 +55,13 @@ case class MemorySource[T](fmt: DeltaFmt[T],
 case class NetworkSource[T](fmt: DeltaFmt[T],
                             compressedRef: CompressedSourceRef[T]) extends StreamResponse[T]
 
+object NetworkSource {
+  def build[T](src: Source[T, NotUsed])
+              (implicit fmt: DeltaFmt[T], mat: Materializer, ec: ExecutionContext) =
+    compressStream(src).runWith(StreamRefs.sourceRef())
+      .map(s => NetworkSource(fmt, CompressedSourceRef[T](fmt, s)))
+}
+
 case class SourceRspList[T](fmt: DeltaFmt[T],
                             responses: Seq[StreamResponse[T]]) extends StreamResponse[T]
 
@@ -70,8 +77,7 @@ object StreamResponse {
     if (actorIsLocal(recipient))
       Future.successful(MemorySource(fmt, src))
 
-    else compressStream(src).runWith(StreamRefs.sourceRef())
-      .map(s => NetworkSource(fmt, CompressedSourceRef[T](fmt, s)))
+    else NetworkSource.build(src)
 
 
   def buildList[T](sources: Seq[Source[T, NotUsed]], recipient: ActorRef)

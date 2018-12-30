@@ -21,14 +21,12 @@ package object util {
   }
 
   implicit class OptionOps[A](opt: Option[A]) {
-    def toTry(msg: String): Try[A] = {
-      opt
-        .map(Success(_))
-        .getOrElse(Failure(new NoSuchElementException(msg)))
-    }
+    def toTry(err: Exception): Try[A] = opt.map(Success(_)) .getOrElse(Failure(err))
+    def toTry(msg: String): Try[A] = toTry(new NoSuchElementException(msg))
   }
 
   implicit class OptionFutOps[A](opt: Option[A]) {
+    def toFut(err: Exception): Future[A] = Future.fromTry(opt.toTry(err))
     def toFut(msg: String): Future[A] = Future.fromTry(opt.toTry(msg))
   }
 

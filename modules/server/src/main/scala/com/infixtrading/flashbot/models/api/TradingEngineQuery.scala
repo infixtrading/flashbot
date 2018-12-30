@@ -32,3 +32,5 @@ case class GetExchangeTxHistory(exchange: String,
 
 case class GetPortfolioHistory(from: Instant = Instant.EPOCH,
                                timeStep: Duration = Duration.ofDays(1)) extends TradingEngineQuery
+
+case class SubscribeToReport(botId: String) extends TradingEngineQuery

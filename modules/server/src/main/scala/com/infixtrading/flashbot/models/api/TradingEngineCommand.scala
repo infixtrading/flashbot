@@ -21,6 +21,6 @@ case class EnableBot(id: String) extends TradingEngineCommand
 case class DisableBot(id: String) extends TradingEngineCommand
 case class BotHeartbeat(id: String) extends TradingEngineCommand
 
-case class ProcessBotSessionEvent(botId: String, event: ReportEvent) extends TradingEngineCommand
+case class ProcessBotReportEvent(botId: String, event: ReportEvent) extends TradingEngineCommand
 
 case object EngineTick extends TradingEngineCommand

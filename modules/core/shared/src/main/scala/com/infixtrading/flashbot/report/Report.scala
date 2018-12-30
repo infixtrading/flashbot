@@ -176,5 +176,7 @@ object Report {
     isComplete = false,
     None
   )
+
+  implicit val reportFmt: DeltaFmtJson[Report] = ???
 }
 

@@ -4,7 +4,7 @@ import java.security.InvalidParameterException
 import java.time.Instant
 
 import akka.Done
-import akka.actor.{ActorLogging, ActorRef, ActorSystem, PoisonPill, Props}
+import akka.actor.{ActorLogging, ActorRef, ActorSystem, PoisonPill, Props, Status}
 import akka.pattern.{ask, pipe}
 import akka.persistence._
 import akka.stream.scaladsl.{Keep, Sink, Source}
@@ -26,6 +26,7 @@ import com.infixtrading.flashbot.models.api._
 import com.infixtrading.flashbot.models.core._
 import com.infixtrading.flashbot.report.ReportEvent.{BalanceEvent, PositionEvent, SessionComplete}
 import com.infixtrading.flashbot.report._
+import sun.plugin.dom.exception.InvalidStateException
 
 import scala.concurrent.duration._
 import scala.concurrent._
@@ -71,6 +72,7 @@ class TradingEngine(engineId: String,
   var state = TradingEngineState()
 
   var botSessions = Map.empty[String, ActorRef]
+  var subscriptions = Map.empty[String, Set[ActorRef]]
 
   system.scheduler.schedule(200 millis, 200 millis, self, EngineTick)
 
@@ -132,22 +134,29 @@ class TradingEngine(engineId: String,
       * is a balance event, we want to save that to state. In addition to that, we always
       * generate report deltas and save those.
       */
-    case ProcessBotSessionEvent(botId, event) =>
+    case ProcessBotReportEvent(botId, event) =>
       if (!state.bots.isDefinedAt(botId)) {
         log.warning(s"Ignoring session event for non-existent bot $botId. $event")
         return Future.successful((Done, Seq.empty))
       }
 
-      val deltas = state.bots(botId).sessions.last.report.genDeltas(event)
-        .map(ReportUpdated(botId, _))
-        .toList
+      val currentReport = state.bots(botId).sessions.last.report
+      val deltas = currentReport.genDeltas(event)
+      val deltaEvents = deltas.map(ReportUpdated(botId, _)).toList
+
+      // Build a stream of reports from the deltas and publish.
+      deltas.scanLeft(currentReport) { case (report, delta) => report.update(delta) }
+        .drop(1)
+        .foreach { report =>
+          publish(botId, report)
+        }
 
       Future.successful(event match {
         case BalanceEvent(account, balance, micros) =>
-          (Done, BalancesUpdated(botId, account, balance) :: deltas)
+          (Done, BalancesUpdated(botId, account, balance) :: deltaEvents)
         case PositionEvent(market, position, micros) =>
-          (Done, PositionUpdated(botId, market, position) :: deltas)
-        case _ => (Done, deltas)
+          (Done, PositionUpdated(botId, market, position) :: deltaEvents)
+        case _ => (Done, deltaEvents)
       })
 
     /**
@@ -202,7 +211,6 @@ class TradingEngine(engineId: String,
     * command are persisted and can be used to replay the state of the actor after a crash/restart.
     */
   override def receiveCommand: Receive = {
-
     /**
       * Internal Akka Persistence commands
       */
@@ -257,11 +265,31 @@ class TradingEngine(engineId: String,
       case StrategyInfoQuery(name) =>
         val sessionLoader = new SessionLoader(getExchangeConfigs, dataServer)
         (for {
-          className <- strategyClassNames.get(name).toFut(s"Unknown strategy $name")
+          className <- strategyClassNames.get(name)
+            .toFut(new InvalidParameterException(s"Unknown strategy $name"))
           strategy <- Future.fromTry(sessionLoader.loadNewStrategy(className))
           title = strategy.title
           info <- strategy.info(sessionLoader)
         } yield StrategyInfoResponse(title, name, info)) pipeTo sender
+
+      /**
+        * Generate and respond with a [[NetworkSource]] of the [[Report]] for the specified bot.
+        */
+      case SubscribeToReport(botId) =>
+        (for {
+          bot <- state.bots.get(botId).toFut(
+            new InvalidParameterException(s"Unknown bot $botId"))
+          session <- bot.sessions.lastOption.toFut(
+            new InvalidStateException(s"Bot $botId not started"))
+          (ref, src) = Source
+            .actorRef[Report](Int.MaxValue, OverflowStrategy.fail)
+            .preMaterialize()
+          _ = {
+            ref ! session.report
+            subscriptions += (botId -> (subscriptions.getOrElse(botId, Set.empty) + ref))
+          }
+          compressedSrc <- NetworkSource.build(src)
+        } yield compressedSrc) pipeTo sender
 
       /**
         * For all configured exchanges, try to fetch the portfolio. Swallow future failures here
@@ -501,7 +529,7 @@ class TradingEngine(engineId: String,
         val (ref, fut) = Source
           .actorRef[ReportEvent](Int.MaxValue, OverflowStrategy.fail)
           .toMat(Sink.foreach { event =>
-            self ! ProcessBotSessionEvent(name, event)
+            self ! ProcessBotReportEvent(name, event)
           })(Keep.both)
           .run
 
@@ -532,6 +560,14 @@ class TradingEngine(engineId: String,
     log.info(s"Shutting down bot $name")
     botSessions(name) ! StopSession
     botSessions -= name
+    publish(name, Status.Success(Done))
+    subscriptions -= name
+  }
+
+  def publish(id: String, reportMsg: Any) = {
+    subscriptions.getOrElse(id, Set.empty).foreach { ref =>
+      ref ! reportMsg
+    }
   }
 
   def pingBot(name: String) = Future {

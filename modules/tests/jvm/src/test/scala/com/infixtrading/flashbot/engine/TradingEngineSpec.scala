@@ -8,17 +8,21 @@ import java.util.{Date, TimeZone}
 import akka.Done
 import akka.actor.{ActorSystem, Props}
 import akka.pattern.ask
+import akka.stream.ActorMaterializer
+import akka.stream.scaladsl.Sink
 import akka.testkit.{ImplicitSender, TestKit}
 import akka.util.Timeout
-import com.infixtrading.flashbot.core.{BalancePoint, FlashbotConfig, Paper}
-import com.infixtrading.flashbot.util.files
+import com.infixtrading.flashbot.core.{BalancePoint, FlashbotConfig, Paper, Trade}
+import com.infixtrading.flashbot.util.{files, time}
 import com.infixtrading.flashbot.models.api._
+import com.infixtrading.flashbot.models.core.Order.{Buy, Sell}
 import com.infixtrading.flashbot.models.core._
 import com.infixtrading.flashbot.report.Report
 import com.typesafe.config.ConfigFactory
 import de.sciss.chart.api._
 import io.circe.Printer
 import io.circe.literal._
+import io.circe.syntax._
 import io.circe.syntax._
 import org.jfree.chart.ChartFactory
 import org.jfree.chart.plot.PlotOrientation
@@ -103,7 +107,6 @@ class TradingEngineSpec
         Portfolio.empty
       ), 5 seconds)
 
-
       // Status should be Disabled
       request(BotStatusQuery("mybot")) shouldBe Disabled
 
@@ -130,6 +133,48 @@ class TradingEngineSpec
       assertThrows[InvalidParameterException] {
         request(BotStatusQuery("mybot"))
       }
+    }
+
+    /**
+      * We should be able to start a bot, then subscribe to a live stream of it's report.
+      */
+    "subscribe to the report of a running bot" in {
+      implicit val engine = system.actorOf(TradingEngine.props("test-engine"))
+      implicit val mat = ActorMaterializer()
+      def request(query: Any) = Await.result(engine ? query, 5 seconds)
+
+      val nowMicros = time.currentTimeMicros
+      val trades = Seq(1 to 100 map { i =>
+        Trade(i.toString, nowMicros + i * 1000000, i, i, if (i % 2 == 0) Buy else Sell)
+      })
+
+      // Configure and enable bot that writes a list of trades to the report.
+      request(ConfigureBot(
+        "bot2",
+        "tradewriter",
+        s"""{"trades": ${trades.asJson.pretty(Printer.noSpaces)}}""".stripMargin,
+        Paper(0 seconds),
+        None,
+        Portfolio.empty
+      ))
+
+      // Wait a second
+      Thread.sleep(1000)
+
+      // Subscribe to the report. Receive a stream source.
+      val reportSrc = request(SubscribeToReport("bot2")).asInstanceOf[NetworkSource[Trade]]
+
+      // Wait another second
+      Thread.sleep(1000)
+
+      // Disable the bot.
+      request(DisableBot("bot2")) shouldBe Done
+
+      // Collect the stream into a seq.
+      val reports = Await.result(reportSrc.toSource.runWith(Sink.seq), 5 seconds)
+
+      // Verify that the data in the report stream is the expected list of trades.
+      reports shouldEqual ???
     }
 
     "be profitable when using lookahead" in {
@@ -162,9 +207,6 @@ class TradingEngineSpec
       }, timeout.duration)
 
       report.error shouldBe None
-
-      println("Collections: ", report.collections.keySet)
-      println("Time series: ", report.timeSeries.keySet)
 
       def reportTimePeriod(report: Report): Class[_ <: RegularTimePeriod] =
         (report.barSize.length, report.barSize.unit) match {
