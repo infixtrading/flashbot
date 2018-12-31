@@ -147,16 +147,28 @@ class TradingEngine(engineId: String,
       // Build a stream of reports from the deltas and publish.
       deltas.scanLeft(currentReport) { case (report, delta) => report.update(delta) }
         .drop(1)
-        .foreach { report =>
-          publish(botId, report)
-        }
+        .foreach { report => publish(botId, report) }
+
+      // Clean up and shutdown session when the session completes for any reason.
+      val doneEvents = event match {
+        case SessionComplete(None) =>
+          shutdownBotSession(botId)
+          List(BotDisabled(botId))
+        case SessionComplete(Some(err)) =>
+          shutdownBotSession(botId)
+          List(BotDisabled(botId))
+        case _ =>
+          List()
+      }
+
+      val commonEvents = deltaEvents ++ doneEvents
 
       Future.successful(event match {
         case BalanceEvent(account, balance, micros) =>
-          (Done, BalancesUpdated(botId, account, balance) :: deltaEvents)
+          (Done, BalancesUpdated(botId, account, balance) :: commonEvents)
         case PositionEvent(market, position, micros) =>
-          (Done, PositionUpdated(botId, market, position) :: deltaEvents)
-        case _ => (Done, deltaEvents)
+          (Done, PositionUpdated(botId, market, position) :: commonEvents)
+        case _ => (Done, commonEvents)
       })
 
     /**
@@ -188,9 +200,7 @@ class TradingEngine(engineId: String,
         case Some(bot) if !bot.enabled =>
           Future.failed(new InvalidParameterException(s"Bot $id is already disabled"))
         case Some(_) =>
-          if (botSessions.isDefinedAt(id)) {
-            shutdownBotSession(id)
-          }
+          shutdownBotSession(id)
           Future.successful((Done, Seq(BotDisabled(id))))
       }
 
@@ -368,7 +378,8 @@ class TradingEngine(engineId: String,
               implicit var newReport = r._1
               // Complete this stream once a SessionComplete event comes in.
               ev match {
-                case _: SessionComplete => ref ! PoisonPill
+                case SessionComplete(None) => ref ! Status.Success(Done)
+                case SessionComplete(Some(_)) => ref ! PoisonPill
                 case _ => // Ignore other events that are not relevant to stream completion
               }
 
@@ -556,10 +567,17 @@ class TradingEngine(engineId: String,
     Future.sequence(keys.map(startBot)).map(keys zip _).map(_.toMap)
   }
 
+  /**
+    * Let's keep this idempotent. Not thread safe, like most of the stuff in this class.
+    */
   def shutdownBotSession(name: String) = {
-    log.info(s"Shutting down bot $name")
-    botSessions(name) ! StopSession
+    log.info(s"Trying to shutdown session for bot $name")
+
+    if (botSessions.isDefinedAt(name)) {
+      botSessions(name) ! StopSession
+    }
     botSessions -= name
+
     publish(name, Status.Success(Done))
     subscriptions -= name
   }

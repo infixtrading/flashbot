@@ -29,7 +29,9 @@ package object core {
     extends Timestamped with Priced
 
   object Trade {
-    implicit val tradeFmt: DeltaFmtJson[Trade] = ???
+    implicit val tradeEn: Encoder[Trade] = deriveEncoder
+    implicit val tradeDe: Decoder[Trade] = deriveDecoder
+    implicit val tradeFmt: DeltaFmtJson[Trade] = DeltaFmt.defaultFmtJson[Trade]("trades")
   }
 
   case class Quote(bidPrice: Double,

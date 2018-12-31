@@ -20,7 +20,7 @@ import com.infixtrading.flashbot.models.core._
 import com.infixtrading.flashbot.report.Report
 import com.typesafe.config.ConfigFactory
 import de.sciss.chart.api._
-import io.circe.Printer
+import io.circe.{Json, Printer}
 import io.circe.literal._
 import io.circe.syntax._
 import io.circe.syntax._
@@ -52,6 +52,12 @@ class TradingEngineSpec
     with Matchers
     with BeforeAndAfterAll
     with ImplicitSender {
+
+  override def beforeAll: Unit = {
+    val dataDir = new File(FlashbotConfig.load.`data-root`)
+    files.rmRf(dataDir)
+    super.beforeAll()
+  }
 
   override def afterAll: Unit = {
     val dataDir = new File(FlashbotConfig.load.`data-root`)
@@ -139,14 +145,14 @@ class TradingEngineSpec
       * We should be able to start a bot, then subscribe to a live stream of it's report.
       */
     "subscribe to the report of a running bot" in {
-      implicit val engine = system.actorOf(TradingEngine.props("test-engine"))
+      val engine = system.actorOf(TradingEngine.props("test-engine"))
       implicit val mat = ActorMaterializer()
       def request(query: Any) = Await.result(engine ? query, 5 seconds)
 
       val nowMicros = time.currentTimeMicros
-      val trades = Seq(1 to 100 map { i =>
+      val trades = 1 to 20 map { i =>
         Trade(i.toString, nowMicros + i * 1000000, i, i, if (i % 2 == 0) Buy else Sell)
-      })
+      }
 
       // Configure and enable bot that writes a list of trades to the report.
       request(ConfigureBot(
@@ -157,24 +163,25 @@ class TradingEngineSpec
         None,
         Portfolio.empty
       ))
+      request(EnableBot("bot2"))
 
-      // Wait a second
       Thread.sleep(1000)
 
       // Subscribe to the report. Receive a stream source.
-      val reportSrc = request(SubscribeToReport("bot2")).asInstanceOf[NetworkSource[Trade]]
+      val reportTradeSrc = request(SubscribeToReport("bot2"))
+        .asInstanceOf[NetworkSource[Report]].toSource
+        .map(_.values("last_trade").value.asInstanceOf[Trade])
 
-      // Wait another second
-      Thread.sleep(1000)
-
-      // Disable the bot.
-      request(DisableBot("bot2")) shouldBe Done
+//      Await.result(reportTradeSrc.runForeach(trade => println("RV: ", trade)), 5 seconds)
 
       // Collect the stream into a seq.
-      val reports = Await.result(reportSrc.toSource.runWith(Sink.seq), 5 seconds)
+      val reportTrades = Await.result(reportTradeSrc.runWith(Sink.seq), 8 seconds)
 
       // Verify that the data in the report stream is the expected list of trades.
-      reports shouldEqual ???
+//      reportTrades shouldEqual trades.drop(trades.size - reportTrades.size)
+
+      // Also check that it was reverted to disabled state after the data stream completed.
+      request(BotStatusQuery("bot2")) shouldBe Disabled
     }
 
     "be profitable when using lookahead" in {

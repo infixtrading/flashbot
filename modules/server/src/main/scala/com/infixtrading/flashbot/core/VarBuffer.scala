@@ -98,7 +98,7 @@ class VarBuffer(initialReportVals: Map[String, Any]) {
     * Delete the var, no matter the type. Remove from session and from buffer.
     */
   def delete(key: String)(implicit ctx: TradingSession): Unit = {
-    ctx.send(RemoveValueEvent(key))
+    sendValEvents(RemoveValueEvent(key))
     vars - key
   }
 
@@ -163,11 +163,10 @@ class VarBuffer(initialReportVals: Map[String, Any]) {
                    (implicit ctx: TradingSession, fmt: DeltaFmtJson[T]): Unit = {
     if (prev.isDefined) {
       val deltas = fmt.diff(prev.get, current.value)
-      ctx.send(deltas.map(delta =>
+      sendValEvents(deltas.map(delta =>
         UpdateValueEvent(current.key, fmt.deltaEn(delta))):_*)
     } else {
-//      implicit val deltaDe: Decoder[T] = fmt.modelDe
-      ctx.send(PutValueEvent(current.key, fmt.fmtName, fmt.modelEn(current.value)))
+      sendValEvents(PutValueEvent(current.key, fmt.fmtName, fmt.modelEn(current.value)))
     }
   }
 
@@ -197,4 +196,8 @@ object VarBuffer {
   sealed trait VarState
   case object Tombstone extends VarState
   case class Loaded[T](instance: Var[T]) extends VarState
+
+  def sendValEvents(valEvents: ValueEvent*)(implicit ctx: TradingSession) = {
+    ctx.send(valEvents.map(ReportValueEvent):_*)
+  }
 }
