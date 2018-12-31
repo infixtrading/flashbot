@@ -43,8 +43,8 @@ object DeltaFmt {
    * the updated model in full after doing a diff.
    */
   def defaultFmtJson[M](name: String)
-                   (implicit en: Encoder[M],
-                    de: Decoder[M]): DeltaFmtJson[M] = new DeltaFmtJson[M] {
+                       (implicit en: Encoder[M],
+                        de: Decoder[M]): DeltaFmtJson[M] = new DeltaFmtJson[M] {
     override type D = M
     override def fmtName: String = name
     override def update(model: M, delta: D): M = delta
@@ -72,17 +72,21 @@ object DeltaFmt {
   implicit val stringVarFmt: DeltaFmtJson[java.lang.String] = defaultFmtJson("string")
   implicit val booleanVarFmt: DeltaFmtJson[java.lang.Boolean] = defaultFmtJson("boolean")
 
-  val varFmtSet: Set[DeltaFmtJson[_]] = Set(
-    implicitly[DeltaFmtJson[java.lang.Integer]],
-    implicitly[DeltaFmtJson[java.lang.Double]],
-    implicitly[DeltaFmtJson[java.lang.String]],
-    implicitly[DeltaFmtJson[java.lang.Boolean]]
-  )
+//  val varFmtSet: Set[DeltaFmtJson[_]] = Set(
+//    implicitly[DeltaFmtJson[java.lang.Integer]],
+//    implicitly[DeltaFmtJson[java.lang.Double]],
+//    implicitly[DeltaFmtJson[java.lang.String]],
+//    implicitly[DeltaFmtJson[java.lang.Boolean]],
+//    Trade.tradeFmt
+//  )
 
   // We need to have an index of DeltaFmtJson instances. It would be great to do without this,
   // but for now this works.
-  val formats = varFmtSet.foldLeft(Map.empty[String, DeltaFmtJson[_]])((memo, item) =>
-    memo + (item.fmtName -> item))
+//  def formats = varFmtSet.foldLeft(Map.empty[String, DeltaFmtJson[_]])((memo, item) =>
+//    memo + (item.fmtName -> item))
+  def formats(name: String): DeltaFmtJson[_] = name match {
+    case "trades" => Trade.tradeFmt
+  }
 
   def apply[T: DeltaFmtJson]: DeltaFmtJson[T] = implicitly[DeltaFmtJson[T]]
 

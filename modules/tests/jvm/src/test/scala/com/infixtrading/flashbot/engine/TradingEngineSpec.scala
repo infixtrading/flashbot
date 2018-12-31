@@ -1,24 +1,27 @@
 package com.infixtrading.flashbot.engine
 
 import java.io.File
-import java.security.InvalidParameterException
 import java.time.Instant
 import java.util.{Date, TimeZone}
 
 import akka.Done
 import akka.actor.{ActorSystem, Props}
 import akka.pattern.ask
+import akka.stream.ActorMaterializer
+import akka.stream.scaladsl.Sink
 import akka.testkit.{ImplicitSender, TestKit}
 import akka.util.Timeout
-import com.infixtrading.flashbot.core.{BalancePoint, FlashbotConfig, Paper}
-import com.infixtrading.flashbot.util.files
+import com.infixtrading.flashbot.core.{BalancePoint, FlashbotConfig, Paper, Trade}
+import com.infixtrading.flashbot.util.{files, time}
 import com.infixtrading.flashbot.models.api._
+import com.infixtrading.flashbot.models.core.Order.{Buy, Sell}
 import com.infixtrading.flashbot.models.core._
 import com.infixtrading.flashbot.report.Report
 import com.typesafe.config.ConfigFactory
 import de.sciss.chart.api._
-import io.circe.Printer
+import io.circe.{Json, Printer}
 import io.circe.literal._
+import io.circe.syntax._
 import io.circe.syntax._
 import org.jfree.chart.ChartFactory
 import org.jfree.chart.plot.PlotOrientation
@@ -48,6 +51,12 @@ class TradingEngineSpec
     with Matchers
     with BeforeAndAfterAll
     with ImplicitSender {
+
+  override def beforeAll: Unit = {
+    val dataDir = new File(FlashbotConfig.load.`data-root`)
+    files.rmRf(dataDir)
+    super.beforeAll()
+  }
 
   override def afterAll: Unit = {
     val dataDir = new File(FlashbotConfig.load.`data-root`)
@@ -103,7 +112,6 @@ class TradingEngineSpec
         Portfolio.empty
       ), 5 seconds)
 
-
       // Status should be Disabled
       request(BotStatusQuery("mybot")) shouldBe Disabled
 
@@ -127,9 +135,55 @@ class TradingEngineSpec
       Thread.sleep(1000)
 
       // Status should fail with "unknown bot"
-      assertThrows[InvalidParameterException] {
+      assertThrows[IllegalArgumentException] {
         request(BotStatusQuery("mybot"))
       }
+    }
+
+    /**
+      * We should be able to start a bot, then subscribe to a live stream of it's report.
+      */
+    "subscribe to the report of a running bot" in {
+      val engine = system.actorOf(TradingEngine.props("test-engine"))
+      implicit val mat = ActorMaterializer()
+      def request(query: Any) = Await.result(engine ? query, 30 seconds)
+
+      val nowMicros = time.currentTimeMicros
+      val trades = 1 to 20 map { i =>
+        Trade(i.toString, nowMicros + i * 1000000, i, i, if (i % 2 == 0) Buy else Sell)
+      }
+
+      // Configure and enable bot that writes a list of trades to the report.
+      request(ConfigureBot(
+        "bot2",
+        "tradewriter",
+        s"""{"trades": ${trades.asJson.pretty(Printer.noSpaces)}}""".stripMargin,
+        Paper(0 seconds),
+        None,
+        Portfolio.empty
+      ))
+      request(EnableBot("bot2"))
+
+      Thread.sleep(1000)
+
+      // Subscribe to the report. Receive a stream source.
+      val reportTradeSrc = request(SubscribeToReport("bot2"))
+        .asInstanceOf[NetworkSource[Report]].toSource
+        .map(_.values("last_trade").value.asInstanceOf[Trade])
+
+      // Collect the stream into a seq.
+      val reportTrades = Await.result(reportTradeSrc.runWith(Sink.seq), 30 seconds).dropRight(1)
+
+      // Verify that the data in the report stream is the expected list of trades.
+      val a = trades.drop(trades.size - reportTrades.size)
+      println(a)
+      println(reportTrades)
+      reportTrades shouldEqual a
+
+      // Also check that it was reverted to disabled state after the data stream completed.
+      val x = request(BotStatusQuery("bot2"))
+      println(x)
+      x shouldBe Disabled
     }
 
     "be profitable when using lookahead" in {
@@ -162,9 +216,6 @@ class TradingEngineSpec
       }, timeout.duration)
 
       report.error shouldBe None
-
-      println("Collections: ", report.collections.keySet)
-      println("Time series: ", report.timeSeries.keySet)
 
       def reportTimePeriod(report: Report): Class[_ <: RegularTimePeriod] =
         (report.barSize.length, report.barSize.unit) match {

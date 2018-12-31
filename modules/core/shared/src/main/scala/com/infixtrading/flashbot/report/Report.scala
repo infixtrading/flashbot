@@ -28,13 +28,13 @@ case class Report(strategy: String,
     case CollectionAdd(CollectionEvent(name, item)) => copy(collections = collections +
       (name -> (collections.getOrElse(name, Vector.empty[Json]) :+ item)))
     case event: ValueEvent => copy(values = event match {
-      case PutValueEvent(key, fmtName, anyValue) =>
+      case PutValueEvent(key, fmtName, valueJson) =>
         val fmt = DeltaFmt.formats(fmtName)
-        setVal(fmt, key, anyValue, values)
+        setVal(fmt, key, valueJson, values)
 
-      case UpdateValueEvent(key, anyDelta) =>
+      case UpdateValueEvent(key, deltaJson) =>
         val fmt = DeltaFmt.formats(values(key).fmtName)
-        updateVal(fmt, key, anyDelta, values)
+        updateVal(fmt, key, deltaJson, values)
 
       case RemoveValueEvent(key) =>
         values - key
@@ -53,16 +53,16 @@ case class Report(strategy: String,
     }
   }
 
-  private def setVal[T](fmt: DeltaFmt[T], key: String, value: Any,
+  private def setVal[T](fmt: DeltaFmtJson[T], key: String, value: Json,
                         values: ValuesMap): ValuesMap = {
-    val tv = value.asInstanceOf[T]
+    val tv = value.as[T](fmt.modelDe).right.get
     values + (key -> ReportValue(fmt.fmtName, tv))
   }
 
-  private def updateVal[T](fmt: DeltaFmt[T], key: String, delta: Any,
+  private def updateVal[T](fmt: DeltaFmtJson[T], key: String, delta: Json,
                            values: ValuesMap): ValuesMap = {
-    val dv = delta.asInstanceOf[fmt.D]
-    val v = values(key).asInstanceOf[T]
+    val dv = delta.as[fmt.D](fmt.deltaDe).right.get
+    val v = values(key).value.asInstanceOf[T]
     val newVal = fmt.update(v, dv)
     values + (key -> ReportValue(fmt.fmtName, newVal))
   }
@@ -176,5 +176,7 @@ object Report {
     isComplete = false,
     None
   )
+
+  implicit val reportFmt: DeltaFmtJson[Report] = DeltaFmt.defaultFmtJson("report")
 }
 

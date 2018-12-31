@@ -1,10 +1,8 @@
 package com.infixtrading.flashbot.engine
 
-import java.security.InvalidParameterException
 import java.time.Instant
-
 import akka.Done
-import akka.actor.{ActorLogging, ActorRef, ActorSystem, PoisonPill, Props}
+import akka.actor.{ActorLogging, ActorRef, ActorSystem, PoisonPill, Props, Status}
 import akka.pattern.{ask, pipe}
 import akka.persistence._
 import akka.stream.scaladsl.{Keep, Sink, Source}
@@ -71,6 +69,7 @@ class TradingEngine(engineId: String,
   var state = TradingEngineState()
 
   var botSessions = Map.empty[String, ActorRef]
+  var subscriptions = Map.empty[String, Set[ActorRef]]
 
   system.scheduler.schedule(200 millis, 200 millis, self, EngineTick)
 
@@ -132,22 +131,41 @@ class TradingEngine(engineId: String,
       * is a balance event, we want to save that to state. In addition to that, we always
       * generate report deltas and save those.
       */
-    case ProcessBotSessionEvent(botId, event) =>
+    case ProcessBotReportEvent(botId, event) =>
       if (!state.bots.isDefinedAt(botId)) {
         log.warning(s"Ignoring session event for non-existent bot $botId. $event")
         return Future.successful((Done, Seq.empty))
       }
 
-      val deltas = state.bots(botId).sessions.last.report.genDeltas(event)
-        .map(ReportUpdated(botId, _))
-        .toList
+      val currentReport = state.bots(botId).sessions.last.report
+      val deltas = currentReport.genDeltas(event)
+      val deltaEvents = deltas.map(ReportUpdated(botId, _)).toList
+
+      // Build a stream of reports from the deltas and publish.
+      deltas.scanLeft(currentReport) { case (report, delta) => report.update(delta) }
+        .drop(1)
+        .foreach { report => publish(botId, report) }
+
+      // Clean up and shutdown session when the session completes for any reason.
+      val doneEvents = event match {
+        case SessionComplete(None) =>
+          shutdownBotSession(botId)
+          List(BotDisabled(botId))
+        case SessionComplete(Some(err)) =>
+          shutdownBotSession(botId)
+          List(BotDisabled(botId))
+        case _ =>
+          List()
+      }
+
+      val commonEvents = deltaEvents ++ doneEvents
 
       Future.successful(event match {
         case BalanceEvent(account, balance, micros) =>
-          (Done, BalancesUpdated(botId, account, balance) :: deltas)
+          (Done, BalancesUpdated(botId, account, balance) :: commonEvents)
         case PositionEvent(market, position, micros) =>
-          (Done, PositionUpdated(botId, market, position) :: deltas)
-        case _ => (Done, deltas)
+          (Done, PositionUpdated(botId, market, position) :: commonEvents)
+        case _ => (Done, commonEvents)
       })
 
     /**
@@ -165,9 +183,9 @@ class TradingEngine(engineId: String,
 
     case EnableBot(id) =>
       state.bots.get(id) match {
-        case None => Future.failed(new InvalidParameterException(s"Unknown bot $id"))
+        case None => Future.failed(new IllegalArgumentException(s"Unknown bot $id"))
         case Some(bot) if bot.enabled =>
-          Future.failed(new InvalidParameterException(s"Bot $id is already enabled"))
+          Future.failed(new IllegalArgumentException(s"Bot $id is already enabled"))
         case Some(_) =>
           startBot(id).map(sessionStartedEvent =>
             (Done, Seq(BotEnabled(id), sessionStartedEvent)))
@@ -175,13 +193,11 @@ class TradingEngine(engineId: String,
 
     case DisableBot(id) =>
       state.bots.get(id) match {
-        case None => Future.failed(new InvalidParameterException(s"Unknown bot $id"))
+        case None => Future.failed(new IllegalArgumentException(s"Unknown bot $id"))
         case Some(bot) if !bot.enabled =>
-          Future.failed(new InvalidParameterException(s"Bot $id is already disabled"))
+          Future.failed(new IllegalArgumentException(s"Bot $id is already disabled"))
         case Some(_) =>
-          if (botSessions.isDefinedAt(id)) {
-            shutdownBotSession(id)
-          }
+          shutdownBotSession(id)
           Future.successful((Done, Seq(BotDisabled(id))))
       }
 
@@ -202,7 +218,6 @@ class TradingEngine(engineId: String,
     * command are persisted and can be used to replay the state of the actor after a crash/restart.
     */
   override def receiveCommand: Receive = {
-
     /**
       * Internal Akka Persistence commands
       */
@@ -239,12 +254,12 @@ class TradingEngine(engineId: String,
       case BotSessionsQuery(id) =>
         state.bots.get(id)
           .map(bot => Future.successful(BotSessionsResponse(id, bot.sessions)))
-          .getOrElse(Future.failed(new InvalidParameterException("Bot not found"))) pipeTo sender
+          .getOrElse(Future.failed(new IllegalArgumentException("Bot not found"))) pipeTo sender
 
       case BotReportQuery(id) =>
         state.bots.get(id)
           .map(bot => Future.successful(BotResponse(id, bot.sessions.map(_.report))))
-          .getOrElse(Future.failed(new InvalidParameterException("Bot not found"))) pipeTo sender
+          .getOrElse(Future.failed(new IllegalArgumentException("Bot not found"))) pipeTo sender
 
       case BotReportsQuery() =>
         sender ! BotsResponse(bots = state.bots.map { case (id, bot) =>
@@ -257,11 +272,31 @@ class TradingEngine(engineId: String,
       case StrategyInfoQuery(name) =>
         val sessionLoader = new SessionLoader(getExchangeConfigs, dataServer)
         (for {
-          className <- strategyClassNames.get(name).toFut(s"Unknown strategy $name")
+          className <- strategyClassNames.get(name)
+            .toFut(new IllegalArgumentException(s"Unknown strategy $name"))
           strategy <- Future.fromTry(sessionLoader.loadNewStrategy(className))
           title = strategy.title
           info <- strategy.info(sessionLoader)
         } yield StrategyInfoResponse(title, name, info)) pipeTo sender
+
+      /**
+        * Generate and respond with a [[NetworkSource]] of the [[Report]] for the specified bot.
+        */
+      case SubscribeToReport(botId) =>
+        (for {
+          bot <- state.bots.get(botId).toFut(
+            new IllegalArgumentException(s"Unknown bot $botId"))
+          session <- bot.sessions.lastOption.toFut(
+            new IllegalStateException(s"Bot $botId not started"))
+          (ref, src) = Source
+            .actorRef[Report](Int.MaxValue, OverflowStrategy.fail)
+            .preMaterialize()
+          _ = {
+            ref ! session.report
+            subscriptions += (botId -> (subscriptions.getOrElse(botId, Set.empty) + ref))
+          }
+          compressedSrc <- NetworkSource.build(src)
+        } yield compressedSrc) pipeTo sender
 
       /**
         * For all configured exchanges, try to fetch the portfolio. Swallow future failures here
@@ -340,7 +375,8 @@ class TradingEngine(engineId: String,
               implicit var newReport = r._1
               // Complete this stream once a SessionComplete event comes in.
               ev match {
-                case _: SessionComplete => ref ! PoisonPill
+                case SessionComplete(None) => ref ! Status.Success(Done)
+                case SessionComplete(Some(_)) => ref ! PoisonPill
                 case _ => // Ignore other events that are not relevant to stream completion
               }
 
@@ -384,7 +420,7 @@ class TradingEngine(engineId: String,
         }
 
       case q =>
-        Future.failed(new InvalidParameterException(s"Unsupported query: $q")) pipeTo sender
+        Future.failed(new IllegalArgumentException(s"Unsupported query: $q")) pipeTo sender
     }
 
     /**
@@ -501,7 +537,7 @@ class TradingEngine(engineId: String,
         val (ref, fut) = Source
           .actorRef[ReportEvent](Int.MaxValue, OverflowStrategy.fail)
           .toMat(Sink.foreach { event =>
-            self ! ProcessBotSessionEvent(name, event)
+            self ! ProcessBotReportEvent(name, event)
           })(Keep.both)
           .run
 
@@ -528,10 +564,25 @@ class TradingEngine(engineId: String,
     Future.sequence(keys.map(startBot)).map(keys zip _).map(_.toMap)
   }
 
+  /**
+    * Let's keep this idempotent. Not thread safe, like most of the stuff in this class.
+    */
   def shutdownBotSession(name: String) = {
-    log.info(s"Shutting down bot $name")
-    botSessions(name) ! StopSession
+    log.info(s"Trying to shutdown session for bot $name")
+
+    if (botSessions.isDefinedAt(name)) {
+      botSessions(name) ! StopSession
+    }
     botSessions -= name
+
+    publish(name, Status.Success(Done))
+    subscriptions -= name
+  }
+
+  def publish(id: String, reportMsg: Any) = {
+    subscriptions.getOrElse(id, Set.empty).foreach { ref =>
+      ref ! reportMsg
+    }
   }
 
   def pingBot(name: String) = Future {
@@ -539,7 +590,7 @@ class TradingEngine(engineId: String,
   }
 
   def botStatus(name: String) = state.bots.get(name) match {
-    case None => Future.failed(new InvalidParameterException(s"Unknown bot $name"))
+    case None => Future.failed(new IllegalArgumentException(s"Unknown bot $name"))
     case Some(BotState(_, true, _, _)) => pingBot(name).transform {
       case Success(SessionPong) => Success(Running)
       case _ => Success(Crashed)
