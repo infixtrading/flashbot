@@ -172,13 +172,11 @@ class TradingEngineSpec
         .asInstanceOf[NetworkSource[Report]].toSource
         .map(_.values("last_trade").value.asInstanceOf[Trade])
 
-//      Await.result(reportTradeSrc.runForeach(trade => println("RV: ", trade)), 5 seconds)
-
       // Collect the stream into a seq.
-      val reportTrades = Await.result(reportTradeSrc.runWith(Sink.seq), 8 seconds)
+      val reportTrades = Await.result(reportTradeSrc.runWith(Sink.seq), 8 seconds).dropRight(1)
 
       // Verify that the data in the report stream is the expected list of trades.
-//      reportTrades shouldEqual trades.drop(trades.size - reportTrades.size)
+      reportTrades shouldEqual trades.drop(trades.size - reportTrades.size)
 
       // Also check that it was reverted to disabled state after the data stream completed.
       request(BotStatusQuery("bot2")) shouldBe Disabled
