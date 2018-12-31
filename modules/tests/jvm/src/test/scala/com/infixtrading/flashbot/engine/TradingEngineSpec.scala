@@ -146,7 +146,7 @@ class TradingEngineSpec
     "subscribe to the report of a running bot" in {
       val engine = system.actorOf(TradingEngine.props("test-engine"))
       implicit val mat = ActorMaterializer()
-      def request(query: Any) = Await.result(engine ? query, 5 seconds)
+      def request(query: Any) = Await.result(engine ? query, 30 seconds)
 
       val nowMicros = time.currentTimeMicros
       val trades = 1 to 20 map { i =>
@@ -172,13 +172,18 @@ class TradingEngineSpec
         .map(_.values("last_trade").value.asInstanceOf[Trade])
 
       // Collect the stream into a seq.
-      val reportTrades = Await.result(reportTradeSrc.runWith(Sink.seq), 8 seconds).dropRight(1)
+      val reportTrades = Await.result(reportTradeSrc.runWith(Sink.seq), 30 seconds).dropRight(1)
 
       // Verify that the data in the report stream is the expected list of trades.
-      reportTrades shouldEqual trades.drop(trades.size - reportTrades.size)
+      val a = trades.drop(trades.size - reportTrades.size)
+      println(a)
+      println(reportTrades)
+      reportTrades shouldEqual a
 
       // Also check that it was reverted to disabled state after the data stream completed.
-      request(BotStatusQuery("bot2")) shouldBe Disabled
+      val x = request(BotStatusQuery("bot2"))
+      println(x)
+      x shouldBe Disabled
     }
 
     "be profitable when using lookahead" in {
