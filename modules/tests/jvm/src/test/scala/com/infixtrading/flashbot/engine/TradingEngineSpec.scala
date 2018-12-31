@@ -1,7 +1,6 @@
 package com.infixtrading.flashbot.engine
 
 import java.io.File
-import java.security.InvalidParameterException
 import java.time.Instant
 import java.util.{Date, TimeZone}
 
@@ -136,7 +135,7 @@ class TradingEngineSpec
       Thread.sleep(1000)
 
       // Status should fail with "unknown bot"
-      assertThrows[InvalidParameterException] {
+      assertThrows[IllegalArgumentException] {
         request(BotStatusQuery("mybot"))
       }
     }

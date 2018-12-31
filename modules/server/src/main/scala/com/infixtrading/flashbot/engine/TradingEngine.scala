@@ -1,8 +1,6 @@
 package com.infixtrading.flashbot.engine
 
-import java.security.InvalidParameterException
 import java.time.Instant
-
 import akka.Done
 import akka.actor.{ActorLogging, ActorRef, ActorSystem, PoisonPill, Props, Status}
 import akka.pattern.{ask, pipe}
@@ -26,7 +24,6 @@ import com.infixtrading.flashbot.models.api._
 import com.infixtrading.flashbot.models.core._
 import com.infixtrading.flashbot.report.ReportEvent.{BalanceEvent, PositionEvent, SessionComplete}
 import com.infixtrading.flashbot.report._
-import sun.plugin.dom.exception.InvalidStateException
 
 import scala.concurrent.duration._
 import scala.concurrent._
@@ -186,9 +183,9 @@ class TradingEngine(engineId: String,
 
     case EnableBot(id) =>
       state.bots.get(id) match {
-        case None => Future.failed(new InvalidParameterException(s"Unknown bot $id"))
+        case None => Future.failed(new IllegalArgumentException(s"Unknown bot $id"))
         case Some(bot) if bot.enabled =>
-          Future.failed(new InvalidParameterException(s"Bot $id is already enabled"))
+          Future.failed(new IllegalArgumentException(s"Bot $id is already enabled"))
         case Some(_) =>
           startBot(id).map(sessionStartedEvent =>
             (Done, Seq(BotEnabled(id), sessionStartedEvent)))
@@ -196,9 +193,9 @@ class TradingEngine(engineId: String,
 
     case DisableBot(id) =>
       state.bots.get(id) match {
-        case None => Future.failed(new InvalidParameterException(s"Unknown bot $id"))
+        case None => Future.failed(new IllegalArgumentException(s"Unknown bot $id"))
         case Some(bot) if !bot.enabled =>
-          Future.failed(new InvalidParameterException(s"Bot $id is already disabled"))
+          Future.failed(new IllegalArgumentException(s"Bot $id is already disabled"))
         case Some(_) =>
           shutdownBotSession(id)
           Future.successful((Done, Seq(BotDisabled(id))))
@@ -257,12 +254,12 @@ class TradingEngine(engineId: String,
       case BotSessionsQuery(id) =>
         state.bots.get(id)
           .map(bot => Future.successful(BotSessionsResponse(id, bot.sessions)))
-          .getOrElse(Future.failed(new InvalidParameterException("Bot not found"))) pipeTo sender
+          .getOrElse(Future.failed(new IllegalArgumentException("Bot not found"))) pipeTo sender
 
       case BotReportQuery(id) =>
         state.bots.get(id)
           .map(bot => Future.successful(BotResponse(id, bot.sessions.map(_.report))))
-          .getOrElse(Future.failed(new InvalidParameterException("Bot not found"))) pipeTo sender
+          .getOrElse(Future.failed(new IllegalArgumentException("Bot not found"))) pipeTo sender
 
       case BotReportsQuery() =>
         sender ! BotsResponse(bots = state.bots.map { case (id, bot) =>
@@ -276,7 +273,7 @@ class TradingEngine(engineId: String,
         val sessionLoader = new SessionLoader(getExchangeConfigs, dataServer)
         (for {
           className <- strategyClassNames.get(name)
-            .toFut(new InvalidParameterException(s"Unknown strategy $name"))
+            .toFut(new IllegalArgumentException(s"Unknown strategy $name"))
           strategy <- Future.fromTry(sessionLoader.loadNewStrategy(className))
           title = strategy.title
           info <- strategy.info(sessionLoader)
@@ -288,9 +285,9 @@ class TradingEngine(engineId: String,
       case SubscribeToReport(botId) =>
         (for {
           bot <- state.bots.get(botId).toFut(
-            new InvalidParameterException(s"Unknown bot $botId"))
+            new IllegalArgumentException(s"Unknown bot $botId"))
           session <- bot.sessions.lastOption.toFut(
-            new InvalidStateException(s"Bot $botId not started"))
+            new IllegalStateException(s"Bot $botId not started"))
           (ref, src) = Source
             .actorRef[Report](Int.MaxValue, OverflowStrategy.fail)
             .preMaterialize()
@@ -423,7 +420,7 @@ class TradingEngine(engineId: String,
         }
 
       case q =>
-        Future.failed(new InvalidParameterException(s"Unsupported query: $q")) pipeTo sender
+        Future.failed(new IllegalArgumentException(s"Unsupported query: $q")) pipeTo sender
     }
 
     /**
@@ -593,7 +590,7 @@ class TradingEngine(engineId: String,
   }
 
   def botStatus(name: String) = state.bots.get(name) match {
-    case None => Future.failed(new InvalidParameterException(s"Unknown bot $name"))
+    case None => Future.failed(new IllegalArgumentException(s"Unknown bot $name"))
     case Some(BotState(_, true, _, _)) => pingBot(name).transform {
       case Success(SessionPong) => Success(Running)
       case _ => Success(Crashed)
