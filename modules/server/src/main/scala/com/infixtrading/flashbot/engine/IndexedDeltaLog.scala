@@ -39,6 +39,7 @@ class IndexedDeltaLog[T](path: File,
   val currentBundle = prevBundleLastItem.map(_.bundle).getOrElse(-1L) + 1
   var currentSlice = -1
   var lastSeenTime = prevBundleLastItem.map(_.micros).getOrElse(-1L)
+  var lastSliceTime = -1L
   var lastData: Option[T] = None
 
   def save(micros: Long, data: T): Unit = {
@@ -50,13 +51,14 @@ class IndexedDeltaLog[T](path: File,
 
     // If it's time for a new slice, unfold the data and save snapshot.
     // Also increment the current slice.
-    if (lastData.isEmpty || (micros - lastSeenTime) >= sliceSize.toMicros) {
+    if (lastData.isEmpty || (micros - lastSliceTime) >= sliceSize.toMicros) {
       currentSlice = currentSlice + 1
       val unfolded = FoldFmt.unfoldData(data)
       wrappers ++= unfolded.zipWithIndex.map { case (d, i) =>
         BundleSnap(currentBundle, currentSlice, micros, i == 0, i == unfolded.size - 1,
           Some(lastSeenTime), d.asJson)
       }
+      lastSliceTime = micros
     }
 
     // And now we generate and save a delta against the previous item in this bundle.
@@ -74,7 +76,6 @@ class IndexedDeltaLog[T](path: File,
     lastData = Some(data)
   }
 
-
   def scanBundle(from: SliceId,
                  fromMicros: Long = 0,
                  toMicros: Long = Long.MaxValue,
@@ -88,37 +89,46 @@ class IndexedDeltaLog[T](path: File,
       w => w.micros <= toMicros && w.bundle == from.bundle,
       if (polling) ScanDuration.Continuous else ScanDuration.Finite
     )()(de, sliceBoundOrder)
+      // Drop initial deltas, we always need to start with a snap.
+      .dropWhile(_.isInstanceOf[BundleDelta])
 
     // Map from an iterator of wrappers to an iterator of T.
-    val dataIt = wrapperIt.scanLeft[(Option[(T, Long)], Boolean)](None, false) {
+    val dataIt = wrapperIt.scanLeft[(Option[(T, Long)], Boolean, Boolean)](None, false, false) {
       /**
         * Base case
         */
-      case ((None, false), snap: BundleSnap) =>
-        (snap.snap.as[T].toOption.map((_, snap.micros)), snap.isEnd)
+      case ((None, false, _), snap: BundleSnap) =>
+        (snap.snap.as[T].toOption.map((_, snap.micros)), snap.isEnd, false)
 
       /**
         * Pending
         *
         * There is a partial T and we will use the current BundleSnap to make progress on it.
         */
-      case ((Some(partial), false), snap: BundleSnap) =>
+      case ((Some(partial), false, _), snap: BundleSnap) =>
         (snap.snap.as[T].toOption.map(item =>
-          (fmt.fold(partial._1, item), snap.micros)), snap.isEnd)
+          (fmt.fold(partial._1, item), snap.micros)), snap.isEnd, false)
 
       /**
-        * Active
+        * Active delta
         *
         * We have a full T in memory and we're using the current BundleDelta to update it.
         */
-      case ((dataOpt, true), delta: BundleDelta) =>
+      case ((dataOpt, true, _), delta: BundleDelta) =>
         (dataOpt.map(d =>
-          (fmt.update(d._1, delta.delta.as[fmt.D].right.get), delta.micros)), true)
+          (fmt.update(d._1, delta.delta.as[fmt.D].right.get), delta.micros)), true, false)
+
+      /**
+        * Active snap
+        *
+        * Ignore snaps when already active.
+        */
+      case ((Some(data), true, _), _: BundleSnap) => (Some(data), true, true)
     }
 
-    // Filter incomplete and out of bounds data and return.
+    // Filter ignored, incomplete, and out of bounds data and return.
     dataIt.filter(_._2).collect {
-      case (Some(data), _) => data
+      case (Some(data), _, false) => data
     }.filter(d => d._2 >= fromMicros && d._2 <= toMicros)
   }
 
@@ -139,7 +149,7 @@ class IndexedDeltaLog[T](path: File,
 
   /**
     * Builds a SliceIndex where the bundle key of each slice is set, but the slice key is a
-    * wildcard because. This is due to us not traversing each slice on disk during indexing.
+    * wildcard. This is due to us not traversing each slice on disk during indexing.
     */
   def index: SliceIndex = {
     var idx = SliceIndex.empty

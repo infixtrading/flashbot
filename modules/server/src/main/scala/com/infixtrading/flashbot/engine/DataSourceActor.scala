@@ -54,7 +54,6 @@ class DataSourceActor(marketDataPath: File,
   val snapshotInterval = 4 hours
 
   val cls = getClass.getClassLoader.loadClass(config.`class`)
-//  val constructor = cls.getConstructor(classOf[Map[String, DataTypeConfig]])
   val constructor = cls.getConstructor()
 
   val dataSource = constructor
@@ -198,7 +197,6 @@ class DataSourceActor(marketDataPath: File,
             })
         })
       }) pipeTo sender
-
 
     /**
       * Returns a SourceRspList of MarketData. One stream for each bundle matched.

@@ -3,20 +3,75 @@ package com.infixtrading.flashbot.engine
 import org.scalatest._
 import java.io.File
 
+import com.infixtrading.flashbot.core.Trade
+import com.infixtrading.flashbot.models.core.Order.{Buy, Sell}
+import com.infixtrading.flashbot.util.time
+import scala.concurrent.duration._
+
 class IndexedDeltaLogSpec extends FlatSpec with Matchers {
 
   var testFolder: File = _
   val nowMillis = 1543017219051L // A few minutes before midnight
 
-  "IndexedDeltaLogSpec" should "work" in {
-    val file = new File(testFolder.getAbsolutePath + "/trades")
-    val nowMillis = System.currentTimeMillis
-    //    val trades = genTrades(1, nowMillis)
-    //    val tl = TimeLog[Trade](testFolder)
+  val MicrosPerMinute: Long = 60L * 1000000
 
-    true shouldBe true
+  "IndexedDeltaLog" should "save data with a 1 day retention and 1 hour snapshots" in {
+    val file = new File(testFolder.getAbsolutePath + "/trades")
+    val nowMicros = nowMillis * 1000
+    val trades: Seq[Trade] = (1 to 1440) map { i =>
+      Trade(i.toString, nowMicros + i * MicrosPerMinute, i, i, if (i % 2 == 0) Buy else Sell)
+    }
+
+    val idLog = new IndexedDeltaLog[Trade](file, Some(1.day), 1.hour)
+
+    trades.foreach(trade => {
+      idLog.save(trade.micros, trade)
+    })
+
+    idLog.scan().flatten.map(_._1).toSeq shouldEqual trades
   }
 
+
+  "IndexedDeltaLog" should "resume writing using a new queue instance" in {
+    val file = new File(testFolder.getAbsolutePath + "/trades")
+    val nowMicros = nowMillis * 1000
+    val trades: Seq[Trade] = (1 to 1440) map { i =>
+      Trade(i.toString, nowMicros + i * MicrosPerMinute, i, i, if (i % 2 == 0) Buy else Sell)
+    }
+
+    val (trades1, trades2) = trades.splitAt(200)
+
+    val idLog1 = new IndexedDeltaLog[Trade](file, Some(1.day), 1.hour)
+    val idLog2 = new IndexedDeltaLog[Trade](file, Some(1.day), 1.hour)
+
+    trades1.foreach(trade => {
+      idLog1.save(trade.micros, trade)
+    })
+
+    idLog1.close()
+
+    trades2.foreach(trade => {
+      idLog2.save(trade.micros, trade)
+    })
+
+    idLog2.scan().flatten.map(_._1).toSeq shouldEqual trades
+  }
+
+  "IndexedDeltaLog" should "respect the retention policy" in {
+    val file = new File(testFolder.getAbsolutePath + "/trades")
+    val nowMicros = nowMillis * 1000
+    val trades: Seq[Trade] = (1 to 1440) map { i =>
+      Trade(i.toString, nowMicros + i * 5 * MicrosPerMinute, i, i, if (i % 2 == 0) Buy else Sell)
+    }
+
+    val idLog = new IndexedDeltaLog[Trade](file, Some(1.day), 1.hour)
+
+    trades.foreach(trade => {
+      idLog.save(trade.micros, trade)
+    })
+
+    idLog.scan().flatten.map(_._1).toSeq.size shouldBe 565
+  }
 
   private def deleteFile(file: File) {
     if (!file.exists) return
