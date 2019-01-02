@@ -42,10 +42,15 @@ class IndexedDeltaLog[T](path: File,
   var lastSliceTime = -1L
   var lastData: Option[T] = None
 
+  println("=============")
+  println("Prev bundle last item", prevBundleLastItem)
+
   def save(micros: Long, data: T): Unit = {
     if (micros < lastSeenTime) {
       throw new RuntimeException("IndexedDeltaLog does not support outdated data.")
     }
+
+    println(s"Saving $data")
 
     var wrappers = Seq.empty[BundleWrapper]
 
@@ -80,6 +85,8 @@ class IndexedDeltaLog[T](path: File,
                  fromMicros: Long = 0,
                  toMicros: Long = Long.MaxValue,
                  polling: Boolean = false): Iterator[(T, Long)] = {
+
+    println(s"SCAN BUNDLE $from $fromMicros")
 
     // Scan from the first snapshot item of this slice until we reach a TimeLog item that
     // is after `toMicros` OR we reach the end of the bundle.
@@ -123,7 +130,9 @@ class IndexedDeltaLog[T](path: File,
         *
         * Ignore snaps when already active.
         */
-      case ((Some(data), true, _), _: BundleSnap) => (Some(data), true, true)
+      case ((Some(data), true, _), snap: BundleSnap) =>
+        println(s"Ignoring $snap")
+        (Some(data), true, true)
     }
 
     // Filter ignored, incomplete, and out of bounds data and return.

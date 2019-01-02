@@ -193,6 +193,9 @@ object TimeLog {
         if (duration == ScanDuration.Finite) NoPollingReader else PollingReader
       )(onComplete).filter(x => ordering.compare(comparing(x), from) >= 0)
 
+    def poll(implicit de: Decoder[T]): Iterator[T] =
+      new TimeLogIterator(queue.createTailer().toEnd, _ => true, PollingReader)(() => {})
+
     def first(implicit de: Decoder[T]): Option[T] =
       Option(queue.createTailer().toStart.readText()).map(decode[T](_).right.get)
 
@@ -210,9 +213,7 @@ object TimeLog {
       }
     }
 
-    def close(): Unit = {
-      queue.close()
-    }
+    def close(): Unit = queue.close()
 
     // Binary search code taken from net.openhft.chronicle.queue.impl.single.BinarySearch
     def _search[U](tailer: ExcerptTailer,
