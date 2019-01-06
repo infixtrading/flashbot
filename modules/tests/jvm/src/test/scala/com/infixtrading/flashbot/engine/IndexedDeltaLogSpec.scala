@@ -5,7 +5,6 @@ import java.io.File
 
 import com.infixtrading.flashbot.core.Trade
 import com.infixtrading.flashbot.models.core.Order.{Buy, Sell}
-import com.infixtrading.flashbot.util.time
 
 import scala.concurrent.{Await, Future}
 import scala.concurrent.duration._

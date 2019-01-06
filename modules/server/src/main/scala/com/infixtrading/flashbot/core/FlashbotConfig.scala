@@ -13,7 +13,7 @@ import scala.util.Try
 
 case class FlashbotConfig(`api-key`: Option[String],
                           `data-root`: String,
-                          `market-data-root`: String,
+                          `jdbc-url`: String,
                           `app-data-root`: String,
                           ingest: IngestConfig,
                           strategies: Map[String, String],
