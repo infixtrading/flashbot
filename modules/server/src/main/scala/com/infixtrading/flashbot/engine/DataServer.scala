@@ -1,6 +1,7 @@
 package com.infixtrading.flashbot.engine
 import java.io.File
 
+import akka.NotUsed
 import akka.actor.{Actor, ActorLogging, ActorPath, ActorRef, Props, RootActorPath, Terminated}
 import akka.cluster.{Cluster, Member}
 import akka.cluster.ClusterEvent._
@@ -8,13 +9,16 @@ import akka.pattern.{Backoff, BackoffSupervisor}
 import akka.stream.ActorMaterializer
 import akka.util.Timeout
 import akka.pattern.{ask, pipe}
+import akka.stream.scaladsl.Source
 import com.infixtrading.flashbot.core.DataSource.{DataSourceIndex, TopicIndex}
-import com.infixtrading.flashbot.core.{DeltaFmt, FlashbotConfig, MarketData}
+import com.infixtrading.flashbot.core.{DeltaFmt, DeltaFmtJson, FlashbotConfig, MarketData}
 import com.infixtrading.flashbot.core.FlashbotConfig._
 import com.infixtrading.flashbot.core.DeltaFmt._
 import com.infixtrading.flashbot.models.core.DataPath
 import com.infixtrading.flashbot.util.stream._
+import com.infixtrading.flashbot.util._
 import com.infixtrading.flashbot.db._
+import com.infixtrading.flashbot.engine.DataSourceActor.StreamLiveData
 
 import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration._
@@ -23,15 +27,16 @@ import scala.util.Random
 
 /**
   * A DataServer runs and manages a set of data sources. Every Flashbot node runs a local data
-  * server but only nodes with the "data-ingest" role will actually ingest data. It can build
-  * indexes for all available data, local or remote. It also responds to data requests with a
-  * StreamResponse.
+  * server but only nodes with the "data-ingest" role will actually ingest data. All DataServers
+  * share the same data store. Currently this is represented as a JDBC URL. While they share
+  * persistence layers, DataServers differ in the types of live data they have access to. A data
+  * server only has access to live data if it manages a DataSourceActor which is ingesting that
+  * data stream.
   */
-
 object DataServer {
 
   /**
-    * DataSelection is a query for a stream of market data.
+    * DataSelection is a description of a stream of market data.
     *
     * @param path the data path (source, topic, datatype).
     * @param from the start time of data. If none, use the current time.
@@ -41,32 +46,24 @@ object DataServer {
     def isPolling: Boolean = to.isEmpty
   }
 
-  // The message every data server sends to every other one to register itself across the cluster.
+  /**
+    * The message every data server sends to every other one to register itself across the cluster.
+    */
   case object RegisterDataServer
 
-  // Used as a top level request to get an index of the whole cluster.
-  case object ClusterDataIndexReq
-
-  // Used to ask another data server what data it can serve using it's local data.
-  case object LocalDataIndexReq
-
-  // Used internally to remove data sources that don't respond to queries in time.
-  case class RemoteServerTimeout(ref: ActorRef)
-
-  // Request a data stream source from the cluster. Returns a CompressedSourceRef if the sender
-  // is remote and just a Source[MarketData[_]] if the sender is local.
-  case class DataStreamReq[T](selection: DataSelection, locality: Locality)
+  /**
+    * Request a data stream source from the cluster. Returns a CompressedSourceRef if the sender
+    * is remote and just a Source[ MarketData[_] ] if the sender is local.
+    */
+  case class DataStreamReq[T](selection: DataSelection)
     extends StreamRequest[T]
 
   /**
-    * When requesting data from a server, we specify if we want the server to use data available
-    * on the entire cluster, or only whatever it has locally.
+    * Used internally to remove data sources that don't respond to queries in time.
     */
-  sealed trait Locality
-  case object DiskLocality extends Locality
-  case object ClusterLocality extends Locality
+  case class RemoteServerTimeout(ref: ActorRef)
 
-  case class DataBundle(path: DataPath, bundleId: Long, begin: Long, end: Option[Long])
+  case class LiveStream(path: DataPath)
 
   case class DataSourceSupervisorTerminated(key: String)
 
@@ -90,7 +87,6 @@ class DataServer(jdbcUrl: String,
                  ingestConfig: Option[IngestConfig],
                  useCluster: Boolean) extends Actor with ActorLogging {
   import DataServer._
-  import DataSourceActor._
 
   implicit val mat = ActorMaterializer()(context)
   implicit val ec: ExecutionContext = context.system.dispatcher
@@ -112,6 +108,10 @@ class DataServer(jdbcUrl: String,
     if (cluster.isDefined) cluster.get.unsubscribe(self)
   }
 
+  /**
+    * Register ourselves with the remote server. This is how all DataServers in the cluster are
+    * aware of one another.
+    */
   def register(member: Member): Unit = {
     val remoteServer =
       context.actorSelection(RootActorPath(member.address) / "user" / "data-server")
@@ -119,7 +119,7 @@ class DataServer(jdbcUrl: String,
   }
 
   // Map of child DataSourceActors that this DataServer supervises.
-  var localDataSourceActors = configs.map {
+  var localDataSourceActors: Map[String, ActorRef] = configs.map {
     case (key, config) =>
       // Create child DataSource actor with custom back-off supervision.
       val props = BackoffSupervisor.props(Backoff.onFailure(
@@ -144,59 +144,64 @@ class DataServer(jdbcUrl: String,
   implicit val timeout = Timeout(10 seconds)
 
   def receive = {
-    /**
-      * Serve the data stream request using only data that's locally available on this node.
-      * Path cannot be a pattern.
-      */
-    case DataStreamReq(selection, DiskLocality) =>
-      (localDataSourceActors(selection.path.source) ? StreamMarketData(selection))
-        .mapTo[StreamResponse[MarketData[_]]]
-        .flatMap(_.rebuild) pipeTo sender
 
     /**
-      * Serve a single concrete data stream request (path cannot be a pattern) using any data
-      * available in the cluster. First we have to get an index of the entire cluster. The index
-      * is a collection of all bundles in the cluster, keyed by ActorRef. Each bundle contains the
-      * data path, bundle id, start time, and optional end time. End time is missing if the
-      * bundle is currently being ingested and does not have a defined end time yet.
+      * ===========
+      *   Queries
+      * ===========
       */
-    case DataStreamReq(selection, ClusterLocality) =>
-      def buildRsp[T](implicit fmt: DeltaFmt[T]): Future[SourceRspList[T]] = {
+
+    /**
+      * A data stream is constructed out of two parts: A historical stream, and a live component.
+      * These two streams are concatenated and returned.
+      */
+    case DataStreamReq(s @ DataSelection(path, from, to)) =>
+      val nowMicros = time.currentTimeMicros
+      def buildRsp[T](implicit fmt: DeltaFmtJson[T]) = {
         for {
-          // Get the cluster index, find the best data server to issue a DiskLocality data
-          // request to.
-          index <- (self ? ClusterDataIndexReq).mapTo[Map[ActorRef, Set[DataBundle]]]
-          refScores = index.mapValues(_.map(scoreBundle(selection, _)).max)
-          bestScore = refScores.values.toSet.max
-          candidates <- {
-            val cs = refScores.filter(_._2 == bestScore).keySet
-            if (cs.isEmpty)
-              Future.failed(new IllegalStateException("Unable to find data source candidates."))
-            else Future.successful(cs)
+          // Validate selection and build the live stream response.
+          (liveStartMicros, live) <- (from, to) match {
+            // Match on validation failures first.
+            case (None, Some(_)) => Future.failed(
+              new IllegalArgumentException("Non-polling requests must specify a 'from' value."))
+            case (Some(f), None) if f > nowMicros => Future.failed(
+              new IllegalArgumentException("'from' value of polling request must be less than " +
+                "the current time."))
+            case (Some(f), Some(t)) if f > t => Future.failed(
+              new IllegalArgumentException("'from' must be less than or equal to 'to'"))
+
+            // If it's a valid polling request, search all data servers for a live stream.
+            case (_, None) =>
+              searchForLiveStream[T](path, self :: remoteDataServers.values.toList)
+                .flatMap(_.toFut(new RuntimeException(
+                  s"Unable to find live data stream for $path.")))
+
+            // If it's not a polling request, we use an empty stream instead.
+            case (_, _) => Future.successful((nowMicros, Source.empty))
           }
+          liveRsp <- StreamResponse.build(live, sender)
 
-          // If this data server is among the candidates, use it.
-          // Otherwise, choose a random one.
-          bestDataServer =
-            if (candidates.contains(self)) self
-            else candidates.toSeq(random.nextInt(candidates.size))
+          // Build the historical stream.
+          historical <-
+            from.map(fromMicros => buildHistoricalStream[T](fromMicros, liveStartMicros))
+              .getOrElse(Future.successful(Source.empty))
+          historicalRsp <- StreamResponse.build(historical, sender)
 
-          // Stream the data from the chosen data server.
-          rsp <- bestDataServer <<? DataStreamReq[T](selection, DiskLocality)
-        } yield StreamResponse(Seq(rsp))
+        } yield StreamResponse(Seq(historicalRsp, liveRsp))
       }
-      buildRsp(selection.path.dataType.fmt) pipeTo sender
+      buildRsp(DeltaFmt.formats(path.dataType)) pipeTo sender
+
 
     /**
-      * Respond with an index of the whole cluster.
+      * Asks the relevant data source actor for a live stream of the path.
+      * Returns None if not found.
       */
-    case ClusterDataIndexReq =>
-
-    /**
-      * Respond with an index of the local data sources.
-      */
-    case LocalDataIndexReq =>
-      localDataIndex pipeTo sender
+    case LiveStream(path: DataPath) =>
+      if (localDataSourceActors.isDefinedAt(path.source)) {
+        sender ! None
+      } else {
+        (localDataSourceActors(path.source) ? StreamLiveData(path)) pipeTo sender
+      }
 
 
     /**
@@ -223,12 +228,30 @@ class DataServer(jdbcUrl: String,
 
   }
 
-  def localDataIndex: Future[Set[DataBundle]] = {
-    Future.sequence(localDataSourceActors.map {
-      case (key, ref) => (ref ? Index).mapTo[Set[DataBundle]]
-    }).map(_.toSet.flatten)
+  /**
+    * Builds a stream of data from the persisted snapshots and deltas.
+    */
+  def buildHistoricalStream[T](fromMicros: Long, toMicros: Long)
+      : Future[Source[T, NotUsed]] = {
+    
   }
 
-  def scoreBundle(selection: DataSelection, bundle: DataBundle): Double = ???
+  /**
+    * Asynchronous linear search over all servers for a live data stream for the given path.
+    */
+  def searchForLiveStream[T](path: DataPath, servers: List[ActorRef])
+      : Future[Option[(Long, Source[T, NotUsed])]] = servers match {
+
+    // When no servers left to query, return None.
+    case Nil => Future.successful(None)
+
+    // Request a live data stream from the next server in the list, and recurse if not found.
+    case server :: rest => for {
+      rspOpt <- (server ? LiveStream(path)).mapTo[Option[(Long, Source[T, NotUsed])]]
+      ret <-
+        if (rspOpt.isDefined) Future.successful(rspOpt)
+        else searchForLiveStream(path, rest)
+    } yield ret
+  }
 
 }

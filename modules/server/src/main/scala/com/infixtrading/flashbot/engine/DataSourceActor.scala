@@ -10,7 +10,7 @@ import com.infixtrading.flashbot.core.DataSource._
 import com.infixtrading.flashbot.core.FlashbotConfig._
 import com.infixtrading.flashbot.core._
 import com.infixtrading.flashbot.db._
-import com.infixtrading.flashbot.engine.DataServer.{DataBundle, DataSelection}
+import com.infixtrading.flashbot.engine.DataServer.DataSelection
 import com.infixtrading.flashbot.models.core.DataPath
 import com.infixtrading.flashbot.models.core.Slice.SliceId
 import com.infixtrading.flashbot.util.stream._
@@ -247,13 +247,12 @@ class DataSourceActor(jdbcUrl: String,
      * ===========
      */
     case Index =>
-      // Respond with a set of DataBundles managed by this DataSourceActor.
+      // Respond with a set of DataBundles visible from this DataSourceActor.
       // This is the initial index (static bundles, which existed before this actor started)
       // and live index (live bundles, which are being ingested now).
       sender ! (initialIndex ++ liveIndex.values.toSet)
 
-    case StreamMarketData(DataSelection(path, from, to)) =>
-
+    case StreamLiveData(path) =>
 
   }
 }
@@ -267,5 +266,7 @@ object DataSourceActor {
   case class DataIngested(bundleId: Long, seqId: Long)
   case object Index
 
-  case class StreamMarketData[T](selection: DataSelection) extends StreamRequest[T]
+  case class DataBundle(path: DataPath, bundleId: Long, begin: Long, end: Option[Long])
+
+  case class StreamLiveData[T](path: DataPath) extends StreamRequest[T]
 }
