@@ -21,6 +21,6 @@ class TestDataSource extends DataSource {
       val src: Source[(Long, T), NotUsed] = Source((1 to 60) map { i =>
         Trade(i.toString, nowMicros + i * MicrosPerMinute, i, i, if (i % 2 == 0) Buy else Sell)
       }) map (t => (t.micros, t.asInstanceOf[T]))
-      Future.successful(src.throttle(1, 25 millis))
+      Future.successful(src.throttle(1, 50 millis))
   }
 }

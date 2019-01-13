@@ -22,7 +22,7 @@ import io.circe.Printer
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
 import scala.language.postfixOps
-import scala.util.{Failure, Success}
+import scala.util.{Failure, Random, Success}
 
 /**
   * An actor that runs a single instance of a data source. Supervised by DataServer.
@@ -43,6 +43,8 @@ class DataSourceActor(session: SlickSession,
   implicit val system = context.system
   implicit val mat = ActorMaterializer()
   implicit val slickSession = session
+
+  val random = new Random()
 
   // How often to save a snapshot to the db.
   val SnapshotInterval = 4 hours
@@ -206,7 +208,9 @@ class DataSourceActor(session: SlickSession,
                           // Buffer items.
                           .alsoTo(Sink.foreach {
                             case ((micros, item), seqId) =>
-                              log.debug(item.toString)
+                              if ((random.nextInt % 1000) == 0) {
+                                log.debug(item.toString)
+                              }
                               self ! BufferItem(path, item, bundleId, seqId, micros)
                           })
                           // Scan to determine the deltas and snapshots to write on every iteration.
@@ -228,13 +232,13 @@ class DataSourceActor(session: SlickSession,
                           .mapAsync(10) { states: Seq[ScanState] =>
                             for {
                               // Save the deltas
-                              _ <- session.db.run(Deltas ++= states.flatMap(state => {
+                              a <- session.db.run(Deltas ++= states.flatMap(state => {
                                 state.deltas.map(delta =>
                                   (bundleId, state.seqId, state.micros,
                                     fmt.deltaEn(delta).pretty(Printer.noSpaces)))
                               }))
                               // Save the snapshots
-                              _ <- session.db.run(Deltas ++=
+                              b <- session.db.run(Deltas ++=
                                 states.filter(_.snapshot.isDefined).map(state =>
                                   (bundleId, state.seqId, state.micros,
                                     fmt.modelEn(state.item).pretty(Printer.noSpaces))
