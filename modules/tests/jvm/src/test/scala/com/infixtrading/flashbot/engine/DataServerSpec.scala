@@ -57,7 +57,7 @@ class DataServerSpec extends TestKit(ActorSystem("DataServerSpec",
       val rspStream = rsp.toSource
 
       val mds = Await.result(rspStream.toMat(Sink.seq)(Keep.right).run, timeout.duration)
-      val expectedIds = (1 to mds.size).map(_.toString)
+      val expectedIds = (1 to 60).map(_.toString)
       mds.map(_.data.id) shouldEqual expectedIds
     }
 
