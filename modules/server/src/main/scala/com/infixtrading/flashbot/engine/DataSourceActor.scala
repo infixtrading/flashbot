@@ -46,9 +46,6 @@ class DataSourceActor(session: SlickSession,
 
   val random = new Random()
 
-  // How often to save a snapshot to the db.
-  val SnapshotInterval = 4 hours
-
   // Create the instance of the DataSource.
   val dataSource = getClass.getClassLoader
     .loadClass(config.`class`).getConstructor()
@@ -322,4 +319,7 @@ object DataSourceActor {
   case class DataBundle(path: DataPath, bundleId: Long, begin: Long, end: Option[Long])
 
   case class StreamLiveData[T](path: DataPath) extends StreamRequest[T]
+
+  // How often to save a snapshot to the db.
+  val SnapshotInterval = 4 hours
 }

@@ -214,7 +214,7 @@ class DataServer(dbConfig: Config,
 
     /**
       * A data stream is constructed out of two parts: A historical stream, and a live component.
-      * These two streams are concatenated and returned.
+      * These two streams are concatenated, deduped, and returned.
       */
     case DataStreamReq(DataSelection(path, from, to)) =>
       val nowMicros = time.currentTimeMicros
@@ -312,6 +312,7 @@ class DataServer(dbConfig: Config,
                               (implicit fmt: DeltaFmtJson[T])
       : Future[Source[MarketData[T], NotUsed]] = {
     implicit val session = SlickSession.forConfig(dbConfig)
+    val lookbackFromMicros = fromMicros - DataSourceActor.SnapshotInterval.toMicros
     for {
       bundles <- Slick.source(Bundles
         .filter(b => b.source === path.source &&
@@ -320,14 +321,14 @@ class DataServer(dbConfig: Config,
 
       snapshots: Source[Wrap, NotUsed] = Slick
         .source(Snapshots
-          .filter(x => (x.micros >= fromMicros) && (x.micros < toMicros))
+          .filter(x => (x.micros >= lookbackFromMicros) && (x.micros < toMicros))
           .filter(x => x.bundle.inSet(bundles.map(_.id)))
           .result)
         .map(new SnapshotWrap(_))
 
       deltas: Source[Wrap, NotUsed] = Slick
         .source(Deltas
-          .filter(x => (x.micros >= fromMicros) && (x.micros < toMicros))
+          .filter(x => (x.micros >= lookbackFromMicros) && (x.micros < toMicros))
           .filter(x => x.bundle.inSet(bundles.map(_.id)))
           .result)
         .map(new DeltaWrap(_))
@@ -365,6 +366,7 @@ class DataServer(dbConfig: Config,
       }
         .collect { case Some(value) => value }
         .via(deDupeBy(md => (md.bundle, md.seqid)))
+        .dropWhile(_.micros < fromMicros)
   }
 
   /**
