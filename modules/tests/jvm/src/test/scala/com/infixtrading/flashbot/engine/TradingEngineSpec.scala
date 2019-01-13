@@ -74,7 +74,7 @@ class TradingEngineSpec
       val fbConfig = FlashbotConfig.load
 
       val dataServer = system.actorOf(Props(new DataServer(
-        testFolder,
+        fbConfig.db,
         fbConfig.sources,
         fbConfig.exchanges,
         None,
@@ -192,7 +192,7 @@ class TradingEngineSpec
       val now = Instant.now()
 
       val dataServer = system.actorOf(Props(
-        new DataServer(testFolder, fbConfig.sources, fbConfig.exchanges, None,
+        new DataServer(fbConfig.db, fbConfig.sources, fbConfig.exchanges, None,
           useCluster = false)), "data-server")
 
       val engine = system.actorOf(Props(

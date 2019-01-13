@@ -13,14 +13,14 @@ import scala.util.Try
 
 case class FlashbotConfig(`api-key`: Option[String],
                           `data-root`: String,
-                          `jdbc-url`: String,
                           `app-data-root`: String,
                           ingest: IngestConfig,
                           strategies: Map[String, String],
                           exchanges: Map[String, ExchangeConfig],
                           sources: Map[String, DataSourceConfig],
                           bots: BotConfigJson,
-                          akka: Config)
+                          akka: Config,
+                          db: Config)
 
 object FlashbotConfig {
 

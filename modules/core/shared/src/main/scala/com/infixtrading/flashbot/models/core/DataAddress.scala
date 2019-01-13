@@ -7,7 +7,7 @@ final case class DataAddress(host: Option[String],
 
   def withTopic(topic: String): DataAddress = copy(path = path.copy(topic = topic))
   def withSource(src: String): DataAddress = copy(path = path.copy(source = src))
-  def withType(ty: String): DataAddress = copy(path = path.copy(dataType = ty))
+  def withType(ty: String): DataAddress = copy(path = path.copy(datatype = ty))
 }
 
 object DataAddress {

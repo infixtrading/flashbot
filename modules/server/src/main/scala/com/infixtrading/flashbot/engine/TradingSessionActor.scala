@@ -13,14 +13,13 @@ import breeze.stats.distributions.Gaussian
 import io.circe._
 import io.circe.syntax._
 import com.infixtrading.flashbot.models.core.Action.{ActionQueue, CancelLimitOrder, PostLimitOrder, PostMarketOrder}
-import com.infixtrading.flashbot.core.DataSource.StreamSelection
 import com.infixtrading.flashbot.core.FlashbotConfig.ExchangeConfig
 import com.infixtrading.flashbot.core.Instrument.CurrencyPair
 import com.infixtrading.flashbot.util.stream._
 import com.infixtrading.flashbot.util._
 import com.infixtrading.flashbot.util.time.currentTimeMicros
 import com.infixtrading.flashbot.core.{DataSource, _}
-import com.infixtrading.flashbot.engine.DataServer.{ClusterLocality, DataSelection, DataStreamReq}
+import com.infixtrading.flashbot.engine.DataServer.DataSelection
 import com.infixtrading.flashbot.engine.TradingSession._
 import com.infixtrading.flashbot.engine.TradingSessionActor.{SessionPing, SessionPong, StartSession, StopSession}
 import com.infixtrading.flashbot.exchanges.Simulator
@@ -217,7 +216,7 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
       // trading session is a backtest then we merge the data streams by time. But if this is a
       // live trading session then data is sent first come, first serve to keep latencies low.
       val (tickRef, fut) = streams.reduce[Source[MarketData[_], NotUsed]](mode match {
-          case _:Backtest => _.mergeSorted(_)
+          case _:Backtest => _.mergeSorted(_)(MarketData.orderByTime)
           case _ => _.merge(_)
         })
 

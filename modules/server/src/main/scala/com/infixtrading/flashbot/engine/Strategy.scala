@@ -12,11 +12,9 @@ import akka.util.Timeout
 import json.Schema
 import com.github.andyglow.jsonschema.AsCirce._
 import io.circe._
-import io.circe.generic.semiauto._
-import com.infixtrading.flashbot.core.DataSource.StreamSelection
 import com.infixtrading.flashbot.core.Instrument.CurrencyPair
 import com.infixtrading.flashbot.core._
-import com.infixtrading.flashbot.engine.DataServer.{ClusterLocality, DataSelection, DataStreamReq}
+import com.infixtrading.flashbot.engine.DataServer.{DataSelection, DataStreamReq}
 import com.infixtrading.flashbot.models.api.OrderTarget
 import com.infixtrading.flashbot.models.core.FixedSize.FixedSizeD
 import com.infixtrading.flashbot.models.core._
@@ -167,7 +165,7 @@ abstract class Strategy {
                        (implicit mat: Materializer, ec: ExecutionContext)
       : Future[Source[MarketData[_], NotUsed]] = {
     implicit val timeout: Timeout = Timeout(10 seconds)
-    (dataServer ? DataStreamReq(selection, ClusterLocality))
+    (dataServer ? DataStreamReq(selection))
       .map { case se: StreamResponse[MarketData[_]] => se.toSource }
   }
 

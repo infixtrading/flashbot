@@ -32,29 +32,29 @@ abstract class DataSource {
   def scheduleIngest(topics: Set[String], dataType: String): IngestSchedule =
     IngestOne(topics.head, 0 seconds)
 
-  def ingestGroup[T](topics: Set[String], fmt: DeltaFmtJson[T])
-                    (implicit ctx: ActorContext,
-                     mat: ActorMaterializer): Future[Map[String, Source[(Long, T), NotUsed]]] =
+  def ingestGroup[T](topics: Set[String], datatype: DataType[T])
+                    (implicit ctx: ActorContext, mat: ActorMaterializer)
+      : Future[Map[String, Source[(Long, T), NotUsed]]] =
     Future.failed(new NotImplementedError("ingestGroup is not implemented by this data source."))
 
-  def ingest[T](topic: String, fmt: DeltaFmtJson[T])
-               (implicit ctx: ActorContext,
-                mat: ActorMaterializer): Future[Source[(Long, T), NotUsed]] =
+  def ingest[T](topic: String, datatype: DataType[T])
+               (implicit ctx: ActorContext, mat: ActorMaterializer)
+      : Future[Source[(Long, T), NotUsed]] =
     Future.failed(new NotImplementedError("ingest is not implemented by this data source."))
 }
 
 object DataSource {
 
-  class DataClusterIndex(val members: Map[ActorPath, DataSourceIndex]) extends AnyVal
-      with Mergable[DataClusterIndex] {
+//  class DataClusterIndex(val members: Map[ActorPath, DataSourceIndex]) extends AnyVal
+//      with Mergable[DataClusterIndex] {
+//
+//    def merge(other: DataClusterIndex): DataClusterIndex = mergeMap(members, other.members)
+//
+//    def slices: Seq[Slice] = members.flatMap {
+//      case (host, index) => index.slices.map(_.mapAddress(_.withHost(host.toString)))
+//    }.toSeq
 
-    def merge(other: DataClusterIndex): DataClusterIndex = mergeMap(members, other.members)
-
-    def slices: Seq[Slice] = members.flatMap {
-      case (host, index) => index.slices.map(_.mapAddress(_.withHost(host.toString)))
-    }.toSeq
-
-    def filter(pattern: DataPath): DataClusterIndex = members.mapValues(_.filter(pattern))
+//    def filter(pattern: DataPath): DataClusterIndex = members.mapValues(_.filter(pattern))
 
     /**
       * Use the index to plan a sequence of scans that, when concatenated together, fulfill
@@ -62,61 +62,61 @@ object DataSource {
       * This is essentially a transformation from a logical StreamSelection to a sequence of
       * ClusterStreamSelection.
       */
-    def planQuery(self: ActorRef, selection: StreamSelection): Seq[ClusterStreamSelection] = {
-      assert(selection.path.value.isDefined, "Pattern queries are not yet supported.")
-      val filteredIndex = filter(selection.path)
-      val sliceIdx: SliceIndex = filteredIndex.slices
-      val idx = sliceIdx.filterOverlaps(selection.from, selection.to)
+//    def planQuery(self: ActorRef, selection: StreamSelection): Seq[ClusterStreamSelection] = {
+//      assert(selection.path.value.isDefined, "Pattern queries are not yet supported.")
+//      val filteredIndex = filter(selection.path)
+//      val sliceIdx: SliceIndex = filteredIndex.slices
+//      val idx = sliceIdx.filterOverlaps(selection.from, selection.to)
+//
+//      def helper(memo: Seq[ClusterStreamSelection], cursor: Long): Seq[ClusterStreamSelection] = {
+//        val cursorInBounds = cursor >= selection.from && cursor < selection.to
+//        if (cursorInBounds) {
+//          // If the cursor is in bounds, then we still may have some work to do.
+//          // First, try to see what slices intersect with it.
+//          val intersections = idx.rangedSlices.intersect(cursor).toSeq
+//          val localIntersections = intersections.filter(slice =>
+//            actorPathsAreLocal(self.path, ActorPath.fromString(slice.address.get.host.get)))
+//
+//          // Are there any intersections? If so, pick the best one. Slices that have the same
+//          // host as `self` automatically win over all others. Otherwise, the criteria for the
+//          // best slice is how far it extends beyond the current cursor.
+//          if (intersections.nonEmpty) {
+//            val activeIntersections =
+//              if (localIntersections.nonEmpty) localIntersections
+//              else intersections
+//            val best = activeIntersections.maxBy(_.toMicros)
+//            val polling = selection.polling
+//            val end = if (polling) Long.MaxValue else math.min(best.toMicros, selection.to)
+//            val newSelection = ClusterStreamSelection(best.address.get, cursor, end, polling)
+//            helper(memo :+ newSelection, end)
+//
+//          } else {
+//            // If there are no intersections, then this is a gap in the data. Let's seek the
+//            // cursor to the beginning of the next slice.
+//            helper(memo, idx.slices.map(_.fromMicros).filter(_ > cursor).min)
+//          }
+//        } else {
+//          // If cursor not in bounds we're done, return.
+//          memo
+//        }
+//      }
 
-      def helper(memo: Seq[ClusterStreamSelection], cursor: Long): Seq[ClusterStreamSelection] = {
-        val cursorInBounds = cursor >= selection.from && cursor < selection.to
-        if (cursorInBounds) {
-          // If the cursor is in bounds, then we still may have some work to do.
-          // First, try to see what slices intersect with it.
-          val intersections = idx.rangedSlices.intersect(cursor).toSeq
-          val localIntersections = intersections.filter(slice =>
-            actorPathsAreLocal(self.path, ActorPath.fromString(slice.address.get.host.get)))
+//      helper(Seq.empty, selection.from)
+//    }
+//  }
 
-          // Are there any intersections? If so, pick the best one. Slices that have the same
-          // host as `self` automatically win over all others. Otherwise, the criteria for the
-          // best slice is how far it extends beyond the current cursor.
-          if (intersections.nonEmpty) {
-            val activeIntersections =
-              if (localIntersections.nonEmpty) localIntersections
-              else intersections
-            val best = activeIntersections.maxBy(_.toMicros)
-            val polling = selection.polling
-            val end = if (polling) Long.MaxValue else math.min(best.toMicros, selection.to)
-            val newSelection = ClusterStreamSelection(best.address.get, cursor, end, polling)
-            helper(memo :+ newSelection, end)
-
-          } else {
-            // If there are no intersections, then this is a gap in the data. Let's seek the
-            // cursor to the beginning of the next slice.
-            helper(memo, idx.slices.map(_.fromMicros).filter(_ > cursor).min)
-          }
-        } else {
-          // If cursor not in bounds we're done, return.
-          memo
-        }
-      }
-
-      helper(Seq.empty, selection.from)
-    }
-  }
-
-  object DataClusterIndex {
-    def empty: DataClusterIndex = Map.empty[ActorPath, DataSourceIndex]
-    def apply(self: ActorPath, sourceIndex: DataSourceIndex): DataClusterIndex =
-      Map(self -> sourceIndex)
-
-    implicit def build(members: Map[ActorPath, DataSourceIndex]): DataClusterIndex =
-      new DataClusterIndex(members.filterNot(_._2.isEmpty))
-
-    implicit def build(slices: Seq[Slice]): DataClusterIndex =
-      slices.groupBy(_.address.get.host.map(ActorPath.fromString).get)
-        .mapValues(DataSourceIndex.build)
-  }
+//  object DataClusterIndex {
+//    def empty: DataClusterIndex = Map.empty[ActorPath, DataSourceIndex]
+//    def apply(self: ActorPath, sourceIndex: DataSourceIndex): DataClusterIndex =
+//      Map(self -> sourceIndex)
+//
+//    implicit def build(members: Map[ActorPath, DataSourceIndex]): DataClusterIndex =
+//      new DataClusterIndex(members.filterNot(_._2.isEmpty))
+//
+//    implicit def build(slices: Seq[Slice]): DataClusterIndex =
+//      slices.groupBy(_.address.get.host.map(ActorPath.fromString).get)
+//        .mapValues(DataSourceIndex.build)
+//  }
 
 
   sealed trait IngestSchedule {
@@ -211,7 +211,7 @@ object DataSource {
     def apply(path: DataPath): SliceIndex = (for {
       topics <- get(path.source)
       types <- topics.get(path.topic)
-      bundles <- types.get(path.dataType)
+      bundles <- types.get(path.datatype)
     } yield bundles).getOrElse(SliceIndex.empty)
 
     def merge(other: DataSourceIndex): DataSourceIndex = mergeMap(sources, other.sources)
@@ -247,27 +247,27 @@ object DataSource {
     * A logical description of some data that can be streamed. Intentionally leaves out lower
     * level details such as data address hosts, slices/bundles, and data locality constraints.
     */
-  case class StreamSelection(path: DataPath, from: Long, to: Long, polling: Boolean) {
-    def timeRange: TimeRange = TimeRange(from, to)
-  }
-  object StreamSelection {
-    def apply(path: DataPath, from: Long, polling: Boolean): StreamSelection =
-      StreamSelection(path, from, Long.MaxValue, polling)
-    def apply(path: DataPath, from: Long, to: Long): StreamSelection =
-      StreamSelection(path, from, to, polling = false)
-    def apply(path: DataPath, from: Long): StreamSelection =
-      StreamSelection(path, from, Long.MaxValue, polling = false)
-
-    implicit def fromClusterSelection(cs: ClusterStreamSelection): StreamSelection = cs.toLocal
-  }
+//  case class StreamSelection(path: DataPath, from: Long, to: Long, polling: Boolean) {
+//    def timeRange: TimeRange = TimeRange(from, to)
+//  }
+//  object StreamSelection {
+//    def apply(path: DataPath, from: Long, polling: Boolean): StreamSelection =
+//      StreamSelection(path, from, Long.MaxValue, polling)
+//    def apply(path: DataPath, from: Long, to: Long): StreamSelection =
+//      StreamSelection(path, from, to, polling = false)
+//    def apply(path: DataPath, from: Long): StreamSelection =
+//      StreamSelection(path, from, Long.MaxValue, polling = false)
+//
+//    implicit def fromClusterSelection(cs: ClusterStreamSelection): StreamSelection = cs.toLocal
+//  }
 
   /**
     * Like StreamSelection but uses a DataAddress instead of a DataPath so that it can reference
     * remote nodes.
     */
-  case class ClusterStreamSelection(address: DataAddress, from: Long, to: Long, polling: Boolean) {
-    def toLocal: StreamSelection = StreamSelection(address.path, from, to, polling)
-  }
+//  case class ClusterStreamSelection(address: DataAddress, from: Long, to: Long, polling: Boolean) {
+//    def toLocal: StreamSelection = StreamSelection(address.path, from, to, polling)
+//  }
 
   def reindex(sources: List[Source[MarketData[_], NotUsed]]) : immutable.Seq[Any] =
     sources.zipWithIndex.map { case (mds, i) => mds.map(_.withBundle(i))}

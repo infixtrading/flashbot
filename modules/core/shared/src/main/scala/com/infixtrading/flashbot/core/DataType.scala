@@ -15,28 +15,28 @@ object DataType {
   case object OrderBookType extends DataType[OrderBook] {
     override def name = "book"
     override def fmtJson = ???
-}
-  case class LadderType(depth: Option[Int]) extends DataType[Ladder] {
-    override def name = "ladder"
-    override def fmtJson = ???
-}
-  case object TradesType extends DataType[Trade] {
-    override def name = "trades"
-    override def fmtJson = ???
-}
-  case object TickersType extends DataType[Ticker] {
-    override def name = "tickers"
-    override def fmtJson = ???
-}
+  }
+    case class LadderType(depth: Option[Int]) extends DataType[Ladder] {
+      override def name = "ladder"
+      override def fmtJson = ???
+  }
+    case object TradesType extends DataType[Trade] {
+      override def name = "trades"
+      override def fmtJson = DeltaFmt.defaultFmtJson[Trade]("trades")
+  }
+    case object TickersType extends DataType[Ticker] {
+      override def name = "tickers"
+      override def fmtJson = ???
+  }
   case class CandlesType(duration: FiniteDuration) extends DataType[Candle] {
     override def name = "candles"
     override def fmtJson = DeltaFmt.defaultFmtJson[Candle]("candles")
+  }
 
   case class Series(key: String, timeStep: FiniteDuration) extends DataType[Double] {
     override def name = "series"
     override def fmtJson = ???
   }
-}
 
   def parse(ty: String): Option[DataType[_]] = ty.split("_").toList match {
     case "book" :: Nil => Some(OrderBookType)
@@ -48,5 +48,7 @@ object DataType {
     case "series" :: key :: d :: Nil => Some(TickersType)
     case _ => None
   }
+
+  def apply[T](str: String): DataType[T] = parse(str).get.asInstanceOf[DataType[T]]
 }
 

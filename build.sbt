@@ -399,7 +399,8 @@ lazy val server = flashbotModule("server", previousFBVersion).settings(
 
     "com.twitter" %% "chill-akka" % "0.9.3",
 
-    "com.typesafe.slick" %% "slick" % "3.2.3"
+    "com.typesafe.slick" %% "slick" % "3.2.3",
+    "com.lightbend.akka" %% "akka-stream-alpakka-slick" % "1.0-M1"
   ))
 ).dependsOn(core)
 
@@ -431,7 +432,8 @@ lazy val testsBase = crossModule("tests", previousFBVersion)
       "org.scalactic" %% "scalactic" % "3.0.5",
       "org.scalatest" %% "scalatest" % "3.0.5" % "test",
       "org.scalacheck" %% "scalacheck" % scalaCheckVersion,
-      "com.typesafe.akka" %% "akka-testkit" % akkaVersion % Test
+      "com.typesafe.akka" %% "akka-testkit" % akkaVersion % Test,
+      "com.h2database" % "h2" % "1.4.192"
     )
 //    sourceGenerators in Test += (sourceManaged in Test).map(Boilerplate.genTests).taskValue,
 //    unmanagedResourceDirectories in Compile +=

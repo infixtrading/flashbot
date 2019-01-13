@@ -2,10 +2,12 @@ package com.infixtrading.flashbot.engine
 
 import java.util.concurrent.Executors
 
-import akka.NotUsed
-import akka.actor.{Actor, ActorLogging}
-import akka.stream.ActorMaterializer
+import akka.{Done, NotUsed}
+import akka.actor.{Actor, ActorLogging, ActorRef}
+import akka.stream.{ActorMaterializer, OverflowStrategy}
 import akka.stream.scaladsl.{Keep, Sink, Source}
+import akka.pattern.pipe
+import akka.stream.alpakka.slick.javadsl.SlickSession
 import com.infixtrading.flashbot.core.DataSource._
 import com.infixtrading.flashbot.core.FlashbotConfig._
 import com.infixtrading.flashbot.core._
@@ -14,6 +16,8 @@ import com.infixtrading.flashbot.engine.DataServer.DataSelection
 import com.infixtrading.flashbot.models.core.DataPath
 import com.infixtrading.flashbot.models.core.Slice.SliceId
 import com.infixtrading.flashbot.util.stream._
+import com.typesafe.config.Config
+import io.circe.Printer
 
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
@@ -26,20 +30,22 @@ import scala.util.{Failure, Success}
   * It is also indexes the data that it ingests, so that it can answer queries about what
   * data exists for what time frames.
   */
-class DataSourceActor(jdbcUrl: String,
+class DataSourceActor(session: SlickSession,
                       srcKey: String,
                       config: DataSourceConfig,
                       exchangeConfig: Option[ExchangeConfig],
                       ingestConfig: Option[IngestConfig]) extends Actor with ActorLogging {
   import DataSourceActor._
+  import session.profile.api._
 
   implicit val ec: ExecutionContext =
     ExecutionContext.fromExecutor(Executors.newFixedThreadPool(100))
   implicit val system = context.system
   implicit val mat = ActorMaterializer()
+  implicit val slickSession = session
 
   // How often to save a snapshot to the db.
-  val snapshotInterval = 4 hours
+  val SnapshotInterval = 4 hours
 
   // Create the instance of the DataSource.
   val dataSource = getClass.getClassLoader
@@ -56,13 +62,6 @@ class DataSourceActor(jdbcUrl: String,
   val pathsFut: Future[Set[DataPath]] = topicsFut.map(topics =>
     topics.flatMap(topic => types.keySet.map(dt => DataPath(srcKey, topic, dt))))
 
-  // Build index of available data bundles at time of initialization.
-  val initialIndex: Set[DataBundle] = ???
-
-  // An index of data bundles for this incarnation of the actor. Initially empty, as ingest
-  // hasn't started at time of initialization.
-  var liveIndex = Map.empty[Long, DataBundle]
-
   // Initialize ingest when data is loaded.
   pathsFut andThen {
     case Success(_) => self ! Init(None)
@@ -77,6 +76,10 @@ class DataSourceActor(jdbcUrl: String,
   def matchers: Set[String] = ingestConfig.get.paths.toSet
 
   var itemBuffers = Map.empty[Long, Vector[BufferItem[_]]]
+
+  var subscriptions = Map.empty[DataPath, Set[ActorRef]]
+
+  var bundleIndex = Map.empty[DataPath, Seq[Long]]
 
   override def receive = {
 
@@ -106,8 +109,9 @@ class DataSourceActor(jdbcUrl: String,
             log.debug("Full queue: {}", full)
           }
           queue = full.map {
-            case (dt, ts) => (dt, ts.filter(topic =>
-              matchers.exists(_.matches(DataPath(srcKey, topic, dt)))))
+            case (dt, ts) =>
+              (dt, ts.filter(topic =>
+                matchers.exists(_.matches(DataPath(srcKey, topic, dt)))))
           }
         } yield queue
 
@@ -116,9 +120,12 @@ class DataSourceActor(jdbcUrl: String,
           case Success(queue) =>
             if (ingestMsgOpt(queue).isEmpty) {
               log.debug("Initial queue is empty for matchers: {}", matchers)
+            } else {
+              log.debug(s"Beginning ingest for $srcKey")
             }
             ingestMsgOpt(queue).foreach(self ! _)
-          case Failure(err) => self ! Init(Some(err))
+          case Failure(err) =>
+            self ! Init(Some(err))
         }
       }
 
@@ -147,8 +154,9 @@ class DataSourceActor(jdbcUrl: String,
             _ <- Future { Thread.sleep(delay.toMillis) }
 
             streams <- topics match {
-              case Left(topic) => dataSource.ingest(topic, fmt).map(src => Map(topic -> src))
-              case Right(ts)   => dataSource.ingestGroup(ts, fmt)
+              case Left(topic) => dataSource.ingest[T](topic, DataType(dataType))
+                .map(src => Map(topic -> src))
+              case Right(ts)   => dataSource.ingestGroup[T](ts, DataType(dataType))
             }
           } yield streams.filterKeys(topic =>
             matchers.exists(_.matches(DataPath(srcKey, topic, dataType))))
@@ -177,40 +185,80 @@ class DataSourceActor(jdbcUrl: String,
                 sources.foreach {
                   case (topic, source) =>
                     val path = DataPath(srcKey, topic, dataType)
-                    val bundleId = createBundle(jdbcUrl, path)
-
-                    // When the source is terminated, we "close" the bundle. Once a bundle is
-                    // closed, we will never be able to add more data to it since a bundle id
-                    // is logically tied to this materialization of the stream.
-                    val (onTerminated, src: Source[(Long, T), NotUsed]) =
-                      source.watchTermination()(Keep.right).preMaterialize()
-
-                    onTerminated andThen {
-                      case Success(value) =>
-                        log.info("Ingest stream stopped {}", path)
-                        context.stop(self)
-
+                    createBundle(path) onComplete {
                       case Failure(err) =>
-                        log.error(err, s"Error in ingest stream {}", path)
                         self ! Err(err)
+                      case Success(bundleId) =>
+                        log.info(s"Ingesting $path")
+
+                        // Save bundle id for this path.
+                        bundleIndex += (path ->
+                          (bundleIndex.getOrElse(path, Seq.empty[Long]) :+ bundleId))
+
+                        subscriptions += (path -> Set.empty[ActorRef])
+
+                        case class ScanState(lastSnapshotAt: Long, seqId: Long,
+                                             micros: Long, item: T, deltas: Seq[fmt.D],
+                                             snapshot: Option[T])
+
+                        // Here is where we process the market data coming from ingest data sources.
+                        source.zipWithIndex
+                          // Buffer items.
+                          .alsoTo(Sink.foreach {
+                            case ((micros, item), seqId) =>
+                              log.debug(item.toString)
+                              self ! BufferItem(path, item, bundleId, seqId, micros)
+                          })
+                          // Scan to determine the deltas and snapshots to write on every iteration.
+                          .scan[Option[ScanState]](None) {
+                            case (None, ((micros, item), seqId)) =>
+                              Some(ScanState(micros, seqId, micros, item, Seq.empty, Some(item)))
+                            case (Some(prev), ((micros, item), seqId)) =>
+                              val shouldSnapshot =
+                                (micros - prev.lastSnapshotAt) >= SnapshotInterval.toMicros
+                              Some(ScanState(
+                                if (shouldSnapshot) micros else prev.lastSnapshotAt,
+                                seqId, micros, item, fmt.diff(prev.item, item),
+                                if (shouldSnapshot) Some(item) else None)
+                              )
+                          }
+                          .collect { case Some(state) => state }
+                          // Group items and batch insert into database.
+                          .groupedWithin(1000, 1000 millis)
+                          .mapAsync(10) { states: Seq[ScanState] =>
+                            for {
+                              // Save the deltas
+                              _ <- session.db.run(Deltas ++= states.flatMap(state => {
+                                state.deltas.map(delta =>
+                                  (bundleId, state.seqId, state.micros,
+                                    fmt.deltaEn(delta).pretty(Printer.noSpaces)))
+                              }))
+                              // Save the snapshots
+                              _ <- session.db.run(Deltas ++=
+                                states.filter(_.snapshot.isDefined).map(state =>
+                                  (bundleId, state.seqId, state.micros,
+                                    fmt.modelEn(state.item).pretty(Printer.noSpaces))
+                                ))
+                            } yield states.last.seqId
+                          }
+                          // Clear ingested items from buffer.
+                          .runWith(Sink.foreach { lastIngestedSeqId =>
+                            self ! DataIngested(bundleId, lastIngestedSeqId)
+                          })
+                          // When the source is terminated, we "close" the bundle. Once a bundle is
+                          // closed, we will never be able to add more data to it since a bundle id
+                          // is logically tied to this materialization of the stream.
+                          .andThen {
+                            case Success(Done) =>
+                              log.info("Ingest stream stopped {}", path)
+                              context.stop(self)
+
+                            case Failure(err) =>
+                              log.error(err, s"Error in ingest stream {}", path)
+                              self ! Err(err)
+                          }
                     }
 
-                    // Here is where we process the market data coming from ingest data sources.
-                    src.zipWithIndex
-                    // Buffer items.
-                      .alsoTo(Sink.foreach {
-                        case ((micros, item), seqId) =>
-                          self ! BufferItem(path, item, bundleId, seqId, micros)
-                      })
-                      // Group items and batch insert into database.
-                      .groupedWithin(1000, 1 second)
-                      .mapAsync(10) { items: Seq[((Long, T), Long)] =>
-                        ingestItemsAsync(bundleId, items)
-                      }
-                      // Clear ingested items from buffer.
-                      .runWith(Sink.foreach { lastIngestedSeqId =>
-                        self ! DataIngested(bundleId, lastIngestedSeqId)
-                      })
                 }
 
               case Failure(err) =>
@@ -227,11 +275,6 @@ class DataSourceActor(jdbcUrl: String,
       val existing = itemBuffers.getOrElse(bundleId, Vector.empty)
       itemBuffers += (bundleId -> (existing :+ item))
 
-      // Also update the live index.
-      if (!liveIndex.isDefinedAt(bundleId)) {
-        liveIndex += (bundleId -> DataBundle(path, bundleId, micros, None))
-      }
-
     case DataIngested(bundleId, lastIngestedSeqId: Long) =>
       val existing = itemBuffers.getOrElse(bundleId, Vector.empty)
       // Buffer should never be empty at this point, but opting to not crash in that case.
@@ -246,15 +289,21 @@ class DataSourceActor(jdbcUrl: String,
      *   Queries
      * ===========
      */
-    case Index =>
-      // Respond with a set of DataBundles visible from this DataSourceActor.
-      // This is the initial index (static bundles, which existed before this actor started)
-      // and live index (live bundles, which are being ingested now).
-      sender ! (initialIndex ++ liveIndex.values.toSet)
-
     case StreamLiveData(path) =>
-
+      def buildOptSrc[T](fmt: DeltaFmtJson[T]): Option[Source[T, NotUsed]] =
+        if (subscriptions.isDefinedAt(path)) {
+          val (ref, src) =
+            Source.actorRef[T](Int.MaxValue, OverflowStrategy.fail).preMaterialize()
+          subscriptions += (path -> (subscriptions(path) + ref))
+          val initialItems: Vector[T] = lookupBundleId(path)
+            .flatMap(itemBuffers.get(_).map(_.asInstanceOf[Vector[T]]) )
+            .getOrElse(Vector.empty[T])
+          Some(Source(initialItems).concat(src))
+        } else None
+      sender ! buildOptSrc(DeltaFmt.formats(path.datatype))
   }
+
+  def lookupBundleId(path: DataPath): Option[Long] = bundleIndex.get(path).map(_.last)
 }
 
 
