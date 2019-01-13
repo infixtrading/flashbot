@@ -2,6 +2,9 @@ package com.infixtrading.flashbot.engine
 import akka.actor.{ActorSystem, Props}
 import akka.pattern.ask
 import akka.stream.ActorMaterializer
+import akka.stream.alpakka.slick.javadsl.SlickSession
+import akka.stream.alpakka.slick.scaladsl.Slick
+import akka.stream.scaladsl.{Keep, Sink}
 import akka.testkit.{ImplicitSender, TestKit}
 import akka.util.Timeout
 import com.infixtrading.flashbot.core.{FlashbotConfig, MarketData, Trade}
@@ -32,6 +35,7 @@ class DataServerSpec extends TestKit(ActorSystem("DataServerSpec",
     "ingest and serve data" in {
       implicit val timeout = Timeout(10 seconds)
       implicit val mat = ActorMaterializer()
+      implicit val ec = system.dispatcher
 
       // Create data server actor.
       val conf = FlashbotConfig.load
@@ -44,18 +48,17 @@ class DataServerSpec extends TestKit(ActorSystem("DataServerSpec",
         useCluster = false
       )))
 
-      Thread.sleep(1000 * 60 * 60)
-
       // Ingest for 1 second with no subscriptions.
-//      Thread.sleep(1000)
+      Thread.sleep(2000)
 
       // Then subscribe to a path and get a data stream.
-//      val rsp = Await.result((dataserver ? DataStreamReq(DataSelection("bitfinex/btc_usd/trades")))
-//        .mapTo[StreamResponse[MarketData[Trade]]], timeout.duration)
-//      val rspStream = rsp.toSource
-//
-//      // That data stream is collected into a seq and compared against source data.
-//      Await.ready(rspStream.runForeach(println), timeout.duration)
+      val fut = dataserver ? DataStreamReq(DataSelection("bitfinex/btc_usd/trades", Some(0)))
+      val rsp = Await.result(fut.mapTo[StreamResponse[MarketData[Trade]]], timeout.duration)
+      val rspStream = rsp.toSource
+
+      val mds = Await.result(rspStream.toMat(Sink.seq)(Keep.right).run, timeout.duration)
+      val expectedIds = (1 to mds.size).map(_.toString)
+      mds.map(_.data.id) shouldEqual expectedIds
     }
 
     "serve data from multiple data servers" in {

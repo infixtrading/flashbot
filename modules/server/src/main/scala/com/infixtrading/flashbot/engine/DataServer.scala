@@ -219,6 +219,7 @@ class DataServer(dbConfig: Config,
     case DataStreamReq(DataSelection(path, from, to)) =>
       val nowMicros = time.currentTimeMicros
       val isLive = to.isEmpty
+      log.debug("Received data stream request")
       def buildRsp[T](implicit fmt: DeltaFmtJson[T]): Future[StreamResponse[MarketData[T]]] = {
         val src: Future[Source[MarketData[T], NotUsed]] = for {
           // Validate selection and build the live stream response.
@@ -234,6 +235,7 @@ class DataServer(dbConfig: Config,
 
             // If it's a valid polling request, search all data servers for a live stream.
             case (_, None) =>
+              log.debug("Searching for live stream")
               searchForLiveStream[T](path, self :: remoteDataServers.values.toList)
                 .flatMap(_.toFut(new RuntimeException(
                   s"Unable to find live data stream for $path.")))
@@ -243,10 +245,14 @@ class DataServer(dbConfig: Config,
             case (_, _) => Future.successful(Source.empty)
           }
 
+          _ = { log.debug("Found live stream") }
+
           // Build the historical stream.
           historical <- from
             .map(buildHistoricalStream[T](path, _, to.getOrElse(Long.MaxValue)))
             .getOrElse(Future.successful(Source.empty))
+
+          _ = { log.debug("Built historical stream") }
 
         } yield
           // If is live, concat historical with live. Drop unordered to account for any overlap
@@ -272,9 +278,13 @@ class DataServer(dbConfig: Config,
         sender ! None
       } else {
         def buildSrc[T](implicit fmt: DeltaFmtJson[T]) = for {
-          srcOpt <- (localDataSourceActors(path.source) ? StreamLiveData(path))
-            .mapTo[Option[Source[T, NotUsed]]]
-        } yield srcOpt.map(x => StreamResponse.build(x, sender))
+          srcOpt: Option[Source[T, NotUsed]] <-
+            (localDataSourceActors(path.source) ? StreamLiveData(path))
+              .mapTo[Option[Source[T, NotUsed]]]
+          rspFutOpt: Option[Future[Option[StreamResponse[T]]]] =
+            srcOpt.map(x => StreamResponse.build(x, sender).map(Some(_)))
+          rspOpt <- rspFutOpt.getOrElse(Future.successful(None))
+        } yield rspOpt
         buildSrc(DeltaFmt.formats(path.datatype)) pipeTo sender
       }
 
@@ -313,6 +323,7 @@ class DataServer(dbConfig: Config,
       : Future[Source[MarketData[T], NotUsed]] = {
     implicit val session = SlickSession.forConfig(dbConfig)
     val lookbackFromMicros = fromMicros - DataSourceActor.SnapshotInterval.toMicros
+    log.debug("Building historical stream")
     for {
       bundles <- Slick.source(Bundles
         .filter(b => b.source === path.source &&

@@ -3,13 +3,14 @@ package com.infixtrading.flashbot.engine
 import java.util.concurrent.Executors
 
 import akka.{Done, NotUsed}
-import akka.actor.{Actor, ActorLogging, ActorRef}
+import akka.actor.{Actor, ActorLogging, ActorRef, PoisonPill}
 import akka.stream.{ActorMaterializer, OverflowStrategy}
 import akka.stream.scaladsl.{Keep, Sink, Source}
 import akka.pattern.pipe
 import akka.stream.alpakka.slick.javadsl.SlickSession
 import com.infixtrading.flashbot.core.DataSource._
 import com.infixtrading.flashbot.core.FlashbotConfig._
+import com.infixtrading.flashbot.core.MarketData.BaseMarketData
 import com.infixtrading.flashbot.core._
 import com.infixtrading.flashbot.db._
 import com.infixtrading.flashbot.engine.DataServer.DataSelection
@@ -74,11 +75,18 @@ class DataSourceActor(session: SlickSession,
 
   def matchers: Set[String] = ingestConfig.get.paths.toSet
 
-  var itemBuffers = Map.empty[Long, Vector[BufferItem[_]]]
+  var itemBuffers = Map.empty[Long, Vector[MarketData[_]]]
 
   var subscriptions = Map.empty[DataPath, Set[ActorRef]]
 
   var bundleIndex = Map.empty[DataPath, Seq[Long]]
+
+  override def postStop() = {
+    // Close all subscriptions on stop.
+    for (ref <- subscriptions.values.flatten) {
+      ref ! PoisonPill
+    }
+  }
 
   override def receive = {
 
@@ -205,10 +213,11 @@ class DataSourceActor(session: SlickSession,
                           // Buffer items.
                           .alsoTo(Sink.foreach {
                             case ((micros, item), seqId) =>
-                              if ((random.nextInt % 1000) == 0) {
+                              if ((random.nextInt % 10) == 0) {
                                 log.debug(item.toString)
                               }
-                              self ! BufferItem(path, item, bundleId, seqId, micros)
+                              self ! BaseMarketData(item, path, micros, bundleId, seqId)
+
                           })
                           // Scan to determine the deltas and snapshots to write on every iteration.
                           .scan[Option[ScanState]](None) {
@@ -235,7 +244,7 @@ class DataSourceActor(session: SlickSession,
                                     fmt.deltaEn(delta).pretty(Printer.noSpaces)))
                               }))
                               // Save the snapshots
-                              b <- session.db.run(Deltas ++=
+                              b <- session.db.run(Snapshots ++=
                                 states.filter(_.snapshot.isDefined).map(state =>
                                   (bundleId, state.seqId, state.micros,
                                     fmt.modelEn(state.item).pretty(Printer.noSpaces))
@@ -272,9 +281,17 @@ class DataSourceActor(session: SlickSession,
           log.debug("Ingest scheduling complete for {}", srcKey)
       }
 
-    case item @ BufferItem(path, _, bundleId, _, micros) =>
-      val existing = itemBuffers.getOrElse(bundleId, Vector.empty)
-      itemBuffers += (bundleId -> (existing :+ item))
+    /**
+      * Upon incoming market data, we add it to the corresponding buffer and also broadcast the
+      * market data item to the subscriptions.
+      */
+    case item: MarketData[_] =>
+      // Add to buffer
+      val existing = itemBuffers.getOrElse(item.bundle, Vector.empty)
+      itemBuffers += (item.bundle -> (existing :+ item))
+
+      // Broadcast
+      subscriptions.get(item.path).foreach(refs => refs.foreach(_ ! item))
 
     case DataIngested(bundleId, lastIngestedSeqId: Long) =>
       val existing = itemBuffers.getOrElse(bundleId, Vector.empty)
@@ -282,7 +299,7 @@ class DataSourceActor(session: SlickSession,
       if (existing.isEmpty) {
         log.warning(s"Data buffer should not be empty for bundle id $bundleId")
       }
-      itemBuffers += (bundleId -> existing.dropWhile(_.seqId <= lastIngestedSeqId))
+      itemBuffers += (bundleId -> existing.dropWhile(_.seqid <= lastIngestedSeqId))
 
 
     /**
@@ -291,14 +308,14 @@ class DataSourceActor(session: SlickSession,
      * ===========
      */
     case StreamLiveData(path) =>
-      def buildOptSrc[T](fmt: DeltaFmtJson[T]): Option[Source[T, NotUsed]] =
+      def buildOptSrc[T](fmt: DeltaFmtJson[T]): Option[Source[MarketData[T], NotUsed]] =
         if (subscriptions.isDefinedAt(path)) {
           val (ref, src) =
-            Source.actorRef[T](Int.MaxValue, OverflowStrategy.fail).preMaterialize()
+            Source.actorRef[MarketData[T]](Int.MaxValue, OverflowStrategy.fail).preMaterialize()
           subscriptions += (path -> (subscriptions(path) + ref))
-          val initialItems: Vector[T] = lookupBundleId(path)
-            .flatMap(itemBuffers.get(_).map(_.asInstanceOf[Vector[T]]) )
-            .getOrElse(Vector.empty[T])
+          val initialItems: Vector[MarketData[T]] = lookupBundleId(path)
+            .flatMap(itemBuffers.get(_).map(_.asInstanceOf[Vector[MarketData[T]]]) )
+            .getOrElse(Vector.empty[MarketData[T]])
           Some(Source(initialItems).concat(src))
         } else None
       sender ! buildOptSrc(DeltaFmt.formats(path.datatype))
@@ -312,7 +329,6 @@ object DataSourceActor {
   case class Init(err: Option[Throwable])
   case class Err(err: Throwable)
   case class Ingest(queue: Seq[(String, Set[String])])
-  case class BufferItem[T](path: DataPath, data: T, bundleId: Long, seqId: Long, micros: Long)
   case class DataIngested(bundleId: Long, seqId: Long)
   case object Index
 
