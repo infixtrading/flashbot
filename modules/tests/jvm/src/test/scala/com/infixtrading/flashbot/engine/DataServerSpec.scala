@@ -19,34 +19,27 @@ import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpecLike}
 import scala.concurrent.Await
 import scala.concurrent.duration._
 
-class DataServerSpec extends TestKit(ActorSystem("DataServerSpec",
-    config = {
-      val conf = ConfigFactory.load(classOf[TradingEngine].getClassLoader)
-      val fbConf = conf.getConfig("flashbot")
-      val finalConf =
-        ConfigFactory.defaultApplication()
-          .withFallback(fbConf)
-          .withFallback(conf)
-      finalConf
-    }
-  )) with WordSpecLike
-    with Matchers
-    with BeforeAndAfterAll
-    with ImplicitSender {
+class DataServerSpec extends WordSpecLike with Matchers {
 
   "DataServer" should {
     "ingest and serve trades" in {
+      val conf = ConfigFactory.load(classOf[TradingEngine].getClassLoader)
+      val fbConf = conf.getConfig("flashbot")
+      implicit val system = ActorSystem("System1", ConfigFactory.defaultApplication()
+          .withFallback(fbConf)
+          .withFallback(conf))
+
       implicit val timeout = Timeout(10 seconds)
       implicit val mat = ActorMaterializer()
       implicit val ec = system.dispatcher
 
       // Create data server actor.
-      val conf = FlashbotConfig.load
-      val dataserver = system.actorOf(Props(new DataServer(conf.db,
+      val fbConfig = FlashbotConfig.load
+      val dataserver = system.actorOf(Props(new DataServer(fbConfig.db,
         // Ingests from a stream that is configured to send data for about 3 seconds.
         Map("bitfinex" -> DataSourceConfig("sources.TestDataSource",
           Some(Seq("btc_usd")), Some(Seq("trades")))),
-        conf.exchanges,
+        fbConfig.exchanges,
         Some(IngestConfig(Seq("bitfinex/btc_usd/trades"), "1d")),
         useCluster = false
       )))
@@ -62,19 +55,27 @@ class DataServerSpec extends TestKit(ActorSystem("DataServerSpec",
       val mds = Await.result(rspStream.toMat(Sink.seq)(Keep.right).run, timeout.duration)
       val expectedIds = (1 to 120).map(_.toString)
       mds.map(_.data.id) shouldEqual expectedIds
+
+      Await.ready(system.terminate(), 10 seconds)
     }
 
     "ingest and serve ladders" in {
+      val conf = ConfigFactory.load(classOf[TradingEngine].getClassLoader)
+      val fbConf = conf.getConfig("flashbot")
+      implicit val system = ActorSystem("System1", ConfigFactory.defaultApplication()
+          .withFallback(fbConf)
+          .withFallback(conf))
+
       implicit val timeout = Timeout(1 minute)
       implicit val mat = ActorMaterializer()
       implicit val ec = system.dispatcher
 
       // Create data server actor.
-      val conf = FlashbotConfig.load
-      val dataserver = system.actorOf(Props(new DataServer(conf.db,
+      val fbConfig = FlashbotConfig.load
+      val dataserver = system.actorOf(Props(new DataServer(fbConfig.db,
         Map("bitfinex" -> DataSourceConfig("sources.TestLadderDataSource",
           Some(Seq("btc_usd")), Some(Seq("ladder")))),
-        conf.exchanges,
+        fbConfig.exchanges,
         Some(IngestConfig(Seq("bitfinex/btc_usd/ladder"), "1d")),
         useCluster = false
       )))
@@ -87,7 +88,8 @@ class DataServerSpec extends TestKit(ActorSystem("DataServerSpec",
       val rsp = Await.result(fut.mapTo[StreamResponse[MarketData[Ladder]]], timeout.duration)
       val rspStream = rsp.toSource
 
-      Await.result(rspStream.runForeach(println("foo", _)), timeout.duration)
+//      Await.result(rspStream.runForeach(println("foo", _)), timeout.duration)
+      Await.ready(system.terminate(), 10 seconds)
     }
   }
 }

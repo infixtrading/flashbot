@@ -6,6 +6,8 @@ import scala.xml.{ Elem, Node => XmlNode, NodeSeq => XmlNodeSeq }
 import scala.xml.transform.{ RewriteRule, RuleTransformer }
 
 organization in ThisBuild := "com.infixtrading"
+parallelExecution in ThisBuild := false
+concurrentRestrictions in Global += Tags.limit(Tags.Test, 1)
 
 lazy val akkaVersion = "2.5.18"
 lazy val akkaHttpVersion = "10.1.5"

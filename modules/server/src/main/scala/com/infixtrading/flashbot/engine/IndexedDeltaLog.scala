@@ -42,15 +42,10 @@ class IndexedDeltaLog[T](path: File,
   var lastSliceTime = -1L
   var lastData: Option[T] = None
 
-  println("=============")
-  println("Prev bundle last item", prevBundleLastItem)
-
   def save(micros: Long, data: T): Unit = {
     if (micros < lastSeenTime) {
       throw new RuntimeException("IndexedDeltaLog does not support outdated data.")
     }
-
-    println(s"Saving $data")
 
     var wrappers = Seq.empty[BundleWrapper]
 

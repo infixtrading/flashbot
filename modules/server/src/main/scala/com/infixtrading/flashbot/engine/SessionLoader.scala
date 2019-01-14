@@ -17,16 +17,6 @@ class SessionLoader(getExchangeConfigs: () => Map[String, ExchangeConfig], dataS
                    (implicit val ec: ExecutionContext, val mat: Materializer) {
   implicit val timeout = Timeout(10 seconds)
 
-//  implicit val materializer: Materializer = mat
-
-//  def index: Future[DataSourceIndex] = {
-//    (dataServer ? ClusterDataIndexReq).collect {
-//      case idx: DataClusterIndex =>
-//        println(idx)
-//        idx.slices
-//    }
-//  }
-
   def exchanges: Set[String] = getExchangeConfigs().keySet
 
   protected[engine] def loadNewExchange(name: String)

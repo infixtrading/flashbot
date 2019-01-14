@@ -48,7 +48,7 @@ class TradingEngine(engineId: String,
 
   override def persistenceId: String = engineId
   private val snapshotInterval = 100000
-
+  
   val dataServer = dataServerInfo.left.getOrElse(context.actorOf(dataServerInfo.right.get))
 
   /**

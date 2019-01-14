@@ -286,7 +286,6 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
           // If this data has price info attached, emit that price info.
           data.map(_.data) match {
             case Some(pd: Priced) =>
-//              log.debug("Found priced data {}", data)
               session.prices.setPrice(Market(data.get.source, data.get.topic), pd.price)
             case _ =>
           }

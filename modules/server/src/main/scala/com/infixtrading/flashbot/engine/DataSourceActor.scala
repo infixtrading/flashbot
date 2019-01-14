@@ -213,9 +213,6 @@ class DataSourceActor(session: SlickSession,
                           // Buffer items.
                           .alsoTo(Sink.foreach {
                             case ((micros, item), seqId) =>
-                              if ((random.nextInt % 10) == 0) {
-                                log.debug(item.toString)
-                              }
                               self ! BaseMarketData(item, path, micros, bundleId, seqId)
 
                           })

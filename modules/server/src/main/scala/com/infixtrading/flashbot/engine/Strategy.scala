@@ -12,7 +12,6 @@ import akka.util.Timeout
 import json.Schema
 import com.github.andyglow.jsonschema.AsCirce._
 import io.circe._
-import com.infixtrading.flashbot.core.Instrument.CurrencyPair
 import com.infixtrading.flashbot.core._
 import com.infixtrading.flashbot.engine.DataServer.{DataSelection, DataStreamReq}
 import com.infixtrading.flashbot.models.api.OrderTarget
@@ -73,46 +72,6 @@ abstract class Strategy {
     * Receives commands that occur from outside of the system, such as from the UI or API.
     */
   def handleCommand(command: StrategyCommand)(implicit ctx: TradingSession): Unit = {}
-
-  /**
-    * RANDOM COMMENT:
-    *
-    * Example usage of a hypothetical strategy DSL.
-    *
-    * val up = order("up_limit", size = "10 usd")
-    * val downOrder = order(size = "20 usd", market = "btc/usd")
-    *
-    * val btcPositionOverall = position("my_pos", "btc")
-    * val btcPositionBitmex = position("my_pos", "btc", "bitmex")
-    *
-    * val ethPosition = btcPosition / 2
-    *
-    * if (something)
-    *   btcPosition("usd") = ethPosition("usd")
-    *
-    * maximize(ethPosition.as("ltc") - btcPosition.as("ltc"))
-    *
-    */
-
-  @Deprecated
-  def orderTargetRatio(exchange: String, product: String, ratio: Double)
-                      (implicit ctx: TradingSession): String = {
-    val pair = CurrencyPair(product)
-    val baseBalance = FixedSize(ctx.getPortfolio.assets(Account(exchange, pair.base)), pair.base)
-    val quoteBalance = FixedSize(ctx.getPortfolio.assets(Account(exchange, pair.quote)), pair.quote)
-
-    val notionalBase = baseBalance.as(pair.quote)(ctx.getPrices, ctx.instruments)
-    val totalNotional = quoteBalance.qty + notionalBase.qty
-
-    val target = OrderTarget(
-      Market(exchange, product),
-      DEFAULT,
-      FixedSize(totalNotional * ratio, pair.quote),
-      None
-    )
-    ctx.send(target)
-    target.id
-  }
 
   def limitOrder(market: Market,
                  size: FixedSizeD,

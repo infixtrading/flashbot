@@ -171,8 +171,12 @@ class DataServer(dbConfig: Config,
   Await.result(for {
     existingTables <- slickSession.db.run(MTable.getTables)
     names = existingTables.map(_.name.name)
+    _ = { log.info("Existing tables: {}", names) }
     _ <- slickSession.db.run(DBIO.sequence(_tables.filter(table =>
-      !names.contains(table.baseTableRow.tableName) ).map(_.schema.create)))
+      !names.contains(table.baseTableRow.tableName) ).map(x => {
+      log.info("Creating table: {}", x.baseTableRow.tableName)
+      x.schema.create
+    })))
   } yield Done, 5 seconds) match {
     case Done =>
       log.info("SQL tables ready")
