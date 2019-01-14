@@ -1,15 +1,13 @@
 package strategies
 
-
-import java.time.Instant
-
 import akka.NotUsed
+import akka.actor.ActorRef
 import akka.stream.Materializer
 import akka.stream.scaladsl.{Keep, Sink, Source}
-import com.infixtrading.flashbot.core.DataSource.StreamSelection
 import com.infixtrading.flashbot.core.Instrument.CurrencyPair
 import com.infixtrading.flashbot.core.MarketData.BaseMarketData
 import com.infixtrading.flashbot.core.{MarketData, TimeSeriesMixin, TimeSeriesTap}
+import com.infixtrading.flashbot.engine.DataServer.DataSelection
 import com.infixtrading.flashbot.engine.{SessionLoader, Strategy, TradingSession}
 import com.infixtrading.flashbot.models.api.OrderTarget
 import com.infixtrading.flashbot.models.core._
@@ -19,7 +17,7 @@ import io.circe.generic.semiauto._
 import org.jquantlib.time.TimeSeries
 
 import scala.concurrent.duration._
-import scala.concurrent.{Await, Future}
+import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.util.{Failure, Success}
 
 case class Prediction[T](prediction: T, confidence: Double)
@@ -60,10 +58,10 @@ class LookAheadCandleStrategy extends Strategy
   val path1 = DataPath("bitfinex", "eth_usd", "candles_5s")
   def dataSeqs(tr: TimeRange)(implicit mat: Materializer): Map[DataPath, Seq[MarketData[Candle]]] = Map(
     path1 -> Await.result(
-      TimeSeriesTap.prices(100.0, .2, .6, tr, timeStep = 1 minute).map {
-        case (instant, price) =>
+      TimeSeriesTap.prices(100.0, .2, .6, tr, timeStep = 1 minute).zipWithIndex.map {
+        case ((instant, price), i) =>
           val micros = instant.toEpochMilli * 1000
-          BaseMarketData(Candle(micros, price, price, price, price, 0), path1, micros, 1)
+          BaseMarketData(Candle(micros, price, price, price, price, 0), path1, micros, 1, i)
       } .toMat(Sink.fold(Seq.empty[MarketData[Candle]]) {
         case (memo, md) => memo :+ md
       })(Keep.right).run(), 15 seconds)
@@ -142,16 +140,16 @@ class LookAheadCandleStrategy extends Strategy
     * Make the resolved market data lag by one item. This way we can lookahead to the next
     * item being streamed and base our test strategy off of it.
     */
-  override def resolveMarketData(streamSelection: StreamSelection)
-                                (implicit mat: Materializer)
-  : Future[Option[Source[MarketData[_], NotUsed]]] = {
+  override def resolveMarketData(selection: DataSelection, dataServer: ActorRef)
+                       (implicit mat: Materializer, ec: ExecutionContext)
+      : Future[Source[MarketData[_], NotUsed]] = {
 
     // Build static data if not yet built.
     if (staticData.isEmpty) {
-      staticData = dataSeqs(streamSelection.timeRange)
+      staticData = dataSeqs(selection.timeRange.get)
     }
 
     // Return it.
-    Future.successful(Some(Source(staticData(streamSelection.path).toIndexedSeq)))
+    Future.successful(Source(staticData(selection.path).toIndexedSeq))
   }
 }

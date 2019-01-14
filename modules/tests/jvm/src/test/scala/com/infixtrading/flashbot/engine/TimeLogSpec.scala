@@ -111,6 +111,13 @@ class TimeLogSpec extends FlatSpec with Matchers {
       ScanDuration.Finite)().toSeq shouldEqual trades.tail.reverse.tail.reverse
   }
 
+  "TimeLog" should "find the last element" in {
+    val tl = TimeLog[Trade](testFolder, Some(24 hours), RollCycles.HOURLY)
+    val trades = genTrades(1000, nowMillis)
+    trades.foreach(tl.save(_))
+
+    tl.last.get shouldEqual trades.last
+  }
 
   override def withFixture(test: NoArgTest) = {
     val tempFolder = System.getProperty("java.io.tmpdir")

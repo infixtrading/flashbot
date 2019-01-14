@@ -13,14 +13,13 @@ import breeze.stats.distributions.Gaussian
 import io.circe._
 import io.circe.syntax._
 import com.infixtrading.flashbot.models.core.Action.{ActionQueue, CancelLimitOrder, PostLimitOrder, PostMarketOrder}
-import com.infixtrading.flashbot.core.DataSource.StreamSelection
 import com.infixtrading.flashbot.core.FlashbotConfig.ExchangeConfig
 import com.infixtrading.flashbot.core.Instrument.CurrencyPair
 import com.infixtrading.flashbot.util.stream._
 import com.infixtrading.flashbot.util._
 import com.infixtrading.flashbot.util.time.currentTimeMicros
 import com.infixtrading.flashbot.core.{DataSource, _}
-import com.infixtrading.flashbot.engine.DataServer.{ClusterLocality, DataStreamReq}
+import com.infixtrading.flashbot.engine.DataServer.DataSelection
 import com.infixtrading.flashbot.engine.TradingSession._
 import com.infixtrading.flashbot.engine.TradingSessionActor.{SessionPing, SessionPong, StartSession, StopSession}
 import com.infixtrading.flashbot.exchanges.Simulator
@@ -69,7 +68,6 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
 
   def setup(): Future[SessionSetup] = {
 
-    implicit val timeout: Timeout = Timeout(10 seconds)
     val exchangeConfigs = getExchangeConfigs()
 
     log.debug("Exchange configs: {}", exchangeConfigs)
@@ -87,9 +85,10 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
     def defaultInstruments(exchange: String): Set[Instrument] =
       exchangeConfigs(exchange).pairs.getOrElse(Seq.empty).map(CurrencyPair(_)).toSet
 
-    def streamSelection(path: DataPath): StreamSelection = mode match {
-      case Backtest(range) => StreamSelection(path, range.start, range.end)
-      case _ => StreamSelection(path, sessionMicros, polling = true)
+    def dataSelection(path: DataPath): DataSelection = mode match {
+      case Backtest(range) => DataSelection(path, Some(range.start), Some(range.end))
+      case liveOrPaper =>
+        DataSelection(path, Some(sessionMicros - liveOrPaper.lookback.toMicros), None)
     }
 
     // Load a new instance of an exchange.
@@ -133,20 +132,6 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
       // Initialize the strategy and collect data paths
       paths <- strategy.initialize(initialPortfolio, sessionLoader)
 
-      // See which of the paths can be resolved by the strategy itself.
-      selfPaths <- Future.sequence(paths.map { path =>
-        strategy.resolveMarketData(streamSelection(path))
-      }) map { ret =>
-        (paths zip ret) collect {
-          case (path, Some(value)) => path -> value
-        } toMap
-      }
-
-      _ = { log.debug("Resolved {} streams locally: {}.", selfPaths.size, selfPaths) }
-
-      // The rest of the paths which still need to be resolved.
-      remainingPaths = paths.diff(selfPaths.keys.toSeq)
-
       // Load the exchanges
       exchangeNames: Set[String] = paths.toSet[DataPath].map(_.source)
         .intersect(exchangeConfigs.keySet)
@@ -170,23 +155,13 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
         // Remove empties.
         .map(_.filter(_._2.nonEmpty))
 
-      // Ask the local data server to stream the data at the given paths.
-      serverStreams <- Future.sequence(remainingPaths.map((path: DataPath) => {
-        val selection = streamSelection(path)
-        for {
-          // First check if the strategy can resolve this selection.
-          mdOverrideSrc <- strategy.resolveMarketData(selection)
+      // Resolve market data streams.
+      streams <- Future.sequence(paths.map(path =>
+        strategy.resolveMarketData(dataSelection(path), dataServer)))
 
-          src <- mdOverrideSrc.map(Future.successful).getOrElse(
-            (dataServer ? DataStreamReq(selection, ClusterLocality))
-              .map { case se: StreamResponse[MarketData[_]] => se.toSource })
-        } yield src
-      }))
-
-      // Combine the server and local streams.
-      streams = serverStreams ++ selfPaths.values
       _ = { log.debug("Resolved {} market data streams out of" +
         " {} paths requested by the strategy.", streams.size, paths.size) }
+
     } yield
       SessionSetup(new InstrumentIndex(instruments), exchanges, strategy,
         UUID.randomUUID.toString, streams, sessionMicros, initialPortfolio)
@@ -241,7 +216,7 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
       // trading session is a backtest then we merge the data streams by time. But if this is a
       // live trading session then data is sent first come, first serve to keep latencies low.
       val (tickRef, fut) = streams.reduce[Source[MarketData[_], NotUsed]](mode match {
-          case _:Backtest => _.mergeSorted(_)
+          case _:Backtest => _.mergeSorted(_)(MarketData.orderByTime)
           case _ => _.merge(_)
         })
 
@@ -311,7 +286,6 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
           // If this data has price info attached, emit that price info.
           data.map(_.data) match {
             case Some(pd: Priced) =>
-//              log.debug("Found priced data {}", data)
               session.prices.setPrice(Market(data.get.source, data.get.topic), pd.price)
             case _ =>
           }

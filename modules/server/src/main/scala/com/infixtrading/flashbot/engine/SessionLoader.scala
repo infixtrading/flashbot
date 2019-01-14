@@ -5,10 +5,9 @@ import akka.stream.{ActorMaterializer, Materializer}
 import akka.pattern.ask
 import akka.util.Timeout
 import io.circe.Json
-import com.infixtrading.flashbot.core.DataSource.{Bundle, DataClusterIndex, DataSourceIndex}
+import com.infixtrading.flashbot.core.DataSource.{Bundle, DataSourceIndex}
 import com.infixtrading.flashbot.core.Exchange
 import com.infixtrading.flashbot.core.FlashbotConfig.{DataSourceConfig, ExchangeConfig}
-import com.infixtrading.flashbot.engine.DataServer.ClusterDataIndexReq
 
 import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration._
@@ -17,16 +16,6 @@ import scala.util.{Failure, Success, Try}
 class SessionLoader(getExchangeConfigs: () => Map[String, ExchangeConfig], dataServer: ActorRef)
                    (implicit val ec: ExecutionContext, val mat: Materializer) {
   implicit val timeout = Timeout(10 seconds)
-
-//  implicit val materializer: Materializer = mat
-
-  def index: Future[DataSourceIndex] = {
-    (dataServer ? ClusterDataIndexReq).collect {
-      case idx: DataClusterIndex =>
-        println(idx)
-        idx.slices
-    }
-  }
 
   def exchanges: Set[String] = getExchangeConfigs().keySet
 

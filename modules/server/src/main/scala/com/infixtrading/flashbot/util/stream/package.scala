@@ -11,7 +11,7 @@ import akka.util.Timeout
 import com.infixtrading.flashbot.core.MarketData
 import com.infixtrading.flashbot.util.time._
 import com.infixtrading.flashbot.engine.StreamResponse
-import com.infixtrading.flashbot.models.core.{Candle, DataAddress, TimeRange}
+import com.infixtrading.flashbot.models.core.{DataAddress, TimeRange}
 
 import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration._
@@ -35,6 +35,17 @@ package object stream {
     .collect( { case (last, Some(event)) if last.isEmpty || !eqFn(last.get, event)  => event })
 
   def deDupeBy[T, K](map: T => K): Flow[T, T, NotUsed] = deDupeVia[T]((a, b) => map(a) == map(b))
+
+  def dropUnordered[U](ordering: Ordering[U]): Flow[U, U, NotUsed] =
+    dropUnordered[U, U](x => x)(ordering)
+
+  def dropUnordered[T, U](map: T => U)(implicit ordering: Ordering[U]): Flow[T, T, NotUsed] =
+    Flow[T].scan[(Option[T], Option[U])]((None, None)) {
+      case ((None, None), item) => (Some(item), Some(map(item)))
+      case ((_, Some(max)), item) =>
+        if (ordering.gt(map(item), max)) (Some(item), Some(map(item)))
+        else (None, Some(max))
+    } collect { case (Some(value), _) => value }
 
   def withIndex[T]: Flow[T, (Long, T), NotUsed] = Flow[T]
     .scan[(Long, Option[T])]((-1, None))((count, e) => (count._1 + 1, Some(e)))

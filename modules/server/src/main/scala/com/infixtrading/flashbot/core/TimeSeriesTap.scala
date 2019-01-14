@@ -14,7 +14,7 @@ import scala.concurrent.duration._
 import scala.concurrent.ExecutionContext.Implicits.global
 
 /**
-  * TimeTap is an artificial source of time series indexes.
+  * TimeTap is an artificial source of time series data.
   */
 object TimeSeriesTap {
 

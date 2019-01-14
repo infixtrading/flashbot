@@ -4,7 +4,7 @@ import com.infixtrading.flashbot.models.core.DataPath
 /**
   * Any kind of data that can be streamed into strategies.
   */
-trait MarketData[T] extends Timestamped {
+trait MarketData[+T] extends Timestamped {
   /**
     * The underlying data instance.
     */
@@ -18,15 +18,19 @@ trait MarketData[T] extends Timestamped {
   def path: DataPath
 
   /**
-    * MarketData objects are considered to be from the same continuous data bundle iff they
-    * have the same address AND their bundleIndex is the same.
+    * Identifies a unique stream of data from the same continuous ingest session.
     */
-  def bundleIndex: Int
+  def bundle: Long
+
+  /**
+    * The index of the item within the bundle.
+    */
+  def seqid: Long
 
   /**
     * Returns a new MarketData[T] instance with updated data.
     */
-  def withData(newData: T): MarketData[T]
+  def withData[B >: T](newData: B): MarketData[B]
 
   /**
     * Returns a new MarketData[T] instance with an updated `micros` field.
@@ -34,15 +38,22 @@ trait MarketData[T] extends Timestamped {
   def withMicros(newMicros: Long): MarketData[T]
 
   /**
-    * Returns a new MarketData[T] instance with an updated `bundleIndex` field.
+    * Returns a new MarketData[T] instance with an updated `bundle` field.
     */
-  def withBundle(newBundle: Int): MarketData[T]
+  def withBundle(newBundle: Long): MarketData[T]
+
+  /**
+    * Returns a new MarketData[T] instance with an updated `bundle` field.
+    */
+  def withSeqId(newSeqId: Long): MarketData[T]
+
 }
 
 object MarketData {
-  implicit val ordering: Ordering[MarketData[_]] = Ordering.by(_.micros)
+  def orderByTime: Ordering[MarketData[_]] = Ordering.by(_.micros)
+  def orderBySequence[T]: Ordering[MarketData[T]] = Ordering.by(x => (x.bundle, x.seqid))
 
-  case class MarketDelta[D](delta: D, micros: Long, bundle: Int)
+  case class MarketDelta[D](delta: D, micros: Long, bundle: Long)
 
   implicit def marketDataFmt[T](implicit fmt: DeltaFmt[T]): DeltaFmt[MarketData[T]] =
     new DeltaFmt[MarketData[T]] {
@@ -56,7 +67,8 @@ object MarketData {
         .withMicros(delta.micros)
 
       override def diff(prev: MarketData[T], current: MarketData[T]) =
-        fmt.diff(prev.data, current.data).map(MarketDelta(_, current.micros, current.bundleIndex))
+        fmt.diff(prev.data, current.data)
+          .map(MarketDelta(_, current.micros, current.bundle))
 
       override def fold(x: MarketData[T], y: MarketData[T]) =
         y.withData(fmt.fold(x.data, y.data))
@@ -71,13 +83,14 @@ object MarketData {
   /**
     * The generic default implementation of MarketData.
     */
-  case class BaseMarketData[T](data: T, path: DataPath, micros: Long, bundleIndex: Int)
+  case class BaseMarketData[T](data: T, path: DataPath, micros: Long, bundle: Long, seqid: Long)
       extends MarketData[T] {
 
     override def withMicros(newMicros: Long) = copy(micros = newMicros)
-    override def withBundle(newBundle: Int) = copy(bundleIndex = bundleIndex)
-    override def withData(newData: T) = copy(data = newData)
-  }
+    override def withBundle(newBundle: Long) = copy(bundle = bundle)
+    override def withData[B >: T](newData: B) = copy(data = newData)
+    override def withSeqId(newSeqId: Long) = copy(seqid = newSeqId)
+}
 
   trait Sequenced {
     def seq: Long
@@ -90,6 +103,6 @@ object MarketData {
   implicit class MarketDataOps(md: MarketData[_]) {
     def source = md.path.source
     def topic = md.path.topic
-    def dataType = md.path.dataType
+    def dataType = md.path.datatype
   }
 }

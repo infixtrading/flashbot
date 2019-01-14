@@ -4,20 +4,23 @@ import java.time.Duration
 import java.util.UUID
 
 import akka.NotUsed
+import akka.actor.ActorRef
 import akka.stream.Materializer
 import akka.stream.scaladsl.Source
+import akka.pattern.ask
+import akka.util.Timeout
 import json.Schema
 import com.github.andyglow.jsonschema.AsCirce._
 import io.circe._
-import io.circe.generic.semiauto._
-import com.infixtrading.flashbot.core.DataSource.StreamSelection
-import com.infixtrading.flashbot.core.Instrument.CurrencyPair
 import com.infixtrading.flashbot.core._
+import com.infixtrading.flashbot.engine.DataServer.{DataSelection, DataStreamReq}
 import com.infixtrading.flashbot.models.api.OrderTarget
 import com.infixtrading.flashbot.models.core.FixedSize.FixedSizeD
 import com.infixtrading.flashbot.models.core._
 
-import scala.concurrent.Future
+import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.duration._
+import scala.language.postfixOps
 
 /**
   * Strategy is a container of logic that describes the behavior and data dependencies of a trading
@@ -70,46 +73,6 @@ abstract class Strategy {
     */
   def handleCommand(command: StrategyCommand)(implicit ctx: TradingSession): Unit = {}
 
-  /**
-    * RANDOM COMMENT:
-    *
-    * Example usage of a hypothetical strategy DSL.
-    *
-    * val up = order("up_limit", size = "10 usd")
-    * val downOrder = order(size = "20 usd", market = "btc/usd")
-    *
-    * val btcPositionOverall = position("my_pos", "btc")
-    * val btcPositionBitmex = position("my_pos", "btc", "bitmex")
-    *
-    * val ethPosition = btcPosition / 2
-    *
-    * if (something)
-    *   btcPosition("usd") = ethPosition("usd")
-    *
-    * maximize(ethPosition.as("ltc") - btcPosition.as("ltc"))
-    *
-    */
-
-  @Deprecated
-  def orderTargetRatio(exchange: String, product: String, ratio: Double)
-                      (implicit ctx: TradingSession): String = {
-    val pair = CurrencyPair(product)
-    val baseBalance = FixedSize(ctx.getPortfolio.assets(Account(exchange, pair.base)), pair.base)
-    val quoteBalance = FixedSize(ctx.getPortfolio.assets(Account(exchange, pair.quote)), pair.quote)
-
-    val notionalBase = baseBalance.as(pair.quote)(ctx.getPrices, ctx.instruments)
-    val totalNotional = quoteBalance.qty + notionalBase.qty
-
-    val target = OrderTarget(
-      Market(exchange, product),
-      DEFAULT,
-      FixedSize(totalNotional * ratio, pair.quote),
-      None
-    )
-    ctx.send(target)
-    target.id
-  }
-
   def limitOrder(market: Market,
                  size: FixedSizeD,
                  price: Double,
@@ -157,9 +120,13 @@ abstract class Strategy {
     target.id
   }
 
-  def resolveMarketData(streamSelection: StreamSelection)(implicit mat: Materializer)
-      : Future[Option[Source[MarketData[_], NotUsed]]] =
-    Future.successful(None)
+  def resolveMarketData(selection: DataSelection, dataServer: ActorRef)
+                       (implicit mat: Materializer, ec: ExecutionContext)
+      : Future[Source[MarketData[_], NotUsed]] = {
+    implicit val timeout: Timeout = Timeout(10 seconds)
+    (dataServer ? DataStreamReq(selection))
+      .map { case se: StreamResponse[MarketData[_]] => se.toSource }
+  }
 
   /**
     * Internal state that is used for bookkeeping by the Var type classes. This will be set

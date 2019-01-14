@@ -29,52 +29,32 @@ import org.jfree.chart.renderer.xy.{CandlestickRenderer, StandardXYBarPainter, X
 import org.jfree.data.statistics.{HistogramDataset, HistogramType}
 import org.jfree.data.time._
 import org.jfree.data.time.ohlc.{OHLCSeries, OHLCSeriesCollection}
-import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpecLike}
+import org.scalatest.{BeforeAndAfterAll, FlatSpec, Matchers, WordSpecLike}
 import strategies.LookaheadParams
 
 import scala.concurrent.Await
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 
-class TradingEngineSpec
-  extends TestKit(ActorSystem("TradingEngineSpec",
-    config = {
-      val conf = ConfigFactory.load(classOf[TradingEngine].getClassLoader)
-      val fbConf = conf.getConfig("flashbot")
-      val finalConf =
-        ConfigFactory.defaultApplication()
-          .withFallback(fbConf)
-          .withFallback(conf)
-      finalConf
-    }
-  )) with WordSpecLike
+class TradingEngineSpec extends WordSpecLike
     with Matchers
-    with BeforeAndAfterAll
-    with ImplicitSender {
-
-  override def beforeAll: Unit = {
-    val dataDir = new File(FlashbotConfig.load.`data-root`)
-    files.rmRf(dataDir)
-    super.beforeAll()
-  }
-
-  override def afterAll: Unit = {
-    val dataDir = new File(FlashbotConfig.load.`data-root`)
-    files.rmRf(dataDir)
-    TestKit.shutdownActorSystem(system)
-    super.afterAll()
-  }
+    with BeforeAndAfterAll {
 
   var testFolder: File = _
   implicit val timeout = Timeout(15 seconds)
 
   "TradingEngine" should {
     "respond to a ping" in {
+      val conf = ConfigFactory.load(classOf[TradingEngine].getClassLoader)
+      val fbConf = conf.getConfig("flashbot")
+      val system = ActorSystem("System1", ConfigFactory.defaultApplication()
+          .withFallback(fbConf)
+          .withFallback(conf))
 
       val fbConfig = FlashbotConfig.load
 
       val dataServer = system.actorOf(Props(new DataServer(
-        testFolder,
+        fbConfig.db,
         fbConfig.sources,
         fbConfig.exchanges,
         None,
@@ -96,9 +76,17 @@ class TradingEngineSpec
         case _ =>
           fail("should respond with a Pong")
       }
+
+      Await.ready(system.terminate(), 10 seconds)
     }
 
     "respect bot TTL" in {
+      val conf = ConfigFactory.load(classOf[TradingEngine].getClassLoader)
+      val fbConf = conf.getConfig("flashbot")
+      val system = ActorSystem("System1", ConfigFactory.defaultApplication()
+          .withFallback(fbConf)
+          .withFallback(conf))
+
       val engine = system.actorOf(TradingEngine.props("test-engine"))
       def request(query: Any) = Await.result(engine ? query, 5 seconds)
 
@@ -138,12 +126,21 @@ class TradingEngineSpec
       assertThrows[IllegalArgumentException] {
         request(BotStatusQuery("mybot"))
       }
+
+      Await.ready(system.terminate(), 10 seconds)
     }
 
     /**
       * We should be able to start a bot, then subscribe to a live stream of it's report.
       */
     "subscribe to the report of a running bot" in {
+
+      val conf = ConfigFactory.load(classOf[TradingEngine].getClassLoader)
+      val fbConf = conf.getConfig("flashbot")
+      implicit val system = ActorSystem("System1", ConfigFactory.defaultApplication()
+          .withFallback(fbConf)
+          .withFallback(conf))
+
       val engine = system.actorOf(TradingEngine.props("test-engine"))
       implicit val mat = ActorMaterializer()
       def request(query: Any) = Await.result(engine ? query, 30 seconds)
@@ -184,15 +181,24 @@ class TradingEngineSpec
       val x = request(BotStatusQuery("bot2"))
       println(x)
       x shouldBe Disabled
+
+      Await.ready(system.terminate(), 10 seconds)
     }
 
     "be profitable when using lookahead" in {
+
+      val conf = ConfigFactory.load(classOf[TradingEngine].getClassLoader)
+      val fbConf = conf.getConfig("flashbot")
+      implicit val system = ActorSystem("System1", ConfigFactory.defaultApplication()
+          .withFallback(fbConf)
+          .withFallback(conf))
+
       val fbConfig = FlashbotConfig.load
 
       val now = Instant.now()
 
       val dataServer = system.actorOf(Props(
-        new DataServer(testFolder, fbConfig.sources, fbConfig.exchanges, None,
+        new DataServer(fbConfig.db, fbConfig.sources, fbConfig.exchanges, None,
           useCluster = false)), "data-server")
 
       val engine = system.actorOf(Props(
@@ -295,6 +301,7 @@ class TradingEngineSpec
 
       val mychart = XYLineChart(mydata)
 
+
 //      mychart.show("Equity")
 
 //      val fut = Future {
@@ -315,6 +322,8 @@ class TradingEngineSpec
 //      report.timeSeries("returns").size shouldBe timeSeriesBarCount
 
       // There shouldn't be a single period of negative returns when the algo is cheating.
+
+      Await.ready(system.terminate(), 10 seconds)
     }
 
 //    "lose money when using lookahead to self sabatoge" in {

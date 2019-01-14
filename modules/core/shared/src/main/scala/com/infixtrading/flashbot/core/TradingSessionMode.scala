@@ -10,6 +10,8 @@ import scala.concurrent.duration._
 sealed trait TradingSessionMode {
   def timeRange(now: Instant): TimeRange
 
+  def lookback: FiniteDuration
+
   override def toString = this match {
     case Live => "live"
     case Paper(x) if x.length == 0 => "paper"
@@ -18,12 +20,14 @@ sealed trait TradingSessionMode {
 }
 case class Backtest(range: TimeRange) extends TradingSessionMode {
   override def timeRange(now: Instant) = range
+  override def lookback = 0 seconds
 }
 case class Paper(lookback: FiniteDuration) extends TradingSessionMode {
   override def timeRange(now: Instant) = TimeRange.build(now, lookback)
 }
 case object Live extends TradingSessionMode {
   override def timeRange(now: Instant) = TimeRange.build(now, "now")
+  override def lookback = 0 seconds
 }
 
 object TradingSessionMode {

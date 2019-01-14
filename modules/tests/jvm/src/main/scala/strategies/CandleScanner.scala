@@ -1,13 +1,16 @@
 package strategies
+import akka.NotUsed
+import akka.actor.ActorRef
 import akka.stream.Materializer
-import com.infixtrading.flashbot.core.DataSource.StreamSelection
+import akka.stream.scaladsl.Source
 import com.infixtrading.flashbot.core.MarketData.BaseMarketData
 import com.infixtrading.flashbot.core.{DataSource, MarketData, TimeSeriesTap}
+import com.infixtrading.flashbot.engine.DataServer.DataSelection
 import com.infixtrading.flashbot.engine.{SessionLoader, Strategy, TradingSession}
 import com.infixtrading.flashbot.models.core.Portfolio
 import io.circe.generic.semiauto._
 
-import scala.concurrent.Future
+import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration._
 
 class CandleScanner extends Strategy {
@@ -26,12 +29,17 @@ class CandleScanner extends Strategy {
     println(data)
   }
 
-  override def resolveMarketData(streamSelection: StreamSelection)
-                                (implicit mat: Materializer) = {
-    Future.successful(Some(TimeSeriesTap
+  override def resolveMarketData(selection: DataSelection, dataServer: ActorRef)
+                       (implicit mat: Materializer, ec: ExecutionContext)
+      : Future[Source[MarketData[_], NotUsed]] = {
+    Future.successful(TimeSeriesTap
       .prices(1 day)
       .via(TimeSeriesTap.aggregateCandles(1 day))
       .throttle(1, 200 millis)
-      .map(candle => BaseMarketData(candle, streamSelection.path, candle.micros, 1))))
+      .zipWithIndex
+      .map {
+        case (candle, i) => BaseMarketData(candle, selection.path, candle.micros, 1, i.toLong)
+      }
+    )
   }
 }

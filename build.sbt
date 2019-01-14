@@ -6,6 +6,8 @@ import scala.xml.{ Elem, Node => XmlNode, NodeSeq => XmlNodeSeq }
 import scala.xml.transform.{ RewriteRule, RuleTransformer }
 
 organization in ThisBuild := "com.infixtrading"
+parallelExecution in ThisBuild := false
+concurrentRestrictions in Global += Tags.limit(Tags.Test, 1)
 
 lazy val akkaVersion = "2.5.18"
 lazy val akkaHttpVersion = "10.1.5"
@@ -251,7 +253,7 @@ lazy val crossModules = Seq[(Project, Project)](
 )
 
 lazy val jsModules = Seq[Project](scalajs)
-lazy val jvmModules = Seq[Project](server, client)
+lazy val jvmModules = Seq[Project](server, client, testing)
 //lazy val fbDocsModules = Seq[Project](docs)
 
 lazy val jvmProjects: Seq[Project] = crossModules.map(_._1) ++ jvmModules
@@ -285,17 +287,27 @@ lazy val flashbot = project
   .settings(
     initialCommands in console :=
       """
+        |import scala.concurrent.Future 
+        |import scala.concurrent.duration._
+        |
         |import io.circe._
         |import io.circe.generic.auto._
         |import io.circe.literal._
         |import io.circe.parser._
         |import io.circe.syntax._
+        |
+        |import akka.actor.ActorSystem
+        |import akka.stream.ActorMaterializer
+        |
         |import com.infixtrading.flashbot._
-        |import com.infixtrading.flashbot.scalaapi._
+        |import console.Console
+        |
+        |implicit val system = ActorSystem("console-system") 
+        |implicit val mat = ActorMaterializer()
       """.stripMargin
   )
   .aggregate(aggregatedProjects: _*)
-  .dependsOn(core, server)
+  .dependsOn(core, server, testing)
 
 //lazy val numbersTestingBase = circeCrossModule("numbers-testing", previousCirceVersion, CrossType.Pure).settings(
 //  scalacOptions ~= {
@@ -387,7 +399,10 @@ lazy val server = flashbotModule("server", previousFBVersion).settings(
 
     "io.circe" %% "circe-config" % "0.5.0",
 
-    "com.twitter" %% "chill-akka" % "0.9.3"
+    "com.twitter" %% "chill-akka" % "0.9.3",
+
+    "com.typesafe.slick" %% "slick" % "3.2.3",
+    "com.lightbend.akka" %% "akka-stream-alpakka-slick" % "1.0-M1"
   ))
 ).dependsOn(core)
 
@@ -395,19 +410,19 @@ lazy val client = flashbotModule("client", previousFBVersion).dependsOn(core)
 
 lazy val scalajs = flashbotModule("scalajs", None).enablePlugins(ScalaJSPlugin).dependsOn(coreJS)
 
-//lazy val testingBase = crossModule("testing", previousFBVersion)
-//  .settings(
-//    scalacOptions ~= {
-//      _.filterNot(Set("-Yno-predef"))
-//    },
-//    libraryDependencies ++= Seq(
-//      "org.scalacheck" %%% "scalacheck" % scalaCheckVersionFor(scalaVersion.value),
-//      "org.scalatest" %%% "scalatest" % scalaTestVersionFor(scalaVersion.value)
-//    )
-//  ).dependsOn(coreBase)
+lazy val testingBase = crossModule("testing", previousFBVersion)
+  .settings(
+    scalacOptions ~= {
+      _.filterNot(Set("-Yno-predef"))
+    },
+    libraryDependencies ++= Seq(
+      "org.scalacheck" %%% "scalacheck" % scalaCheckVersionFor(scalaVersion.value),
+      "org.scalatest" %%% "scalatest" % scalaTestVersionFor(scalaVersion.value)
+    )
+  ).dependsOn(coreBase)
 
-//lazy val testing = testingBase.jvm
-//lazy val testingJS = testingBase.js
+lazy val testing = testingBase.jvm.dependsOn(server, client)
+lazy val testingJS = testingBase.js
 
 lazy val testsBase = crossModule("tests", previousFBVersion)
   .settings(noPublishSettings: _*)
@@ -419,7 +434,8 @@ lazy val testsBase = crossModule("tests", previousFBVersion)
       "org.scalactic" %% "scalactic" % "3.0.5",
       "org.scalatest" %% "scalatest" % "3.0.5" % "test",
       "org.scalacheck" %% "scalacheck" % scalaCheckVersion,
-      "com.typesafe.akka" %% "akka-testkit" % akkaVersion % Test
+      "com.typesafe.akka" %% "akka-testkit" % akkaVersion % Test,
+      "com.h2database" % "h2" % "1.4.192"
     )
 //    sourceGenerators in Test += (sourceManaged in Test).map(Boilerplate.genTests).taskValue,
 //    unmanagedResourceDirectories in Compile +=
