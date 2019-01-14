@@ -16,17 +16,17 @@ object DataType {
     override def name = "book"
     override def fmtJson = ???
   }
-    case class LadderType(depth: Option[Int]) extends DataType[Ladder] {
-      override def name = "ladder"
-      override def fmtJson = ???
+  case class LadderType(depth: Option[Int]) extends DataType[Ladder] {
+    override def name = "ladder"
+    override def fmtJson = implicitly[DeltaFmtJson[Ladder]]
   }
-    case object TradesType extends DataType[Trade] {
-      override def name = "trades"
-      override def fmtJson = DeltaFmt.defaultFmtJson[Trade]("trades")
+  case object TradesType extends DataType[Trade] {
+    override def name = "trades"
+    override def fmtJson = DeltaFmt.defaultFmtJson[Trade]("trades")
   }
-    case object TickersType extends DataType[Ticker] {
-      override def name = "tickers"
-      override def fmtJson = ???
+  case object TickersType extends DataType[Ticker] {
+    override def name = "tickers"
+    override def fmtJson = ???
   }
   case class CandlesType(duration: FiniteDuration) extends DataType[Candle] {
     override def name = "candles"

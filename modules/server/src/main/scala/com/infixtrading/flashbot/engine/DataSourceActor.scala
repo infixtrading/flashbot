@@ -238,11 +238,11 @@ class DataSourceActor(session: SlickSession,
                           .mapAsync(10) { states: Seq[ScanState] =>
                             for {
                               // Save the deltas
-                              a <- session.db.run(Deltas ++= states.flatMap(state => {
+                              a <- session.db.run(Deltas ++= states.flatMap(state =>
                                 state.deltas.map(delta =>
                                   (bundleId, state.seqId, state.micros,
                                     fmt.deltaEn(delta).pretty(Printer.noSpaces)))
-                              }))
+                              ))
                               // Save the snapshots
                               b <- session.db.run(Snapshots ++=
                                 states.filter(_.snapshot.isDefined).map(state =>

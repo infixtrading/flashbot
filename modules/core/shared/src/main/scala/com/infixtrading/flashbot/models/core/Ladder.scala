@@ -13,7 +13,7 @@ case class Ladder(depth: Int,
                   tickSize: Option[Double] = None) {
   import Ladder._
 
-  assert(asks.isEmpty || asks.firstKey > asks.lastKey, "Asks out of order")
+  assert(asks.isEmpty || asks.firstKey < asks.lastKey, "Asks out of order")
   assert(bids.isEmpty || bids.firstKey > bids.lastKey, "Bids out of order")
 
   def updateLevel(side: QuoteSide, priceLevel: Double, quantity: Double): Ladder =
@@ -49,6 +49,8 @@ case class Ladder(depth: Int,
       bids = intersectDepths(bids, other.asks)
     )
   }
+
+  def priceSet: Set[Double] = bids.keySet ++ asks.keySet
 }
 
 
@@ -76,13 +78,27 @@ object Ladder {
 
     override def fmtName = "ladder"
 
-    override def update(model: Ladder, delta: D) = throw new NotImplementedError()
+    override def update(model: Ladder, delta: D) = delta match {
+      case LadderDelta(side, priceLevel, quantity) =>
+        model.updateLevel(side, priceLevel, quantity)
+    }
 
-    override def diff(prev: Ladder, current: Ladder) = throw new NotImplementedError()
+    // This probably isn't great in terms of CPU usage. But it's probably fine.
+    override def diff(prev: Ladder, current: Ladder) = {
+      val remove = (prev.priceSet -- current.priceSet).map(p =>
+        if (prev.bids.isDefinedAt(p)) LadderDelta(Bid, p, 0)
+        else LadderDelta(Ask, p, 0))
+      val add = (current.priceSet -- prev.priceSet).map(p =>
+        if (current.bids.isDefinedAt(p)) LadderDelta(Bid, p, current.bids(p))
+        else LadderDelta(Ask, p, current.asks(p)))
+      val change = (current.priceSet intersect prev.priceSet).map(p =>
+        if (current.bids.isDefinedAt(p)) LadderDelta(Bid, p, current.bids(p))
+        else LadderDelta(Ask, p, current.asks(p)))
+      (remove ++ add ++ change).toSeq
+    }
 
-    override def fold(x: Ladder, y: Ladder) = throw new NotImplementedError()
-
-    override def unfold(x: Ladder) = throw new NotImplementedError()
+    override def fold(x: Ladder, y: Ladder) = y
+    override def unfold(x: Ladder) = (x, None)
 
     override def modelEn = implicitly
     override def modelDe = implicitly

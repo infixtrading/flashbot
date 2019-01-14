@@ -11,7 +11,7 @@ import akka.util.Timeout
 import com.infixtrading.flashbot.core.MarketData
 import com.infixtrading.flashbot.util.time._
 import com.infixtrading.flashbot.engine.StreamResponse
-import com.infixtrading.flashbot.models.core.{Candle, DataAddress, TimeRange}
+import com.infixtrading.flashbot.models.core.{DataAddress, TimeRange}
 
 import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration._

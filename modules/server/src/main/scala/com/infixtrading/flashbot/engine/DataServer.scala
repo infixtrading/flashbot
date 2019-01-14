@@ -348,13 +348,25 @@ class DataServer(dbConfig: Config,
       .mergeSorted[Wrap, NotUsed](deltas)(Wrap.ordering)
       .scan[Option[MarketData[T]]](None) {
         /**
-          * If it's a snapshot, always use its value, regardless if we have an existing
-          * value or not.
+          * Base case.
           */
-        case (_, wrap) if wrap.isSnap =>
+        case (None, wrap) if wrap.isSnap =>
           Some(BaseMarketData(
             decode[T](wrap.data)(fmt.modelDe).right.get,
             path, wrap.micros, wrap.bundle, wrap.seqid))
+
+        /**
+          * If it's a snapshot from this or a later bundle, use its value.
+          */
+        case (Some(md), wrap) if wrap.isSnap && wrap.bundle >= md.bundle =>
+          Some(BaseMarketData(
+            decode[T](wrap.data)(fmt.modelDe).right.get,
+            path, wrap.micros, wrap.bundle, wrap.seqid))
+
+        /**
+          * If it's a snapshot from an outdated bundle, ignore.
+          */
+        case (Some(md), wrap) if wrap.isSnap => Some(md)
 
         /**
           * No data yet. Delta has no effect.
