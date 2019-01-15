@@ -15,7 +15,7 @@ The other main actor is the `TradingEngine`. It handles things such as:
   1. Pluggable strategies
   2. Running backtests on data in the cluster
   3. Managing bots that run in live or paper mode
-  4. Fault tolerance for strategy exceptions
+  4. Fault tolerance for strategy exceptions (bots are restored if they crash)
 
 ## Status
 This project is a WIP. In it's current state it's a good tool for prototyping and simulating strategies. However, this is alpha software. The unit tests are minimal. Do not use it out of the box for real trading yet! You have been warned.
