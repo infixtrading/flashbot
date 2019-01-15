@@ -27,11 +27,17 @@ The other main actor is the `TradingEngine`. It handles things such as:
 ## Docs
 
   1. Read the Getting Started page
+  
   2. Follow along to some tutorials and examples:
-    a. MACD Crossover in standalone mode
-    b. MACD Crossover in cluster mode
-    c. Simple market maker
-    d. Building a currency conversion service
+  
+      a. MACD Crossover in standalone mode
+      
+      b. MACD Crossover in cluster mode
+      
+      c. Simple market maker
+      
+      d. Building a currency conversion service
+      
   3. Read the FAQs
 
 ## Status
