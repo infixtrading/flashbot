@@ -1,7 +1,9 @@
 # Flashbot
 [![Build Status](https://travis-ci.org/infixtrading/flashbot.svg?branch=master)](https://travis-ci.org/infixtrading/flashbot)
 
-Flashbot is a Java and Scala library for building, simulating, and running low-latency Cryptocurrency trading strategies as a cluster of trading engines and market data servers. A main focus of this library is to make it easier to go from backtest to live strategy.
+Flashbot is a Java and Scala library for building, simulating, and running low-latency Cryptocurrency trading strategies as a cluster of trading engines and market data servers.
+
+This project aims to provide a simple interface for building complex strategies as well as a common infrastructure to run them on.
 
 ## Overview
 Market data servers (the `DataServer` actor) connect to outside data sources such as exchange websockets or 3rd party signals. They persist and serve that data. Here's a list of features:
