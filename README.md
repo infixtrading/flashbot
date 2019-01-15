@@ -3,6 +3,7 @@
 
 Flashbot is a Java and Scala library for building, simulating, and running low-latency Cryptocurrency trading strategies. It provides Akka actors for building a cluster of market data servers and trading engines. A main focus of this library is to make it easier to go from backtest to live strategy.
 
+## Overview
 Market data servers (the `DataServer` actor) connect to outside data sources such as exchange websockets or 3rd party signals. They persist and serve that data. Here's a list of features:
 
   1. Pluggable data sources (supports market data for other financial markets too)
