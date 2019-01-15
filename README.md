@@ -13,7 +13,7 @@ Market data servers (the `DataServer` actor) connect to outside data sources suc
 The other main actor is the `TradingEngine`. It handles things such as:
 
   1. Pluggable strategies
-  2. Running backtests on data from anywhere in the cluster
+  2. Running backtests on data in the cluster
   3. Managing bots that run in live or paper mode
   4. Fault tolerance for strategy exceptions
 
