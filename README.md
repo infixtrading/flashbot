@@ -21,10 +21,18 @@ The other main actor is the `TradingEngine`. It handles things such as:
   5. Backtests simulate fees and network latency
   6. Currency conversions
 
+## Docs
+
+  1. Read the Getting Started page
+  2. Follow along to some tutorials and examples:
+    a. Tutorial 1
+    b. Tutorial 2
+  3. Read the FAQs
+
 ## Status
 This project is a WIP. In it's current state it's a good tool for prototyping and simulating strategies. However, this is alpha software. The unit tests are minimal. Do not use it out of the box for real trading yet! You have been warned.
 
-The primary API is for Scala. At this point, Java users may find some methods are unavailable for strategy building. Providing first class Java support is a priority and is in active development.
+The actor APIs support both Java and Scala, however extensions such as custom exchanges, data sources, and strategies currently require Scala. Full Java support is planned for future releases.
 
 ## Configuration
 Check out the default [configuration file](https://github.com/infixtrading/flashbot/blob/master/modules/server/src/main/resources/reference.conf) to see a list of available options. You can override any of the settings in your own `application.conf` file.
