@@ -279,6 +279,8 @@ class TradingEngine(engineId: String,
           info <- strategy.info(sessionLoader)
         } yield StrategyInfoResponse(title, name, info)) pipeTo sender
 
+      case GetDataServer => sender ! dataServer
+
       /**
         * Generate and respond with a [[NetworkSource]] of the [[Report]] for the specified bot.
         */

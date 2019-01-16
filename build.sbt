@@ -406,7 +406,11 @@ lazy val server = flashbotModule("server", previousFBVersion).settings(
   ))
 ).dependsOn(core)
 
-lazy val client = flashbotModule("client", previousFBVersion).dependsOn(core)
+lazy val client = flashbotModule("client", previousFBVersion)
+  .settings(
+    libraryDependencies ++= networkDeps
+  )
+  .dependsOn(core, server)
 
 lazy val scalajs = flashbotModule("scalajs", None).enablePlugins(ScalaJSPlugin).dependsOn(coreJS)
 
