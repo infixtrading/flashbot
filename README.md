@@ -26,13 +26,12 @@ The other main actor is the `TradingEngine`. It handles things such as:
 
 ## Docs
 
-* Read the Getting Started page
+* Read the [Getting Started](https://github.com/infixtrading/flashbot/wiki/Getting-Started) page
 * Follow along to some tutorials and examples:
   1. Built-in MACD Crossover strategy in standalone mode (with [Scala](http://google.com) or Java)
   2. Built-in MACD Crossover strategy in cluster mode (with Scala or Java)
   3. Custom strategy: Building a simple market maker (with Scala)
   4. Custom strategy: Building a currency conversion service (with Scala)
-* Read the FAQs
 
 ## Status
 This project is a WIP. In it's current state it's a good tool for prototyping and simulating strategies. However, this is alpha software. The unit tests are minimal. Do not use it out of the box for real trading yet! You have been warned.
