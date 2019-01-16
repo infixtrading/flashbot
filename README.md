@@ -31,6 +31,7 @@ The other main actor is the `TradingEngine`. It handles things such as:
   1. Built-in strategy: MACD Crossover backtest & bot (with [Scala](http://google.com) or [Java](http://google.com))
   2. Custom strategy: Building a simple market maker (with [Scala](http://google.com))
   3. Building a currency conversion service (with [Scala](http://google.com))
+* [Flashbot Terminology](https://github.com/infixtrading/flashbot/wiki/Terminology)
 
 ## Status
 This project is alpha software. In it's current state it's a good tool for prototyping and simulating strategies however the unit tests are minimal and it hasn't been battle tested in production yet. Do not use it out of the box for real trading yet! You have been warned.
