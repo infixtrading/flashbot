@@ -8,21 +8,21 @@ This project aims to provide a simple interface for building complex strategies 
 ## Overview
 Market data servers (the `DataServer` actor) connect to outside data sources such as exchange websockets or 3rd party signals. They persist and serve that data. Here's a list of features:
 
-  1. Pluggable data sources (supports market data for other financial markets too)
-  2. Publish data streams (live, historical, or historical+live) to subscribers
-  3. Works with any JDBC compatible database
-  4. Delta compression for efficient streaming and storage of order books
-  5. Data retention policies
-  6. Tolerant to network and websocket failures (i.e. it manages the retries)
+* Pluggable data sources (supports market data for other financial markets too)
+* Publish data streams (live, historical, or historical+live) to subscribers
+* Works with any JDBC compatible database
+* Delta compression for efficient streaming and storage of order books
+* Data retention policies
+* Tolerant to network and websocket failures (i.e. it manages the retries)
 
 The other main actor is the `TradingEngine`. It handles things such as:
 
-  1. Pluggable strategies
-  2. Running backtests on data in the cluster
-  3. Managing bots that run in live or paper mode
-  4. Fault tolerance for strategy exceptions (bots are restored if they crash)
-  5. Backtests simulate fees and network latency
-  6. Currency conversions
+* Pluggable strategies
+* Running backtests on data in the cluster
+* Managing bots that run in live or paper mode
+* Fault tolerance for strategy exceptions (bots are restored if they crash)
+* Backtests simulate fees and network latency
+* Currency conversions
 
 ## Docs
 
