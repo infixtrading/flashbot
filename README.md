@@ -28,14 +28,14 @@ The other main actor is the `TradingEngine`. It handles things such as:
 
 * Read the [Getting Started](https://github.com/infixtrading/flashbot/wiki/Getting-Started) page
 * Follow along to some tutorials and examples:
-  1. Built-in MACD Crossover strategy in standalone mode (with [Scala](http://google.com) or Java)
-  3. Custom strategy: Building a simple market maker (with Scala)
-  4. Custom strategy: Building a currency conversion service (with Scala)
+  1. Built-in strategy: MACD Crossover backtest & bot (with [Scala](http://google.com) or [Java](http://google.com))
+  2. Custom strategy: Building a simple market maker (with [Scala](http://google.com))
+  3. Building a currency conversion service (with [Scala](http://google.com))
 
 ## Status
-This project is a WIP. In it's current state it's a good tool for prototyping and simulating strategies. However, this is alpha software. The unit tests are minimal. Do not use it out of the box for real trading yet! You have been warned.
+This project is alpha software. In it's current state it's a good tool for prototyping and simulating strategies however the unit tests are minimal and it hasn't been battle tested in production yet. Do not use it out of the box for real trading yet! You have been warned.
 
-The actor APIs support both Java and Scala, however extensions such as custom exchanges, data sources, and strategies currently require Scala. Full Java support is planned for future releases.
+The client library and actor APIs support both Java and Scala, however extensions such as custom exchanges, data sources, and strategies currently require Scala. Full Java support is planned for future releases.
 
 ## Configuration
 Check out the default [configuration file](https://github.com/infixtrading/flashbot/blob/master/modules/server/src/main/resources/reference.conf) to see a list of available options. You can override any of the settings in your own `application.conf` file.
