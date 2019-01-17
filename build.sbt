@@ -381,8 +381,7 @@ lazy val coreJS = coreBase.js
 
 lazy val server = flashbotModule("server", previousFBVersion).settings(
   libraryDependencies ++= ((
-    serviceDeps ++ networkDeps ++ jsonDeps ++
-    dataStores ++ timeSeriesDeps ++ statsDeps
+    serviceDeps ++ networkDeps ++ jsonDeps ++ dataStores ++ timeSeriesDeps ++ statsDeps
   ) ++ Seq(
     "org.jgrapht" % "jgrapht" % "1.3.0",
     "org.jgrapht" % "jgrapht-core" % "1.3.0",
@@ -402,7 +401,8 @@ lazy val server = flashbotModule("server", previousFBVersion).settings(
     "com.twitter" %% "chill-akka" % "0.9.3",
 
     "com.typesafe.slick" %% "slick" % "3.2.3",
-    "com.lightbend.akka" %% "akka-stream-alpakka-slick" % "1.0-M1"
+    "com.lightbend.akka" %% "akka-stream-alpakka-slick" % "1.0-M1",
+    "com.h2database" % "h2" % "1.4.192"
   ))
 ).dependsOn(core)
 
@@ -434,8 +434,7 @@ lazy val testsBase = crossModule("tests", previousFBVersion)
       "org.scalactic" %% "scalactic" % "3.0.5",
       "org.scalatest" %% "scalatest" % "3.0.5" % "test",
       "org.scalacheck" %% "scalacheck" % scalaCheckVersion,
-      "com.typesafe.akka" %% "akka-testkit" % akkaVersion % Test,
-      "com.h2database" % "h2" % "1.4.192"
+      "com.typesafe.akka" %% "akka-testkit" % akkaVersion % Test
     )
 //    sourceGenerators in Test += (sourceManaged in Test).map(Boilerplate.genTests).taskValue,
 //    unmanagedResourceDirectories in Compile +=

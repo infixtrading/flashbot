@@ -187,13 +187,14 @@ class TradingEngineSpec extends WordSpecLike
 
     "be profitable when using lookahead" in {
 
-      val conf = ConfigFactory.load(classOf[TradingEngine].getClassLoader)
-      val fbConf = conf.getConfig("flashbot")
-      implicit val system = ActorSystem("System1", ConfigFactory.defaultApplication()
-          .withFallback(fbConf)
-          .withFallback(conf))
+//      val conf = ConfigFactory.load(classOf[TradingEngine].getClassLoader)
+//      val fbConf = conf.getConfig("flashbot")
+//      implicit val system = ActorSystem("System1", ConfigFactory.defaultApplication()
+//          .withFallback(fbConf)
+//          .withFallback(conf))
 
       val fbConfig = FlashbotConfig.load
+      implicit val system = ActorSystem("System1", fbConfig.akka)
 
       val now = Instant.now()
 
