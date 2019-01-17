@@ -2,7 +2,7 @@ package com.infixtrading.flashbot.core
 
 import com.infixtrading.flashbot.core.FlashbotConfig.{BotConfigJson, DataSourceConfig, ExchangeConfig, IngestConfig}
 import com.infixtrading.flashbot.models.core.Position
-import com.typesafe.config.{Config, ConfigFactory}
+import com.typesafe.config.{Config, ConfigFactory, ConfigValue}
 import io.circe._
 import io.circe.config.syntax._
 import io.circe.generic.semiauto._
@@ -11,9 +11,7 @@ import io.circe.generic.auto._
 import scala.concurrent.duration.Duration
 import scala.util.Try
 
-case class FlashbotConfig(`api-key`: Option[String],
-                          `data-root`: String,
-                          `app-data-root`: String,
+case class FlashbotConfig(`engine-root`: String,
                           ingest: IngestConfig,
                           strategies: Map[String, String],
                           exchanges: Map[String, ExchangeConfig],
@@ -31,6 +29,8 @@ object FlashbotConfig {
   implicit val pe: Encoder[Position] = Position.postionEn
   implicit val pd: Decoder[Position] = Position.postionDe
 
+  // Required for deriving json encoders and decoders for anything like BotConfig
+  // that includes Duration.
   import com.infixtrading.flashbot.util.time._
 
   case class BotConfig(strategy: String,
@@ -57,9 +57,12 @@ object FlashbotConfig {
 //    config.as[FlashbotConfig].map(c => c.copy(akka = ))
 
   def tryLoad: Try[FlashbotConfig] = {
-    val app = ConfigFactory.load()
-    val fb = app.getConfig("flashbot")
-    fb.as[FlashbotConfig].map(c => c.copy(akka = fb.withFallback(app))).toTry
+
+    val refs = ConfigFactory.parseResources("reference.conf")
+    val apps = ConfigFactory.parseResources("application.conf")
+    val conf = apps.withFallback(refs).resolve()
+    conf.getConfig("flashbot").as[FlashbotConfig]
+      .map(c => c.copy(akka = conf)).toTry
   }
   def load: FlashbotConfig = tryLoad.get
 }
