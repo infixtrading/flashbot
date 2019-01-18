@@ -57,10 +57,10 @@ object FlashbotConfig {
 //    config.as[FlashbotConfig].map(c => c.copy(akka = ))
 
   def tryLoad: Try[FlashbotConfig] = {
-    val refs = ConfigFactory.parseResources("reference.conf")
+    val overrides = ConfigFactory.defaultOverrides()
     val apps = ConfigFactory.parseResources("application.conf")
-    val system = ConfigFactory.systemProperties()
-    val conf = apps.withFallback(refs).withFallback(system).resolve()
+    val refs = ConfigFactory.parseResources("reference.conf")
+    val conf = overrides.withFallback(apps).withFallback(refs).resolve()
     conf.getConfig("flashbot").as[FlashbotConfig]
       .map(c => c.copy(akka = conf)).toTry
   }
