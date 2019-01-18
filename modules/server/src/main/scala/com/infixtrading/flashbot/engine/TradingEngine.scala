@@ -1,6 +1,7 @@
 package com.infixtrading.flashbot.engine
 
 import java.time.Instant
+
 import akka.Done
 import akka.actor.{ActorLogging, ActorRef, ActorSystem, PoisonPill, Props, Status}
 import akka.pattern.{ask, pipe}
@@ -13,7 +14,7 @@ import io.circe.Json
 import io.circe.syntax._
 import io.circe.literal._
 import io.circe.parser.parse
-import com.infixtrading.flashbot.core.FlashbotConfig.{BotConfig, ExchangeConfig}
+import com.infixtrading.flashbot.core.FlashbotConfig.{BotConfig, ExchangeConfig, StaticBotsConfig}
 import com.infixtrading.flashbot.core._
 import com.infixtrading.flashbot.engine.TradingSessionActor.{SessionPing, SessionPong, StartSession, StopSession}
 import com.infixtrading.flashbot.util.time.currentTimeMicros
@@ -36,8 +37,8 @@ import scala.util.{Failure, Success, Try}
   */
 class TradingEngine(engineId: String,
                     strategyClassNames: Map[String, String],
-                    defaultExchangeConfigs: Map[String, ExchangeConfig],
-                    defaultBotConfigs: Map[String, BotConfig],
+                    exchangeConfigs: Map[String, ExchangeConfig],
+                    staticBotsConfig: StaticBotsConfig,
                     dataServerInfo: Either[ActorRef, Props])
   extends PersistentActor with ActorLogging {
 
@@ -48,7 +49,7 @@ class TradingEngine(engineId: String,
 
   override def persistenceId: String = engineId
   private val snapshotInterval = 100000
-  
+
   val dataServer = dataServerInfo.left.getOrElse(context.actorOf(dataServerInfo.right.get))
 
   /**
@@ -78,7 +79,7 @@ class TradingEngine(engineId: String,
   /**
     * Initialization.
     */
-  val getExchangeConfigs = () => defaultExchangeConfigs.map {
+  val getExchangeConfigs = () => exchangeConfigs.map {
     case (name, _) => name -> configForExchange(name).get
   }
   val (bootRsp: EngineStarted, bootEvents: Seq[TradingEngineEvent]) =
@@ -106,9 +107,17 @@ class TradingEngine(engineId: String,
       // Set it in-memory portfolio state
       _ = { globalPortfolio.put(fetchedPortfolio) }
 
-      // Start the bots.
-      // TODO: Notify of any bots that failed to start a session.
-      sessionStartEvents <- startBots
+      // Start the "enabled" bots.
+      sessionStartEvents <- {
+        // Merge the enabled static bots and enabled dynamic bots
+        val enabledKeys =
+          staticBotsConfig.enabledConfigs.keySet ++
+          state.bots.filter(_._2.enabled).keySet
+
+        // Start all of the enabled bots.
+        // TODO: Notify of any bots that failed to start a session.
+        Future.sequence(enabledKeys.map(startBot)).map(enabledKeys zip _).map(_.toMap)
+      }
       (keys, events) = sessionStartEvents.unzip
       engineStarted = EngineStarted(currentTimeMicros)
 
@@ -500,7 +509,7 @@ class TradingEngine(engineId: String,
   }
 
   private def startBot(name: String): Future[TradingEngineEvent] = {
-    getBotConfigs(name) match {
+    allBotConfigs(name) match {
       case BotConfig(strategy, mode, paramsOpt, _, initial_assets, initial_positions) =>
 
         val params = paramsOpt.getOrElse(json"{}")
@@ -559,10 +568,8 @@ class TradingEngine(engineId: String,
     }
   }
 
-  def startBots: Future[Map[String, TradingEngineEvent]] = {
-    val keys = getBotConfigs.keys
-    Future.sequence(keys.map(startBot)).map(keys zip _).map(_.toMap)
-  }
+//  def startBots: Future[Map[String, TradingEngineEvent]] = {
+//  }
 
   /**
     * Let's keep this idempotent. Not thread safe, like most of the stuff in this class.
@@ -610,13 +617,16 @@ class TradingEngine(engineId: String,
     } yield Portfolio(assets, positions)
 
   private def paramsForExchange(name: String): Option[Json] =
-    state.exchanges.get(name).map(_.params).orElse(defaultExchangeConfigs(name).params)
+    state.exchanges.get(name).map(_.params).orElse(exchangeConfigs(name).params)
 
   private def configForExchange(name: String): Option[ExchangeConfig] =
-    defaultExchangeConfigs.get(name).map(c => c.copy(params = paramsForExchange(name)))
+    exchangeConfigs.get(name).map(c => c.copy(params = paramsForExchange(name)))
 
-  private def getBotConfigs: Map[String, BotConfig] =
-    defaultBotConfigs ++ state.bots.filter(_._2.config.isDefined).mapValues(_.config.get)
+  private def allBotConfigs: Map[String, BotConfig] =
+    staticBotsConfig.configs ++ dynamicBotConfigs
+
+  private def dynamicBotConfigs: Map[String, BotConfig] =
+    state.bots.filter(_._2.config.isDefined).mapValues(_.config.get)
 }
 
 object TradingEngine {
@@ -624,6 +634,6 @@ object TradingEngine {
   def props(name: String): Props = {
     val fbConfig = FlashbotConfig.load
     Props(new TradingEngine(name, fbConfig.strategies, fbConfig.exchanges,
-      Map.empty, Right(DataServer.props)))
+      fbConfig.bots, Right(DataServer.props)))
   }
 }

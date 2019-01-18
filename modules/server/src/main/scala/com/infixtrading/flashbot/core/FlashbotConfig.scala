@@ -1,6 +1,6 @@
 package com.infixtrading.flashbot.core
 
-import com.infixtrading.flashbot.core.FlashbotConfig.{BotConfigJson, DataSourceConfig, ExchangeConfig, IngestConfig}
+import com.infixtrading.flashbot.core.FlashbotConfig.{StaticBotsConfig, DataSourceConfig, ExchangeConfig, IngestConfig}
 import com.infixtrading.flashbot.models.core.Position
 import com.typesafe.config.{Config, ConfigFactory, ConfigValue}
 import io.circe._
@@ -16,7 +16,7 @@ case class FlashbotConfig(`engine-root`: String,
                           strategies: Map[String, String],
                           exchanges: Map[String, ExchangeConfig],
                           sources: Map[String, DataSourceConfig],
-                          bots: BotConfigJson,
+                          bots: StaticBotsConfig,
                           akka: Config,
                           db: Config)
 
@@ -46,7 +46,9 @@ object FlashbotConfig {
     implicit val botConfigDecoder: Decoder[BotConfig] = deriveDecoder[BotConfig]
   }
 
-  case class BotConfigJson(enabled: Seq[String], configs: Map[String, BotConfig])
+  case class StaticBotsConfig(enabled: Seq[String], configs: Map[String, BotConfig]) {
+    def enabledConfigs: Map[String, BotConfig] = configs.filterKeys(enabled contains _)
+  }
 
   final case class DataSourceConfig(`class`: String, topics: Option[Seq[String]], datatypes: Option[Seq[String]])
 
