@@ -568,9 +568,6 @@ class TradingEngine(engineId: String,
     }
   }
 
-//  def startBots: Future[Map[String, TradingEngineEvent]] = {
-//  }
-
   /**
     * Let's keep this idempotent. Not thread safe, like most of the stuff in this class.
     */

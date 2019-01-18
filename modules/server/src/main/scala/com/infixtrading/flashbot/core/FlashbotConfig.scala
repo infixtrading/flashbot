@@ -62,7 +62,17 @@ object FlashbotConfig {
     val overrides = ConfigFactory.defaultOverrides()
     val apps = ConfigFactory.parseResources("application.conf")
     val refs = ConfigFactory.parseResources("reference.conf")
-    val conf = overrides.withFallback(apps).withFallback(refs).resolve()
+
+    val conf = overrides
+      // Initial fallback is to `application.conf`
+      .withFallback(apps)
+      // We want `flashbot.akka` reference to override `akka` reference.
+      .withFallback(refs.getConfig("flashbot").withOnlyPath("akka"))
+      // Then we fallback to default references.
+      .withFallback(refs)
+      // Finally, resolve.
+      .resolve()
+
     conf.getConfig("flashbot").as[FlashbotConfig]
       .map(c => c.copy(akka = conf)).toTry
   }

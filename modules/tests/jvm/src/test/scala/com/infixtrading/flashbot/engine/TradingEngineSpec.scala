@@ -45,27 +45,22 @@ class TradingEngineSpec extends WordSpecLike
 
   "TradingEngine" should {
     "respond to a ping" in {
-      val conf = ConfigFactory.load(classOf[TradingEngine].getClassLoader)
-      val fbConf = conf.getConfig("flashbot")
-      val system = ActorSystem("System1", ConfigFactory.defaultApplication()
-          .withFallback(fbConf)
-          .withFallback(conf))
-
-      val fbConfig = FlashbotConfig.load
+      val config = FlashbotConfig.load
+      val system = ActorSystem("System1", config.akka)
 
       val dataServer = system.actorOf(Props(new DataServer(
-        fbConfig.db,
-        fbConfig.sources,
-        fbConfig.exchanges,
+        config.db,
+        config.sources,
+        config.exchanges,
         None,
         useCluster = false
       )))
 
       val engine = system.actorOf(Props(new TradingEngine(
         "test",
-        fbConfig.strategies,
-        fbConfig.exchanges,
-        fbConfig.bots.configs,
+        config.strategies,
+        config.exchanges,
+        config.bots,
         Left(dataServer)
       )))
 
@@ -203,7 +198,7 @@ class TradingEngineSpec extends WordSpecLike
           useCluster = false)), "data-server")
 
       val engine = system.actorOf(Props(
-        new TradingEngine("test2", fbConfig.strategies, fbConfig.exchanges, Map.empty,
+        new TradingEngine("test2", fbConfig.strategies, fbConfig.exchanges, fbConfig.bots,
           Left(dataServer))), "trading-engine-2")
 
       val params = LookaheadParams(Market("bitfinex/eth_usd"), sabotage = false)
