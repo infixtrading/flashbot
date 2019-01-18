@@ -46,7 +46,7 @@ object FlashbotConfig {
     implicit val botConfigDecoder: Decoder[BotConfig] = deriveDecoder[BotConfig]
   }
 
-  case class BotConfigJson(default: Seq[String], configs: Map[String, BotConfig])
+  case class BotConfigJson(enabled: Seq[String], configs: Map[String, BotConfig])
 
   final case class DataSourceConfig(`class`: String, topics: Option[Seq[String]], datatypes: Option[Seq[String]])
 
