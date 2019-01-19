@@ -14,9 +14,16 @@ import scala.concurrent.duration._
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.reflect.ClassTag
 
-class FlashbotClient(engine: ActorRef) {
+class FlashbotClient(engine: ActorRef, skipTouch: Boolean = false) {
 
   implicit val timeout: Timeout = Timeout(10.seconds)
+
+  // This blocks on a ping from the server. This is useful when the client is created immediately
+  // after the engine actor is. We will usually want to wait for the engine to initialize before
+  // sending any requests to it. Blocking on a ping in the client constructor achieves this.
+  if (!skipTouch) {
+    this.ping
+  }
 
   def configureBotAsync(id: String, config: BotConfig) = req[Done](ConfigureBot(id, config))
   def configureBot(id: String, config: BotConfig): Unit = await(configureBotAsync(id, config))

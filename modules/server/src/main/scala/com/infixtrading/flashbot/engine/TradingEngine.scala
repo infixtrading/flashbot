@@ -88,6 +88,8 @@ class TradingEngine(engineId: String,
   log.info("TradingEngine '{}' started at {}", engineId, bootRsp.micros)
   bootEvents.foreach(log.debug("Boot event: {}", _))
 
+  self ! BootEvents(bootEvents)
+
   def startEngine: Future[(EngineStarted, Seq[TradingEngineEvent])] = {
     implicit val loader = new SessionLoader(getExchangeConfigs, dataServer)
     log.debug("Starting engine")
@@ -107,21 +109,33 @@ class TradingEngine(engineId: String,
       // Set it in-memory portfolio state
       _ = { globalPortfolio.put(fetchedPortfolio) }
 
-      // Start the "enabled" bots.
-      sessionStartEvents <- {
-        // Merge the enabled static bots and enabled dynamic bots
-        val enabledKeys =
-          staticBotsConfig.enabledConfigs.keySet ++
-          state.bots.filter(_._2.enabled).keySet
+      engineStartMicros = currentTimeMicros
 
-        // Start all of the enabled bots.
-        // TODO: Notify of any bots that failed to start a session.
-        Future.sequence(enabledKeys.map(startBot)).map(enabledKeys zip _).map(_.toMap)
+      // Start the "enabled" bots.
+      // TODO: Notify of any bots that failed to start a session.
+      sessionStartEvents: Map[String, Seq[TradingEngineEvent]] <- {
+        val staticEnabledKeys = staticBotsConfig.enabledConfigs.keySet
+        val dynamicEnabledKeys = state.bots.filter(_._2.enabled).keySet
+
+        for {
+          // Static bots must emit BotConfigured, BotEnabled, and SessionStarted events when they
+          // are started on boot.
+          staticStartedEvents <- Future.sequence(staticEnabledKeys.map(startBot))
+              .map(staticEnabledKeys zip _.map {
+                case startedEv @ SessionStarted(_, Some(botId), _, _, _, _, _, _) =>
+                  Seq(BotConfigured(engineStartMicros, botId, staticBotsConfig.configs(botId)),
+                    BotEnabled(botId), startedEv)
+              }).map(_.toMap)
+
+          // Dynamic bots on the other hand simply emit SessionStarted events on boot.
+          dynamicStartedEvents <- Future.sequence(dynamicEnabledKeys.map(startBot(_).map(Seq(_))))
+            .map(dynamicEnabledKeys zip _).map(_.toMap)
+        } yield staticStartedEvents ++ dynamicStartedEvents
       }
       (keys, events) = sessionStartEvents.unzip
-      engineStarted = EngineStarted(currentTimeMicros)
+      engineStarted = EngineStarted(engineStartMicros)
 
-    } yield (engineStarted, engineStarted +: events.toSeq)
+    } yield (engineStarted, engineStarted +: events.toSeq.flatten)
   }
 
   /**
@@ -133,6 +147,13 @@ class TradingEngine(engineId: String,
     */
   def processCommand(command: TradingEngineCommand, now: Instant)
   : Future[(Any, Seq[TradingEngineEvent])] = command match {
+
+    /**
+      * Pass through boot events. This is a special case for initialization.
+      */
+    case BootEvents(events) =>
+      log.debug("Passing through boot events: {}", events)
+      Future.successful((Done, events))
 
     /**
       * A bot session emitted a ReportEvent. Here is where we decide what to do about it by
@@ -508,6 +529,8 @@ class TradingEngine(engineId: String,
     allBotConfigs(name) match {
       case BotConfig(strategy, mode, params, _, initial_assets, initial_positions) =>
 
+        log.debug(s"Starting bot $name")
+
         val initialAssets = initial_assets.map(kv => Account.parse(kv._1) -> kv._2)
         val initialPositions = initial_positions.map(kv => Market.parse(kv._1) -> kv._2)
 
@@ -621,9 +644,10 @@ class TradingEngine(engineId: String,
 
 object TradingEngine {
 
-  def props(name: String): Props = {
-    val fbConfig = FlashbotConfig.load
-    Props(new TradingEngine(name, fbConfig.strategies, fbConfig.exchanges,
-      fbConfig.bots, Right(DataServer.props)))
-  }
+  def props(name: String): Props = props(name, FlashbotConfig.load)
+
+  def props(name: String, config: FlashbotConfig): Props =
+    Props(new TradingEngine(name, config.strategies, config.exchanges,
+      config.bots, Right(DataServer.props(config))))
+
 }

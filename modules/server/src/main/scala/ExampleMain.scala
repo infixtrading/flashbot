@@ -20,14 +20,14 @@ object ExampleMain extends App {
   implicit val timeout = Timeout(5 seconds)
   println(Await.result(engine ? Ping, timeout.duration))
 
-  println(Await.result(engine ? ConfigureBot(
-    id = "my-scanner",
-    strategyKey = "scanner",
-    strategyParams = "{}",
-    mode = Paper(5 seconds),
-    ttl = None,
-    initialPortfolio = Portfolio.empty
-  ), timeout.duration))
+//  println(Await.result(engine ? ConfigureBot(
+//    id = "my-scanner",
+//    strategyKey = "scanner",
+//    strategyParams = "{}",
+//    mode = Paper(5 seconds),
+//    ttl = None,
+//    initialPortfolio = Portfolio.empty
+//  ), timeout.duration))
 
   system.terminate() onComplete (_ => System.exit(0))
 }

@@ -12,7 +12,7 @@ import akka.stream.scaladsl.Sink
 import akka.testkit.{ImplicitSender, TestKit}
 import akka.util.Timeout
 import com.infixtrading.flashbot.client.scala.client.FlashbotClient
-import com.infixtrading.flashbot.core.FlashbotConfig.BotConfig
+import com.infixtrading.flashbot.core.FlashbotConfig.{BotConfig, StaticBotsConfig}
 import com.infixtrading.flashbot.core.{BalancePoint, FlashbotConfig, Paper, Trade}
 import com.infixtrading.flashbot.util.{files, time}
 import com.infixtrading.flashbot.models.api._
@@ -161,6 +161,22 @@ class TradingEngineSpec extends WordSpecLike
       fb.botStatus("bot2") shouldBe Disabled
 
       Await.ready(system.terminate(), 10 seconds)
+    }
+
+    "enable static bots" in {
+      val config = FlashbotConfig.load.copy(bots = StaticBotsConfig(
+        enabled = Seq("scanner1"),
+        configs = Map(
+          "scanner1" -> BotConfig("candlescanner", Paper()),
+          "scanner2" -> BotConfig("candlescanner", Paper())
+        )
+      ))
+
+      implicit val system = ActorSystem("System1", config.akka)
+      val engine = system.actorOf(TradingEngine.props("engine", config))
+      val fb = new FlashbotClient(engine)
+      fb.botStatus("scanner1") shouldBe Running
+//      fb.botStatus("scanner2") shouldBe Disabled
     }
 
     "be profitable when using lookahead" in {
