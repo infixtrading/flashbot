@@ -40,7 +40,7 @@ class DataServerSpec extends WordSpecLike with Matchers {
         Map("bitfinex" -> DataSourceConfig("sources.TestDataSource",
           Some(Seq("btc_usd")), Some(Seq("trades")))),
         fbConfig.exchanges,
-        Some(IngestConfig(Seq("bitfinex/btc_usd/trades"), "1d")),
+        IngestConfig(Seq("bitfinex/btc_usd/trades"), "1d"),
         useCluster = false
       )))
 
@@ -76,7 +76,7 @@ class DataServerSpec extends WordSpecLike with Matchers {
         Map("bitfinex" -> DataSourceConfig("sources.TestLadderDataSource",
           Some(Seq("btc_usd")), Some(Seq("ladder")))),
         fbConfig.exchanges,
-        Some(IngestConfig(Seq("bitfinex/btc_usd/ladder"), "1d")),
+        IngestConfig(Seq("bitfinex/btc_usd/ladder"), "1d"),
         useCluster = false
       )))
 
