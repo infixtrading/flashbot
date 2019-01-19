@@ -180,12 +180,8 @@ class TradingEngine(engineId: String,
     /**
       * TODO: Check that the bot is not running. Cannot configure a running bot.
       */
-    case ConfigureBot(id, strategyKey, strategyParams, mode, ttl, initialPortfolio) =>
-      parse(strategyParams).toTry.toFut.map(params => (Done,
-        Seq(BotConfigured(currentTimeMicros, id,
-          BotConfig(strategyKey, mode, Some(params), ttl,
-            Some(initialPortfolio.assets.map { case (acc, dbl) => acc.toString -> dbl}),
-            Some(initialPortfolio.positions.map { case (m, pos) => m.toString -> pos } ))))))
+    case ConfigureBot(id, botConfig) =>
+      Future.successful((Done, Seq(BotConfigured(currentTimeMicros, id, botConfig))))
 
     case BotHeartbeat(id) =>
       Future.successful((Done, Seq(BotHeartbeatEvent(id, now.toEpochMilli * 1000))))
@@ -510,13 +506,10 @@ class TradingEngine(engineId: String,
 
   private def startBot(name: String): Future[TradingEngineEvent] = {
     allBotConfigs(name) match {
-      case BotConfig(strategy, mode, paramsOpt, _, initial_assets, initial_positions) =>
+      case BotConfig(strategy, mode, params, _, initial_assets, initial_positions) =>
 
-        val params = paramsOpt.getOrElse(json"{}")
-        val initialAssets = initial_assets.getOrElse(Map.empty)
-          .map(kv => Account.parse(kv._1) -> kv._2)
-        val initialPositions = initial_positions.getOrElse(Map.empty)
-          .map(kv => Market.parse(kv._1) -> kv._2)
+        val initialAssets = initial_assets.map(kv => Account.parse(kv._1) -> kv._2)
+        val initialPositions = initial_positions.map(kv => Market.parse(kv._1) -> kv._2)
 
         // Build our PortfolioRef. Paper trading bots have an isolated portfolio while live bots
         // share the global one.

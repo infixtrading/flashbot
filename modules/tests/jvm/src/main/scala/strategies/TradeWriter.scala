@@ -15,9 +15,9 @@ import scala.concurrent.{ExecutionContext, Future}
 
 class TradeWriter extends Strategy {
 
-  case class Params(trades: Seq[Trade])
+  override type Params = TradeWriter.Params
 
-  def paramsDecoder = deriveDecoder[Params]
+  def paramsDecoder = TradeWriter.Params.de
 
   def title = "Trade Writer"
 
@@ -37,5 +37,13 @@ class TradeWriter extends Strategy {
       .map {
         case (trade, i) => BaseMarketData(trade, selection.path, trade.micros, 1, i)
       })
+  }
+}
+
+object TradeWriter {
+  case class Params(trades: Seq[Trade])
+  object Params {
+    implicit def de = deriveDecoder[Params]
+    implicit def en = deriveEncoder[Params]
   }
 }

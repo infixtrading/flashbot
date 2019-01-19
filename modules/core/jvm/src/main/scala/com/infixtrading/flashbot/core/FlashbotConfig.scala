@@ -8,7 +8,8 @@ import io.circe.config.syntax._
 import io.circe.generic.semiauto._
 import io.circe.generic.auto._
 
-import scala.concurrent.duration.Duration
+import scala.concurrent.duration._
+import scala.language.postfixOps
 import scala.util.Try
 
 case class FlashbotConfig(`engine-root`: String,
@@ -33,12 +34,18 @@ object FlashbotConfig {
   // that includes Duration.
   import com.infixtrading.flashbot.util.time._
 
+  val DefaultTTL = 0 seconds
   case class BotConfig(strategy: String,
                        mode: TradingSessionMode,
-                       params: Option[Json],
-                       ttl: Option[Duration],
-                       `initial-assets`: Option[Map[String, Double]],
-                       `initial-positions`: Option[Map[String, Position]])
+                       params: Json = Json.obj(),
+                       ttl: Duration = DefaultTTL,
+                       `initial-assets`: Map[String, Double] = Map.empty,
+                       `initial-positions`: Map[String, Position] = Map.empty) {
+    def ttlOpt: Option[Duration] = ttl match {
+      case DefaultTTL => None
+      case other => Some(other)
+    }
+  }
 
   object BotConfig {
     implicit val botConfigEncoder: Encoder[BotConfig] = deriveEncoder[BotConfig]

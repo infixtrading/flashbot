@@ -1,20 +1,18 @@
 package com.infixtrading.flashbot.util
 
-import java.time.{Instant, LocalDateTime, ZoneId}
+import java.time.Instant
 
 import akka.NotUsed
-import akka.actor.{ActorContext, ActorPath, ActorRef, ActorSystem, Cancellable, RootActorPath}
-import akka.stream.{ActorMaterializer, ActorMaterializerSettings, Supervision}
+import akka.actor.{ActorContext, ActorPath, ActorRef, ActorSystem, RootActorPath}
 import akka.stream.scaladsl.{Flow, Source}
-import akka.pattern.ask
+import akka.stream.{ActorMaterializer, ActorMaterializerSettings, Supervision}
 import akka.util.Timeout
-import com.infixtrading.flashbot.core.MarketData
-import com.infixtrading.flashbot.util.time._
+import akka.pattern.ask
 import com.infixtrading.flashbot.engine.StreamResponse
 import com.infixtrading.flashbot.models.core.{DataAddress, TimeRange}
 
-import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration._
+import scala.concurrent.{ExecutionContext, Future}
 
 package object stream {
 

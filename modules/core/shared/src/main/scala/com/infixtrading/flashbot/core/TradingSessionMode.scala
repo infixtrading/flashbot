@@ -22,7 +22,7 @@ case class Backtest(range: TimeRange) extends TradingSessionMode {
   override def timeRange(now: Instant) = range
   override def lookback = 0 seconds
 }
-case class Paper(lookback: FiniteDuration) extends TradingSessionMode {
+case class Paper(lookback: FiniteDuration = 0 seconds) extends TradingSessionMode {
   override def timeRange(now: Instant) = TimeRange.build(now, lookback)
 }
 case object Live extends TradingSessionMode {

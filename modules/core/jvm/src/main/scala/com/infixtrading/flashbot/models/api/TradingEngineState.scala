@@ -91,7 +91,7 @@ case class TradingEngineState(bots: Map[String, BotState] = Map.empty,
   def expireBots(now: Instant): TradingEngineState =
     copy(bots = bots.filter {
       case (id, bot) =>
-        !bot.enabled || bot.config.flatMap(_.ttl).forall { ttl =>
+        !bot.enabled || bot.config.flatMap(_.ttlOpt).forall { ttl =>
           bot.lastHeartbeatMicros + ttl.toMicros >= now.toEpochMilli * 1000
         }
     })
