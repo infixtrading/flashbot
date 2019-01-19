@@ -8,7 +8,7 @@ import io.circe.{Decoder, Encoder}
   * have some data types that are quite large and frequently updating. The data types themselves
   * usually handle this well on their own by providing efficient updater methods. However,
   * streaming them over the network is still not accounted for. We need to formalize the
-  * incremental update model by using event sourcing.
+  * incremental update model by using a delta compression format.
   *
   * Create a data type that represents a single self contained modification to the model. Ensure
   * that it's Json serializable, as well as the model type itself. The Delta data type should be
@@ -27,7 +27,7 @@ trait DeltaFmt[M] <: FoldFmt[M] {
   type D
   def fmtName: String
   def update(model: M, delta: D): M
-  def diff(prev: M, current: M): Seq[D]
+  def diff(prev: M, current: M): D
 }
 
 trait DeltaFmtJson[M] <: DeltaFmt[M] {
@@ -49,7 +49,7 @@ object DeltaFmt {
     override type D = M
     override def fmtName: String = name
     override def update(model: M, delta: D): M = delta
-    override def diff(prev: M, current: M): Seq[D] = Seq(current)
+    override def diff(prev: M, current: M): D = current
     override def modelEn: Encoder[M] = en
     override def modelDe: Decoder[M] = de
     override def deltaEn: Encoder[D] = en
@@ -63,7 +63,7 @@ object DeltaFmt {
     override type D = M
     override def fmtName: String = name
     override def update(model: M, delta: D): M = delta
-    override def diff(prev: M, current: M): Seq[D] = Seq(current)
+    override def diff(prev: M, current: M): D = current
     override def fold(x: M, y: M) = y
     override def unfold(x: M) = (x, None)
   }

@@ -67,8 +67,7 @@ object MarketData {
         .withMicros(delta.micros)
 
       override def diff(prev: MarketData[T], current: MarketData[T]) =
-        fmt.diff(prev.data, current.data)
-          .map(MarketDelta(_, current.micros, current.bundle))
+        MarketDelta(fmt.diff(prev.data, current.data), current.micros, current.bundle)
 
       override def fold(x: MarketData[T], y: MarketData[T]) =
         y.withData(fmt.fold(x.data, y.data))

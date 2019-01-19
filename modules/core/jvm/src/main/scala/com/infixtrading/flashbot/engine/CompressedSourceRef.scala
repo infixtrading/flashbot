@@ -21,7 +21,7 @@ object CompressedSourceRef {
   sealed trait CompressionState
   case object Zero extends CompressionState
   case class Fold[T](data: T, parts: Seq[T]) extends CompressionState
-  case class Delta[T, D](data: T, deltas: Seq[D]) extends CompressionState
+  case class Delta[T, D](data: T, delta: D) extends CompressionState
 
   def decompressStream[T](fmt: DeltaFmt[T],
                           stream: Source[Either[T, _], NotUsed]): Source[T, NotUsed] =
@@ -55,6 +55,6 @@ object CompressedSourceRef {
     }.flatMapConcat {
       case Zero => Source.empty
       case Fold(_, parts: Seq[T]) => Source(parts.toList.map(Left(_)))
-      case Delta(_, deltas: Seq[fmt.D]) => Source(deltas.toList.map(Right(_)))
+      case Delta(_, delta: fmt.D) => Source.single(Right(delta))
     }
 }

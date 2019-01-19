@@ -3,23 +3,22 @@ package com.infixtrading.flashbot.engine
 import java.sql.Timestamp
 import java.time.Instant
 import java.util.UUID
-import java.util.concurrent.Executors
 
 import akka.actor.{Actor, ActorLogging}
 import akka.stream.ActorMaterializer
 import akka.stream.alpakka.slick.javadsl.SlickSession
-import com.infixtrading.flashbot.core.{DataSource, DataType, DeltaFmt, DeltaFmtJson}
-import com.infixtrading.flashbot.engine.BackfillService.{BackfillTick, RequestPage}
+import com.infixtrading.flashbot.core.DataSource
 import com.infixtrading.flashbot.db._
+import com.infixtrading.flashbot.engine.BackfillService.BackfillTick
 import com.infixtrading.flashbot.models.core.DataPath
-import io.circe.syntax._
 import io.circe.Printer
+import io.circe.syntax._
 
-import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.ExecutionContext.Implicits.global
-import scala.util.{Failure, Random, Success}
+import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.language.postfixOps
+import scala.util.{Failure, Random, Success}
 
 /**
   * Any number of BackfillServices can be run in the cluster concurrently. Due to the locking
@@ -118,79 +117,94 @@ class BackfillService(session: SlickSession, path: DataPath,
       hasClaimedOpt.onComplete {
         case Success(true) =>
           // We just claimed a path. Let's get to work!
-          self ! RequestPage
+          runPage(now)
         case Success(false) => // Ignore
         case Failure(err) =>
           log.error(err, "An error occurred during backfill scheduling for {}", path)
       }
+  }
 
-    /**
-      * This is where we do the work of requesting data from the data source, persisting the
-      * historical market data, and updating the backfill record accordingly. We are guaranteed
-      * that we have the claim at this point.
-      */
-    case RequestPage =>
-      def doReq[T]() = {
-        val fmt = path.fmt[T]
-        implicit val itemEn = fmt.modelEn
-        session.db.run((for {
-          // Fetch the selected claim. The negative of the claim id will be the bundle id.
-          claim <- selectClaimed.result.head
+  /**
+    * This is where we do the work of requesting data from the data source, persisting the
+    * historical market data, and updating the backfill record accordingly. We are guaranteed
+    * that we have the claim at this point.
+    */
+  def runPage[T](now: Instant) = {
+    val fmt = path.fmt[T]
+    implicit val itemEn = fmt.modelEn
+    implicit val deltaEn = fmt.deltaEn
+    session.db.run((for {
+      // Fetch the selected claim. The negative of the claim id will be the bundle id.
+      claim <- selectClaimed.result.head
 
-          // Request the data seq, next cursor, and delay
-          pageResult <- DBIO.from(
-            dataSource.backfillPage(claim.topic, path.dataTypeInstance[T], claim.cursor))
+      // Request the data seq, next cursor, and delay
+      pageResult <- DBIO.from(
+        dataSource.backfillPage(claim.topic, path.dataTypeInstance[T], claim.cursor))
 
-          _ <- pageResult match {
-            // Base case. If page result is None, then the backfill is complete.
-            case None =>
-              log.info(s"Backfill of $path has completed.")
-              selectClaimed
-                .map(bf => (bf.claimedBy, bf.claimedAt, bf.cursor, bf.nextPageAt))
-                .update(None, None, None, None)
+      rowsUpdated <- pageResult match {
+        // Base case. If page result is None, then the backfill is complete.
+        case None =>
+          log.info(s"Backfill of $path has completed.")
+          selectClaimed
+            .map(bf => (bf.claimedBy, bf.claimedAt, bf.cursor, bf.nextPageAt))
+            .update(None, None, None, None)
 
-            // We got some data from the backfill. Let's insert it and schedule the next page.
-            case Some((data, nextCursor, delay)) => for {
+        // We got some data from the backfill. Let's insert it and schedule the next page.
+        case Some((data, nextCursor, delay)) => for {
 
-              // Find the earliest seqid for this bundle. Only look at snapshots. There should never
-              // be backfill deltas that predate the earliest snapshot.
-              earliestSeqIdOpt <- Snapshots
-                .filter(_.bundle === claim.bundle)
-                .map(_.seqid)
-                .result.headOption
-              seqIdBound = earliestSeqIdOpt.getOrElse(0)
+          // Find the earliest seqid for this bundle. Only look at snapshots. There should
+          // never be backfill deltas that predate the earliest snapshot.
+          earliestSeqIdOpt <- Snapshots
+            .filter(_.bundle === claim.bundle)
+            .map(_.seqid)
+            .result.headOption
+          seqIdBound = earliestSeqIdOpt.getOrElse(0)
 
-              // Insert the snapshot
-              _ <- data.headOption.map {
-                case (micros, item) => Snapshots +=
-                  SnapshotRow(claim.bundle, seqIdBound - data.size, micros,
-                    item.asJson.pretty(Printer.noSpaces))
-              }.getOrElse(DBIO.successful(0))
+          // Insert the snapshot
+          _ <- data.headOption.map {
+            case (micros, item) => Snapshots +=
+              SnapshotRow(claim.bundle, seqIdBound - data.size, micros,
+                item.asJson.pretty(Printer.noSpaces))
+          }.getOrElse(DBIO.successful(0))
 
-              // Insert the deltas
-              _ <- data.toIterator.scanLeft[(Option[T], Seq[fmt.D])]((None, Seq.empty)) {
-                case ((None, _), (_, item)) => (Some(item), Seq.empty)
-                case ((Some(prev), _), (micros, item)) => (Some(item), fmt.diff(prev, item))
-              }
+          // Build and insert the deltas
+          _ <- Deltas ++= data.zipWithIndex.toIterator
+            .scanLeft[(Option[T], Option[DeltaRow])]((None, None)) {
+              case ((None, _), ((_, item), i)) => (Some(item), None)
+              case ((Some(prev), _), ((micros, item), i)) =>
+                val delta = fmt.diff(prev, item)
+                val deltaRow = DeltaRow(claim.bundle, seqIdBound - data.size + i, micros,
+                  delta.asJson.pretty(Printer.noSpaces))
+                (Some(item), Some(deltaRow))
+            }.collect {
+              case (_, Some(deltaRow)) => deltaRow
+            }.toSeq
 
-              foo <- ???
-            } yield foo
+          // Update the backfill row. Release the claim. Update the cursor and delay.
+          updatedNum <- selectClaimed
+            .map(bf => (bf.claimedBy, bf.claimedAt, bf.cursor, bf.nextPageAt))
+            .update(None, None, Some(nextCursor),
+              Some(Timestamp.from(now.plusMillis(delay.toMillis))))
 
+          _ <- updatedNum match {
+            case 1 => true
+
+            // This means that the claim was expired before we got a chance to update it.
+            // This fails the transaction and logs an error.
+            case 0 =>
+              log.error("Failed to release claim {}. This may be caused by the " +
+                "backfill claim being expired due a hung page.", claim)
+              false
           }
+        } yield updatedNum
 
-          // The first element is always saved as a snapshot, and subsequent ones are always
-          // saved as deltas.
-          foo = ???
-
-        } yield foo).transactionally)
       }
-      doReq()
 
+    } yield rowsUpdated).transactionally)
   }
 
 }
 
 object BackfillService {
   case object BackfillTick
-  case object RequestPage
 }

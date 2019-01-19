@@ -74,13 +74,15 @@ object Ladder {
   implicit val ladderEncoder: Encoder[Ladder] = deriveEncoder[Ladder]
 
   implicit def ladderFmt: DeltaFmtJson[Ladder] = new DeltaFmtJson[Ladder] {
-    override type D = LadderDelta
+    override type D = Seq[LadderDelta]
 
     override def fmtName = "ladder"
 
-    override def update(model: Ladder, delta: D) = delta match {
-      case LadderDelta(side, priceLevel, quantity) =>
-        model.updateLevel(side, priceLevel, quantity)
+    override def update(model: Ladder, deltas: D) = {
+      deltas.foldLeft(model) {
+        case (memo, LadderDelta(side, priceLevel, quantity)) =>
+          memo.updateLevel(side, priceLevel, quantity)
+      }
     }
 
     // This probably isn't great in terms of CPU usage. But it's probably fine.

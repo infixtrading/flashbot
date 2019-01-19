@@ -209,7 +209,7 @@ class DataSourceActor(session: SlickSession,
                         subscriptions += (path -> Set.empty[ActorRef])
 
                         case class ScanState(lastSnapshotAt: Long, seqId: Long,
-                                             micros: Long, item: T, deltas: Seq[fmt.D],
+                                             micros: Long, item: T, delta: Option[fmt.D],
                                              snapshot: Option[T])
 
                         // Here is where we process the market data coming from ingest data sources.
@@ -223,13 +223,13 @@ class DataSourceActor(session: SlickSession,
                           // Scan to determine the deltas and snapshots to write on every iteration.
                           .scan[Option[ScanState]](None) {
                             case (None, ((micros, item), seqId)) =>
-                              Some(ScanState(micros, seqId, micros, item, Seq.empty, Some(item)))
+                              Some(ScanState(micros, seqId, micros, item, None, Some(item)))
                             case (Some(prev), ((micros, item), seqId)) =>
                               val shouldSnapshot =
                                 (micros - prev.lastSnapshotAt) >= SnapshotInterval.toMicros
                               Some(ScanState(
                                 if (shouldSnapshot) micros else prev.lastSnapshotAt,
-                                seqId, micros, item, fmt.diff(prev.item, item),
+                                seqId, micros, item, Some(fmt.diff(prev.item, item)),
                                 if (shouldSnapshot) Some(item) else None)
                               )
                           }
@@ -239,10 +239,9 @@ class DataSourceActor(session: SlickSession,
                           .mapAsync(10) { states: Seq[ScanState] =>
                             for {
                               // Save the deltas
-                              a <- session.db.run(Deltas ++= states.flatMap(state =>
-                                state.deltas.map(delta =>
+                              a <- session.db.run(Deltas ++= states.drop(1).map(state =>
                                   DeltaRow(bundleId, state.seqId, state.micros,
-                                    fmt.deltaEn(delta).pretty(Printer.noSpaces)))
+                                    fmt.deltaEn(state.delta.get).pretty(Printer.noSpaces))
                               ))
                               // Save the snapshots
                               b <- session.db.run(Snapshots ++=
