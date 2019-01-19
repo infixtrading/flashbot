@@ -9,5 +9,5 @@ class Deltas(tag: Tag) extends Table[DeltaRow](tag, "flashbot_deltas") {
   def micros = column[Long]("micros")
   def data = column[String]("data")
   override def * = (bundle, seqid, micros, data) <> (DeltaRow.tupled, DeltaRow.unapply)
-  def idx = index("idx_seq", (bundle, seqid))
+  def idx = index("idx_deltas", (bundle, seqid))
 }

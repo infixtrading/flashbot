@@ -119,7 +119,7 @@ class DataServer(dbConfig: Config,
   }
 
   // Create SQL tables on start.
-  val _tables = List(Bundles, Snapshots, Deltas)
+  val _tables = List(Bundles, Snapshots, Deltas, Backfills)
   Await.result(for {
     existingTables <- slickSession.db.run(MTable.getTables)
     names = existingTables.map(_.name.name)

@@ -25,7 +25,7 @@ case class FlashbotConfig(`engine-root`: String,
 
 object FlashbotConfig {
 
-  case class IngestConfig(enabled: Seq[String], retention: String)
+  case class IngestConfig(enabled: Seq[String], backfill: Seq[String], retention: Seq[Seq[String]])
 
   case class ExchangeConfig(`class`: String, params: Option[Json], pairs: Option[Seq[String]])
 

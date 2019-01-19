@@ -9,5 +9,5 @@ class Snapshots(tag: Tag) extends Table[SnapshotRow](tag, "flashbot_snapshots") 
   def micros = column[Long]("micros")
   def data = column[String]("data")
   override def * = (bundle, seqid, micros, data) <> (SnapshotRow.tupled, SnapshotRow.unapply)
-  def idx = index("idx_seq", (bundle, seqid))
+  def idx = index("idx_snaps", (bundle, seqid))
 }
