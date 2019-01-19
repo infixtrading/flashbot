@@ -20,12 +20,12 @@ case class FlashbotConfig(`engine-root`: String,
                           bots: StaticBotsConfig,
                           akka: Config,
                           db: Config) {
-  def noIngest = copy(ingest = ingest.copy(paths = Seq.empty))
+  def noIngest = copy(ingest = ingest.copy(enabled = Seq.empty))
 }
 
 object FlashbotConfig {
 
-  case class IngestConfig(paths: Seq[String], retention: String)
+  case class IngestConfig(enabled: Seq[String], retention: String)
 
   case class ExchangeConfig(`class`: String, params: Option[Json], pairs: Option[Seq[String]])
 

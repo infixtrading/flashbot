@@ -73,7 +73,7 @@ class DataSourceActor(session: SlickSession,
     if (filteredQueue.nonEmpty) Some(Ingest(filteredQueue)) else None
   }
 
-  def matchers: Set[String] = ingestConfig.paths.toSet
+  def matchers: Set[String] = ingestConfig.enabled.toSet
 
   var itemBuffers = Map.empty[Long, Vector[MarketData[_]]]
 
@@ -107,7 +107,7 @@ class DataSourceActor(session: SlickSession,
     case Init(None) =>
       log.debug("{} DataSource initialized", srcKey)
 
-      if (ingestConfig.paths.nonEmpty) {
+      if (ingestConfig.enabled.nonEmpty) {
         // Build initial queue
         val ingestQueue = for {
           topics <- topicsFut
