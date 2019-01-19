@@ -1,8 +1,8 @@
 package com.infixtrading.flashbot.core
 
-import com.infixtrading.flashbot.core.FlashbotConfig.{StaticBotsConfig, DataSourceConfig, ExchangeConfig, IngestConfig}
+import com.infixtrading.flashbot.core.FlashbotConfig.{DataSourceConfig, ExchangeConfig, IngestConfig, StaticBotsConfig}
 import com.infixtrading.flashbot.models.core.Position
-import com.typesafe.config.{Config, ConfigFactory, ConfigValue}
+import com.typesafe.config.{Config, ConfigFactory}
 import io.circe._
 import io.circe.config.syntax._
 import io.circe.generic.semiauto._
@@ -41,7 +41,6 @@ object FlashbotConfig {
                        `initial-positions`: Option[Map[String, Position]])
 
   object BotConfig {
-
     implicit val botConfigEncoder: Encoder[BotConfig] = deriveEncoder[BotConfig]
     implicit val botConfigDecoder: Decoder[BotConfig] = deriveDecoder[BotConfig]
   }

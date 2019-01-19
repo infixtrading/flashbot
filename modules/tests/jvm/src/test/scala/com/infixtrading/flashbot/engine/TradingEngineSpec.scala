@@ -76,11 +76,8 @@ class TradingEngineSpec extends WordSpecLike
     }
 
     "respect bot TTL" in {
-      val conf = ConfigFactory.load(classOf[TradingEngine].getClassLoader)
-      val fbConf = conf.getConfig("flashbot")
-      val system = ActorSystem("System1", ConfigFactory.defaultApplication()
-          .withFallback(fbConf)
-          .withFallback(conf))
+      val config = FlashbotConfig.load
+      val system = ActorSystem("System1", config.akka)
 
       val engine = system.actorOf(TradingEngine.props("test-engine"))
       def request(query: Any) = Await.result(engine ? query, 5 seconds)
@@ -130,11 +127,8 @@ class TradingEngineSpec extends WordSpecLike
       */
     "subscribe to the report of a running bot" in {
 
-      val conf = ConfigFactory.load(classOf[TradingEngine].getClassLoader)
-      val fbConf = conf.getConfig("flashbot")
-      implicit val system = ActorSystem("System1", ConfigFactory.defaultApplication()
-          .withFallback(fbConf)
-          .withFallback(conf))
+      val config = FlashbotConfig.load
+      implicit val system = ActorSystem("System1", config.akka)
 
       val engine = system.actorOf(TradingEngine.props("test-engine"))
       implicit val mat = ActorMaterializer()
@@ -188,17 +182,17 @@ class TradingEngineSpec extends WordSpecLike
 //          .withFallback(fbConf)
 //          .withFallback(conf))
 
-      val fbConfig = FlashbotConfig.load
-      implicit val system = ActorSystem("System1", fbConfig.akka)
+      val config = FlashbotConfig.load
+      implicit val system = ActorSystem("System1", config.akka)
 
       val now = Instant.now()
 
       val dataServer = system.actorOf(Props(
-        new DataServer(fbConfig.db, fbConfig.sources, fbConfig.exchanges, None,
+        new DataServer(config.db, config.sources, config.exchanges, None,
           useCluster = false)), "data-server")
 
       val engine = system.actorOf(Props(
-        new TradingEngine("test2", fbConfig.strategies, fbConfig.exchanges, fbConfig.bots,
+        new TradingEngine("test2", config.strategies, config.exchanges, config.bots,
           Left(dataServer))), "trading-engine-2")
 
       val params = LookaheadParams(Market("bitfinex/eth_usd"), sabotage = false)

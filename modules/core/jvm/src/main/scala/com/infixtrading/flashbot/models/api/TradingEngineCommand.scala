@@ -1,10 +1,8 @@
 package com.infixtrading.flashbot.models.api
 
-import akka.actor.ActorRef
 import com.infixtrading.flashbot.core.TradingSessionMode
 import com.infixtrading.flashbot.models.core.Portfolio
-import com.infixtrading.flashbot.report.{Report, ReportEvent}
-import io.circe.Json
+import com.infixtrading.flashbot.report.ReportEvent
 
 import scala.concurrent.duration.Duration
 

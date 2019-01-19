@@ -1,9 +1,8 @@
 package com.infixtrading.flashbot.models.api
 import java.time.Instant
 
-import com.infixtrading.flashbot.core.FlashbotConfig.{BotConfig, ExchangeConfig}
+import com.infixtrading.flashbot.core.FlashbotConfig.BotConfig
 import com.infixtrading.flashbot.core.Transaction
-import com.infixtrading.flashbot.models.core.Account
 import io.circe.Json
 
 import scala.collection.SortedSet
