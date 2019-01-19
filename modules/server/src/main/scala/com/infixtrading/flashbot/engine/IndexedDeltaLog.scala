@@ -7,7 +7,7 @@ import io.circe.{Decoder, Encoder, Json}
 import io.circe.generic.semiauto._
 import io.circe.syntax._
 import io.circe.parser._
-import com.infixtrading.flashbot.core.DataSource.{Bundle, SliceIndex}
+import com.infixtrading.flashbot.core.DataSource.Bundle
 import com.infixtrading.flashbot.models.core.Slice.SliceId
 import com.infixtrading.flashbot.core._
 import com.infixtrading.flashbot.engine.IndexedDeltaLog._
