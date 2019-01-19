@@ -9,7 +9,7 @@ class CoinbaseMarketDataSource extends DataSource {
   override def ingest[T](topic: String, datatype: DataType[T])
                         (implicit ctx: ActorContext, mat: ActorMaterializer) = {
     datatype match {
-      case OrderBookType =>
+      case OrderBookType => ???
     }
   }
 }

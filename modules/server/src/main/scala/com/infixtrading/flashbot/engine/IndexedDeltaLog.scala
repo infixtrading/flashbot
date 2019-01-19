@@ -11,6 +11,7 @@ import com.infixtrading.flashbot.core.DataSource.Bundle
 import com.infixtrading.flashbot.models.core.Slice.SliceId
 import com.infixtrading.flashbot.core._
 import com.infixtrading.flashbot.engine.IndexedDeltaLog._
+import com.infixtrading.flashbot.engine.Slices.SliceIndex
 import com.infixtrading.flashbot.engine.TimeLog.ScanDuration
 import com.infixtrading.flashbot.models.core.Slice
 

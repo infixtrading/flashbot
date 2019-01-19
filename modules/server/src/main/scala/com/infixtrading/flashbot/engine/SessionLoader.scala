@@ -5,7 +5,7 @@ import akka.stream.{ActorMaterializer, Materializer}
 import akka.pattern.ask
 import akka.util.Timeout
 import io.circe.Json
-import com.infixtrading.flashbot.core.DataSource.{Bundle, DataSourceIndex}
+import com.infixtrading.flashbot.core.DataSource.Bundle
 import com.infixtrading.flashbot.core.Exchange
 import com.infixtrading.flashbot.core.FlashbotConfig.{DataSourceConfig, ExchangeConfig}
 
