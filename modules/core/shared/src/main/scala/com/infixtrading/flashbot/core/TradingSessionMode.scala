@@ -4,6 +4,7 @@ import java.time.Instant
 import com.infixtrading.flashbot.models.core.TimeRange
 import com.infixtrading.flashbot.util.time
 import io.circe.{Decoder, Encoder, Json}
+import pureconfig.ConfigReader
 
 import scala.concurrent.duration._
 
@@ -38,9 +39,10 @@ object TradingSessionMode {
   }
 
   implicit val en: Encoder[TradingSessionMode] = Encoder.encodeString.contramap(_.toString)
+  implicit val de: Decoder[TradingSessionMode] = Decoder.decodeString.map(TradingSessionMode.apply)
 
-  implicit val de: Decoder[TradingSessionMode] =
-    Decoder.decodeString.map(TradingSessionMode.apply)
+  implicit val reader: ConfigReader[TradingSessionMode] =
+    ConfigReader.fromString(x => Right(TradingSessionMode(x)))
 }
 
 
