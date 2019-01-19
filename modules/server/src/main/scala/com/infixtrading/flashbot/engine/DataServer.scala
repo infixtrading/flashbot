@@ -14,6 +14,7 @@ import com.infixtrading.flashbot.core.MarketData.BaseMarketData
 import com.infixtrading.flashbot.core.{DeltaFmt, DeltaFmtJson, FlashbotConfig, MarketData}
 import com.infixtrading.flashbot.db._
 import com.infixtrading.flashbot.engine.DataSourceActor.StreamLiveData
+import com.infixtrading.flashbot.models.api.RegisterDataServer
 import com.infixtrading.flashbot.models.core.{DataPath, TimeRange}
 import com.infixtrading.flashbot.util._
 import com.infixtrading.flashbot.util.stream._
@@ -51,11 +52,6 @@ object DataServer {
         t <- to
       } yield TimeRange(f, t)
   }
-
-  /**
-    * The message every data server sends to every other one to register itself across the cluster.
-    */
-  case object RegisterDataServer
 
   /**
     * Request a data stream source from the cluster. Returns a [[CompressedSourceRef]] if the sender
