@@ -80,48 +80,6 @@ object DataServer {
       ingestConfig = config.ingest,
       useCluster = useCluster))
   }
-
-  sealed trait Wrap extends Any {
-    def micros: Long
-    def isSnap: Boolean
-    def data: String
-    def bundle: Long
-    def seqid: Long
-  }
-  class SnapshotWrap(val cols: (Long, Long, Long, String)) extends AnyVal with Wrap {
-    override def micros = cols._3
-    override def isSnap = true
-    override def data = cols._4
-    override def bundle = cols._1
-    override def seqid = cols._2
-  }
-  class DeltaWrap(val cols: (Long, Long, Long, String)) extends AnyVal with Wrap {
-    override def micros = cols._3
-    override def isSnap = false
-    override def data = cols._4
-    override def bundle = cols._1
-    override def seqid = cols._2
-  }
-
-  object Wrap {
-    val ordering: Ordering[Wrap] = new Ordering[Wrap] {
-      override def compare(x: Wrap, y: Wrap) = {
-        if (x.micros < y.micros) -1
-        else if (x.micros > y.micros) 1
-        else if (x.isSnap && !y.isSnap) -1
-        else if (!x.isSnap && y.isSnap) 1
-        else 0
-      }
-    }
-  }
-
-  class BundleRow(val cols: (Long, String, String, String)) extends AnyVal {
-    def id = cols._1
-    def source = cols._2
-    def topic = cols._3
-    def datatype = cols._4
-  }
-
 }
 
 class DataServer(dbConfig: Config,
@@ -326,21 +284,19 @@ class DataServer(dbConfig: Config,
       bundles <- Slick.source(Bundles
         .filter(b => b.source === path.source &&
           b.topic === path.topic && b.datatype === path.datatype)
-        .result).map(new BundleRow(_)).runWith(Sink.seq)
+        .result).runWith(Sink.seq)
 
       snapshots: Source[Wrap, NotUsed] = Slick
         .source(Snapshots
           .filter(x => (x.micros >= lookbackFromMicros) && (x.micros < toMicros))
           .filter(x => x.bundle.inSet(bundles.map(_.id)))
           .result)
-        .map(new SnapshotWrap(_))
 
       deltas: Source[Wrap, NotUsed] = Slick
         .source(Deltas
           .filter(x => (x.micros >= lookbackFromMicros) && (x.micros < toMicros))
           .filter(x => x.bundle.inSet(bundles.map(_.id)))
           .result)
-        .map(new DeltaWrap(_))
 
     } yield snapshots
       .mergeSorted[Wrap, NotUsed](deltas)(Wrap.ordering)

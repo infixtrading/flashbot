@@ -132,9 +132,6 @@ class DataSourceActor(session: SlickSession,
             }
             ingestMsgOpt(queue).foreach(self ! _)
 
-            // Also start the backfill service.
-            context.actorOf(Props(new BackfillService(session)))
-
           case Failure(err) =>
             self ! Init(Some(err))
         }
@@ -201,6 +198,9 @@ class DataSourceActor(session: SlickSession,
                         self ! Err(err)
                       case Success(bundleId) =>
                         log.info(s"Ingesting $path")
+
+                        // Also start a backfill service for each path.
+                        context.actorOf(Props(new BackfillService(session, path, dataSource)))
 
                         // Save bundle id for this path.
                         bundleIndex += (path ->

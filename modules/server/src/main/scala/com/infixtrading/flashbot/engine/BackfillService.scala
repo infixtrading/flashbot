@@ -47,7 +47,7 @@ class BackfillService(session: SlickSession, path: DataPath,
   val ClaimTTL = 10 seconds
 
   // Every 500-1500 ms we send a process a BackfillTick event.
-  system.scheduler.schedule(0 millis, 500 millis, () => Future {
+  system.scheduler.schedule(0 millis, 500 millis) (Future {
     Thread.sleep(random.nextInt(1000))
     self ! BackfillTick
   })
@@ -158,12 +158,13 @@ class BackfillService(session: SlickSession, path: DataPath,
             .filter(_.bundle === claim.bundle)
             .map(_.seqid)
             .result.headOption
-          seqIdBound = earliestSeqIdOpt.getOrElse(0)
+          seqIdBound = earliestSeqIdOpt.getOrElse(0L)
+          seqIdStart: Long = seqIdBound - data.size
 
           // Insert the snapshot
           _ <- data.headOption.map {
             case (micros, item) => Snapshots +=
-              SnapshotRow(claim.bundle, seqIdBound - data.size, micros,
+              SnapshotRow(claim.bundle, seqIdStart, micros,
                 item.asJson.pretty(Printer.noSpaces))
           }.getOrElse(DBIO.successful(0))
 
@@ -173,7 +174,7 @@ class BackfillService(session: SlickSession, path: DataPath,
               case ((None, _), ((_, item), i)) => (Some(item), None)
               case ((Some(prev), _), ((micros, item), i)) =>
                 val delta = fmt.diff(prev, item)
-                val deltaRow = DeltaRow(claim.bundle, seqIdBound - data.size + i, micros,
+                val deltaRow = DeltaRow(claim.bundle, seqIdStart + i, micros,
                   delta.asJson.pretty(Printer.noSpaces))
                 (Some(item), Some(deltaRow))
             }.collect {
@@ -186,15 +187,15 @@ class BackfillService(session: SlickSession, path: DataPath,
             .update(None, None, Some(nextCursor),
               Some(Timestamp.from(now.plusMillis(delay.toMillis))))
 
-          _ <- updatedNum match {
-            case 1 => true
+          _ = updatedNum match {
+            // Success
+            case 1 =>
 
             // This means that the claim was expired before we got a chance to update it.
             // This fails the transaction and logs an error.
             case 0 =>
               log.error("Failed to release claim {}. This may be caused by the " +
                 "backfill claim being expired due a hung page.", claim)
-              false
           }
         } yield updatedNum
 

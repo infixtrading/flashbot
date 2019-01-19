@@ -13,6 +13,34 @@ import scala.concurrent.Future
 
 package object db {
 
+  sealed trait Wrap extends Any {
+    def micros: Long
+    def isSnap: Boolean
+    def data: String
+    def bundle: Long
+    def seqid: Long
+  }
+
+  object Wrap {
+    val ordering: Ordering[Wrap] = new Ordering[Wrap] {
+      override def compare(x: Wrap, y: Wrap) = {
+        if (x.micros < y.micros) -1
+        else if (x.micros > y.micros) 1
+        else if (x.isSnap && !y.isSnap) -1
+        else if (!x.isSnap && y.isSnap) 1
+        else 0
+      }
+    }
+  }
+
+  case class DeltaRow(bundle: Long, seqid: Long, micros: Long, data: String) extends Wrap {
+    def isSnap = false
+  }
+  case class SnapshotRow(bundle: Long, seqid: Long, micros: Long, data: String) extends Wrap {
+    def isSnap = true
+  }
+
+
   val Deltas = new TableQuery(tag => new Deltas(tag))
   val Snapshots = new TableQuery(tag => new Snapshots(tag))
   val Bundles = new TableQuery(tag => new Bundles(tag))

@@ -3,8 +3,6 @@ package com.infixtrading.flashbot.db
 import slick.lifted.Tag
 import slick.jdbc.PostgresProfile.api._
 
-case class DeltaRow(bundle: Long, seqid: Long, micros: Long, data: String)
-
 class Deltas(tag: Tag) extends Table[DeltaRow](tag, "flashbot_deltas") {
   def bundle = column[Long]("bundle")
   def seqid = column[Long]("seqid")
