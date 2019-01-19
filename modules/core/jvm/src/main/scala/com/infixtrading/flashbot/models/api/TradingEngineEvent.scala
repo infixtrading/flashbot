@@ -1,4 +1,5 @@
 package com.infixtrading.flashbot.models.api
+
 import com.infixtrading.flashbot.core.FlashbotConfig.BotConfig
 import com.infixtrading.flashbot.core.TradingSessionMode
 import com.infixtrading.flashbot.models.core.{Account, Market, Portfolio, Position}

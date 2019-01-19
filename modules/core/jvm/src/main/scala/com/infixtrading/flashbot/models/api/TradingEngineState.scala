@@ -1,9 +1,8 @@
 package com.infixtrading.flashbot.models.api
 import java.time.Instant
 
-import com.infixtrading.flashbot.core.FlashbotConfig.{BotConfig, ExchangeConfig}
+import com.infixtrading.flashbot.core.FlashbotConfig.BotConfig
 import com.infixtrading.flashbot.core.Transaction
-import com.infixtrading.flashbot.models.core.Account
 import io.circe.Json
 
 import scala.collection.SortedSet
@@ -92,7 +91,7 @@ case class TradingEngineState(bots: Map[String, BotState] = Map.empty,
   def expireBots(now: Instant): TradingEngineState =
     copy(bots = bots.filter {
       case (id, bot) =>
-        !bot.enabled || bot.config.flatMap(_.ttl).forall { ttl =>
+        !bot.enabled || bot.config.flatMap(_.ttlOpt).forall { ttl =>
           bot.lastHeartbeatMicros + ttl.toMicros >= now.toEpochMilli * 1000
         }
     })

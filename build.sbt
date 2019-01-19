@@ -13,14 +13,15 @@ lazy val akkaVersion = "2.5.18"
 lazy val akkaHttpVersion = "10.1.5"
 lazy val fbCirceVersion = "0.10.0"
 
-lazy val networkDeps = List(
-  // Akka libs
+lazy val akkaDeps = List(
   "com.typesafe.akka" %% "akka-actor" % akkaVersion,
   "com.typesafe.akka" %% "akka-stream" % akkaVersion,
   "com.typesafe.akka" %% "akka-remote" % akkaVersion,
   "com.typesafe.akka" %% "akka-cluster" % akkaVersion,
   "com.typesafe.akka" %% "akka-http" % akkaHttpVersion,
+)
 
+lazy val networkDeps = List(
   "com.typesafe.akka" %% "akka-slf4j" % "2.5.19",
   "ch.qos.logback" % "logback-classic" % "1.2.3",
 
@@ -34,12 +35,6 @@ lazy val networkDeps = List(
 
   // Pusher
   "com.pusher" % "pusher-java-client" % "1.8.1"
-)
-
-lazy val graphQLServerDeps = List(
-  "org.sangria-graphql" %% "sangria" % "1.4.2",
-  "org.sangria-graphql" %% "sangria-circe" % "1.2.1",
-  "org.sangria-graphql" %% "sangria-akka-streams" % "1.0.1"
 )
 
 lazy val jsonDeps = List(
@@ -59,9 +54,12 @@ lazy val dataStores = List(
   "org.fusesource.leveldbjni" % "leveldbjni-all" % "1.8"
 )
 
-lazy val serviceDeps = List(
-  "com.github.scopt" % "scopt_2.11" % "3.7.0",
+lazy val configDeps = List(
   "com.typesafe" % "config" % "1.3.2" % Compile,
+  "io.circe" %% "circe-config" % "0.5.0"
+)
+
+lazy val serviceDeps = configDeps ++ List(
   // Metrics with prometheus
   "io.prometheus" % "simpleclient" % "0.3.0",
   "io.prometheus" % "simpleclient_httpserver" % "0.3.0"
@@ -375,35 +373,36 @@ lazy val flashbot = project
 
 
 lazy val coreBase = crossModule("core", previousFBVersion)
-lazy val core = coreBase.jvm
+lazy val core = coreBase.jvm.settings(
+  libraryDependencies ++= (configDeps ++ akkaDeps)
+)
 lazy val coreJS = coreBase.js
 
 
 lazy val server = flashbotModule("server", previousFBVersion).settings(
-  libraryDependencies ++= ((
-    serviceDeps ++ networkDeps ++ jsonDeps ++ dataStores ++ timeSeriesDeps ++ statsDeps
-  ) ++ Seq(
-    "org.jgrapht" % "jgrapht" % "1.3.0",
-    "org.jgrapht" % "jgrapht-core" % "1.3.0",
-    "org.jgrapht" % "jgrapht-io" % "1.3.0",
-    "com.quantego" % "clp-java" % "1.16.10",
-    "com.vmunier" %% "scalajs-scripts" % "1.1.2",
-    "com.github.inamik.text.tables" % "inamik-text-tables" % "0.8",
-    "com.lihaoyi" %% "fansi" % "0.2.5",
+  libraryDependencies ++= (
+    serviceDeps ++ akkaDeps ++ networkDeps ++ jsonDeps 
+    ++ dataStores ++ timeSeriesDeps ++ statsDeps 
+    ++ Seq(
+      "org.jgrapht" % "jgrapht" % "1.3.0",
+      "org.jgrapht" % "jgrapht-core" % "1.3.0",
+      "org.jgrapht" % "jgrapht-io" % "1.3.0",
+      "com.quantego" % "clp-java" % "1.16.10",
+      "com.vmunier" %% "scalajs-scripts" % "1.1.2",
+      "com.github.inamik.text.tables" % "inamik-text-tables" % "0.8",
+      "com.lihaoyi" %% "fansi" % "0.2.5",
 
-    "com.github.andyglow" % "scala-jsonschema-core_2.12" % "0.0.8",
-    "com.github.andyglow" % "scala-jsonschema-api_2.12" % "0.0.8",
-    "com.github.andyglow" % "scala-jsonschema-circe-json_2.12" % "0.0.8",
-    "de.sciss" %% "fingertree" % "1.5.2",
+      "com.github.andyglow" % "scala-jsonschema-core_2.12" % "0.0.8",
+      "com.github.andyglow" % "scala-jsonschema-api_2.12" % "0.0.8",
+      "com.github.andyglow" % "scala-jsonschema-circe-json_2.12" % "0.0.8",
+      "de.sciss" %% "fingertree" % "1.5.2",
 
-    "io.circe" %% "circe-config" % "0.5.0",
+      "com.twitter" %% "chill-akka" % "0.9.3",
 
-    "com.twitter" %% "chill-akka" % "0.9.3",
-
-    "com.typesafe.slick" %% "slick" % "3.2.3",
-    "com.lightbend.akka" %% "akka-stream-alpakka-slick" % "1.0-M1",
-    "com.h2database" % "h2" % "1.4.192"
-  ))
+      "com.typesafe.slick" %% "slick" % "3.2.3",
+      "com.lightbend.akka" %% "akka-stream-alpakka-slick" % "1.0-M1",
+      "com.h2database" % "h2" % "1.4.192"
+    ))
 ).dependsOn(core)
 
 lazy val client = flashbotModule("client", previousFBVersion).dependsOn(core)

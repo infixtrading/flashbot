@@ -1,12 +1,12 @@
 package com.infixtrading.flashbot.engine
 
 import akka.NotUsed
-import akka.actor.{ActorContext, ActorRef, RootActorPath}
-import akka.stream.{Materializer, SourceRef}
-import akka.stream.scaladsl.{Source, StreamRefs}
+import akka.actor.{ActorContext, ActorRef}
 import akka.pattern.pipe
-import com.infixtrading.flashbot.core.DeltaFmt
+import akka.stream.Materializer
+import akka.stream.scaladsl.{Source, StreamRefs}
 import com.infixtrading.flashbot.util.stream._
+import com.infixtrading.flashbot.core.DeltaFmt
 import com.infixtrading.flashbot.engine.CompressedSourceRef._
 
 import scala.concurrent.{ExecutionContext, Future}

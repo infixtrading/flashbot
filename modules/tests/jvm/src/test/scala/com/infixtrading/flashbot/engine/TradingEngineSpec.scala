@@ -11,12 +11,15 @@ import akka.stream.ActorMaterializer
 import akka.stream.scaladsl.Sink
 import akka.testkit.{ImplicitSender, TestKit}
 import akka.util.Timeout
+import com.infixtrading.flashbot.client.scala.client.FlashbotClient
+import com.infixtrading.flashbot.core.FlashbotConfig.{BotConfig, StaticBotsConfig}
 import com.infixtrading.flashbot.core.{BalancePoint, FlashbotConfig, Paper, Trade}
 import com.infixtrading.flashbot.util.{files, time}
 import com.infixtrading.flashbot.models.api._
 import com.infixtrading.flashbot.models.core.Order.{Buy, Sell}
 import com.infixtrading.flashbot.models.core._
 import com.infixtrading.flashbot.report.Report
+import com.infixtrading.flashbot.util.files.rmRf
 import com.typesafe.config.ConfigFactory
 import de.sciss.chart.api._
 import io.circe.{Json, Printer}
@@ -30,11 +33,12 @@ import org.jfree.data.statistics.{HistogramDataset, HistogramType}
 import org.jfree.data.time._
 import org.jfree.data.time.ohlc.{OHLCSeries, OHLCSeriesCollection}
 import org.scalatest.{BeforeAndAfterAll, FlatSpec, Matchers, WordSpecLike}
-import strategies.LookaheadParams
+import strategies.{LookaheadParams, TradeWriter}
 
 import scala.concurrent.Await
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
+import scala.language.postfixOps
 
 class TradingEngineSpec extends WordSpecLike
     with Matchers
@@ -43,34 +47,35 @@ class TradingEngineSpec extends WordSpecLike
   var testFolder: File = _
   implicit val timeout = Timeout(15 seconds)
 
+  override def afterAll() = {
+    // Delete the engine root
+    rmRf(new File(FlashbotConfig.load.`engine-root`))
+  }
+
   "TradingEngine" should {
     "respond to a ping" in {
-      val conf = ConfigFactory.load(classOf[TradingEngine].getClassLoader)
-      val fbConf = conf.getConfig("flashbot")
-      val system = ActorSystem("System1", ConfigFactory.defaultApplication()
-          .withFallback(fbConf)
-          .withFallback(conf))
-
-      val fbConfig = FlashbotConfig.load
+      val config = FlashbotConfig.load
+      val system = ActorSystem("System1", config.akka)
 
       val dataServer = system.actorOf(Props(new DataServer(
-        fbConfig.db,
-        fbConfig.sources,
-        fbConfig.exchanges,
+        config.db,
+        config.sources,
+        config.exchanges,
         None,
         useCluster = false
       )))
 
       val engine = system.actorOf(Props(new TradingEngine(
         "test",
-        fbConfig.strategies,
-        fbConfig.exchanges,
-        fbConfig.bots.configs,
+        config.strategies,
+        config.exchanges,
+        config.bots,
         Left(dataServer)
       )))
 
-      val result = Await.result(engine ? Ping, 5 seconds)
-      result match {
+      val fb = new FlashbotClient(engine)
+
+      fb.ping match {
         case Pong(micros) =>
           println(Instant.ofEpochMilli(micros/1000))
         case _ =>
@@ -81,50 +86,43 @@ class TradingEngineSpec extends WordSpecLike
     }
 
     "respect bot TTL" in {
-      val conf = ConfigFactory.load(classOf[TradingEngine].getClassLoader)
-      val fbConf = conf.getConfig("flashbot")
-      val system = ActorSystem("System1", ConfigFactory.defaultApplication()
-          .withFallback(fbConf)
-          .withFallback(conf))
+      val config = FlashbotConfig.load
+      val system = ActorSystem("System1", config.akka)
 
       val engine = system.actorOf(TradingEngine.props("test-engine"))
-      def request(query: Any) = Await.result(engine ? query, 5 seconds)
+      val fb = new FlashbotClient(engine)
 
       // Configure bot with 2 second TTL
-      Await.result(engine ? ConfigureBot(
-        "mybot",
-        "candlescanner",
-        "{}",
-        Paper(0 seconds),
-        Some(2 seconds),
-        Portfolio.empty
-      ), 5 seconds)
+      fb.configureBot("mybot", BotConfig("candlescanner",
+        mode = Paper(),
+        ttl = 2 seconds
+      ))
 
       // Status should be Disabled
-      request(BotStatusQuery("mybot")) shouldBe Disabled
+      fb.botStatus("mybot") shouldBe Disabled
 
       // Enable bot
-      request(EnableBot("mybot")) shouldBe Done
+      fb.enableBot("mybot")
 
       // Wait 1 second
       Thread.sleep(1000)
 
       // Status should be running
-      request(BotStatusQuery("mybot")) shouldBe Running
+      fb.botStatus("mybot") shouldBe Running
 
       // Send a heartbeat
-      request(BotHeartbeat("mybot")) shouldBe Done
+      fb.botHeartbeat("mybot")
 
       // Status should still be running 1.5 seconds after heartbeat
       Thread.sleep(1500)
-      request(BotStatusQuery("mybot")) shouldBe Running
+      fb.botStatus("mybot") shouldBe Running
 
       // Wait 1 more second
       Thread.sleep(1000)
 
       // Status should fail with "unknown bot"
       assertThrows[IllegalArgumentException] {
-        request(BotStatusQuery("mybot"))
+        fb.botStatus("mybot")
       }
 
       Await.ready(system.terminate(), 10 seconds)
@@ -135,15 +133,12 @@ class TradingEngineSpec extends WordSpecLike
       */
     "subscribe to the report of a running bot" in {
 
-      val conf = ConfigFactory.load(classOf[TradingEngine].getClassLoader)
-      val fbConf = conf.getConfig("flashbot")
-      implicit val system = ActorSystem("System1", ConfigFactory.defaultApplication()
-          .withFallback(fbConf)
-          .withFallback(conf))
+      val config = FlashbotConfig.load
+      implicit val system = ActorSystem("System1", config.akka)
 
       val engine = system.actorOf(TradingEngine.props("test-engine"))
+      val fb = new FlashbotClient(engine)
       implicit val mat = ActorMaterializer()
-      def request(query: Any) = Await.result(engine ? query, 30 seconds)
 
       val nowMicros = time.currentTimeMicros
       val trades = 1 to 20 map { i =>
@@ -151,21 +146,14 @@ class TradingEngineSpec extends WordSpecLike
       }
 
       // Configure and enable bot that writes a list of trades to the report.
-      request(ConfigureBot(
-        "bot2",
-        "tradewriter",
-        s"""{"trades": ${trades.asJson.pretty(Printer.noSpaces)}}""".stripMargin,
-        Paper(0 seconds),
-        None,
-        Portfolio.empty
-      ))
-      request(EnableBot("bot2"))
+      fb.configureBot("bot2", BotConfig("tradewriter", Paper(),
+        params = TradeWriter.Params(trades).asJson))
+      fb.enableBot("bot2")
 
       Thread.sleep(1000)
 
-      // Subscribe to the report. Receive a stream source.
-      val reportTradeSrc = request(SubscribeToReport("bot2"))
-        .asInstanceOf[NetworkSource[Report]].toSource
+      // Subscribe to the report. Receive a trade stream.
+      val reportTradeSrc = fb.subscribeToReport("bot2")
         .map(_.values("last_trade").value.asInstanceOf[Trade])
 
       // Collect the stream into a seq.
@@ -173,37 +161,45 @@ class TradingEngineSpec extends WordSpecLike
 
       // Verify that the data in the report stream is the expected list of trades.
       val a = trades.drop(trades.size - reportTrades.size)
-      println(a)
-      println(reportTrades)
       reportTrades shouldEqual a
 
       // Also check that it was reverted to disabled state after the data stream completed.
-      val x = request(BotStatusQuery("bot2"))
-      println(x)
-      x shouldBe Disabled
+      fb.botStatus("bot2") shouldBe Disabled
+
+      Await.ready(system.terminate(), 10 seconds)
+    }
+
+    "enable static bots" in {
+      val config = FlashbotConfig.load.copy(bots = StaticBotsConfig(
+        enabled = Seq("scanner1"),
+        configs = Map(
+          "scanner1" -> BotConfig("candlescanner", Paper()),
+          "scanner2" -> BotConfig("candlescanner", Paper())
+        )
+      ))
+
+      implicit val system = ActorSystem("System1", config.akka)
+      val engine = system.actorOf(TradingEngine.props("engine", config))
+      val fb = new FlashbotClient(engine)
+      fb.botStatus("scanner1") shouldBe Running
+      fb.botStatus("scanner2") shouldBe Disabled
 
       Await.ready(system.terminate(), 10 seconds)
     }
 
     "be profitable when using lookahead" in {
 
-//      val conf = ConfigFactory.load(classOf[TradingEngine].getClassLoader)
-//      val fbConf = conf.getConfig("flashbot")
-//      implicit val system = ActorSystem("System1", ConfigFactory.defaultApplication()
-//          .withFallback(fbConf)
-//          .withFallback(conf))
-
-      val fbConfig = FlashbotConfig.load
-      implicit val system = ActorSystem("System1", fbConfig.akka)
+      val config = FlashbotConfig.load
+      implicit val system = ActorSystem("System1", config.akka)
 
       val now = Instant.now()
 
       val dataServer = system.actorOf(Props(
-        new DataServer(fbConfig.db, fbConfig.sources, fbConfig.exchanges, None,
+        new DataServer(config.db, config.sources, config.exchanges, None,
           useCluster = false)), "data-server")
 
       val engine = system.actorOf(Props(
-        new TradingEngine("test2", fbConfig.strategies, fbConfig.exchanges, Map.empty,
+        new TradingEngine("test2", config.strategies, config.exchanges, config.bots,
           Left(dataServer))), "trading-engine-2")
 
       val params = LookaheadParams(Market("bitfinex/eth_usd"), sabotage = false)

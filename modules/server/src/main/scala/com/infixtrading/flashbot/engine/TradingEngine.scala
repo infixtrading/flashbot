@@ -1,6 +1,7 @@
 package com.infixtrading.flashbot.engine
 
 import java.time.Instant
+
 import akka.Done
 import akka.actor.{ActorLogging, ActorRef, ActorSystem, PoisonPill, Props, Status}
 import akka.pattern.{ask, pipe}
@@ -13,7 +14,7 @@ import io.circe.Json
 import io.circe.syntax._
 import io.circe.literal._
 import io.circe.parser.parse
-import com.infixtrading.flashbot.core.FlashbotConfig.{BotConfig, ExchangeConfig}
+import com.infixtrading.flashbot.core.FlashbotConfig.{BotConfig, ExchangeConfig, StaticBotsConfig}
 import com.infixtrading.flashbot.core._
 import com.infixtrading.flashbot.engine.TradingSessionActor.{SessionPing, SessionPong, StartSession, StopSession}
 import com.infixtrading.flashbot.util.time.currentTimeMicros
@@ -36,8 +37,8 @@ import scala.util.{Failure, Success, Try}
   */
 class TradingEngine(engineId: String,
                     strategyClassNames: Map[String, String],
-                    defaultExchangeConfigs: Map[String, ExchangeConfig],
-                    defaultBotConfigs: Map[String, BotConfig],
+                    exchangeConfigs: Map[String, ExchangeConfig],
+                    staticBotsConfig: StaticBotsConfig,
                     dataServerInfo: Either[ActorRef, Props])
   extends PersistentActor with ActorLogging {
 
@@ -48,7 +49,7 @@ class TradingEngine(engineId: String,
 
   override def persistenceId: String = engineId
   private val snapshotInterval = 100000
-  
+
   val dataServer = dataServerInfo.left.getOrElse(context.actorOf(dataServerInfo.right.get))
 
   /**
@@ -78,7 +79,7 @@ class TradingEngine(engineId: String,
   /**
     * Initialization.
     */
-  val getExchangeConfigs = () => defaultExchangeConfigs.map {
+  val getExchangeConfigs = () => exchangeConfigs.map {
     case (name, _) => name -> configForExchange(name).get
   }
   val (bootRsp: EngineStarted, bootEvents: Seq[TradingEngineEvent]) =
@@ -86,6 +87,8 @@ class TradingEngine(engineId: String,
 
   log.info("TradingEngine '{}' started at {}", engineId, bootRsp.micros)
   bootEvents.foreach(log.debug("Boot event: {}", _))
+
+  self ! BootEvents(bootEvents)
 
   def startEngine: Future[(EngineStarted, Seq[TradingEngineEvent])] = {
     implicit val loader = new SessionLoader(getExchangeConfigs, dataServer)
@@ -106,13 +109,33 @@ class TradingEngine(engineId: String,
       // Set it in-memory portfolio state
       _ = { globalPortfolio.put(fetchedPortfolio) }
 
-      // Start the bots.
-      // TODO: Notify of any bots that failed to start a session.
-      sessionStartEvents <- startBots
-      (keys, events) = sessionStartEvents.unzip
-      engineStarted = EngineStarted(currentTimeMicros)
+      engineStartMicros = currentTimeMicros
 
-    } yield (engineStarted, engineStarted +: events.toSeq)
+      // Start the "enabled" bots.
+      // TODO: Notify of any bots that failed to start a session.
+      sessionStartEvents: Map[String, Seq[TradingEngineEvent]] <- {
+        val staticEnabledKeys = staticBotsConfig.enabledConfigs.keySet
+        val dynamicEnabledKeys = state.bots.filter(_._2.enabled).keySet
+
+        for {
+          // Static bots must emit BotConfigured, BotEnabled, and SessionStarted events when they
+          // are started on boot.
+          staticStartedEvents <- Future.sequence(staticEnabledKeys.map(startBot))
+              .map(staticEnabledKeys zip _.map {
+                case startedEv @ SessionStarted(_, Some(botId), _, _, _, _, _, _) =>
+                  Seq(BotConfigured(engineStartMicros, botId, staticBotsConfig.configs(botId)),
+                    BotEnabled(botId), startedEv)
+              }).map(_.toMap)
+
+          // Dynamic bots on the other hand simply emit SessionStarted events on boot.
+          dynamicStartedEvents <- Future.sequence(dynamicEnabledKeys.map(startBot(_).map(Seq(_))))
+            .map(dynamicEnabledKeys zip _).map(_.toMap)
+        } yield staticStartedEvents ++ dynamicStartedEvents
+      }
+      (keys, events) = sessionStartEvents.unzip
+      engineStarted = EngineStarted(engineStartMicros)
+
+    } yield (engineStarted, engineStarted +: events.toSeq.flatten)
   }
 
   /**
@@ -124,6 +147,13 @@ class TradingEngine(engineId: String,
     */
   def processCommand(command: TradingEngineCommand, now: Instant)
   : Future[(Any, Seq[TradingEngineEvent])] = command match {
+
+    /**
+      * Pass through boot events. This is a special case for initialization.
+      */
+    case BootEvents(events) =>
+      log.debug("Passing through boot events: {}", events)
+      Future.successful((Done, events))
 
     /**
       * A bot session emitted a ReportEvent. Here is where we decide what to do about it by
@@ -171,12 +201,8 @@ class TradingEngine(engineId: String,
     /**
       * TODO: Check that the bot is not running. Cannot configure a running bot.
       */
-    case ConfigureBot(id, strategyKey, strategyParams, mode, ttl, initialPortfolio) =>
-      parse(strategyParams).toTry.toFut.map(params => (Done,
-        Seq(BotConfigured(currentTimeMicros, id,
-          BotConfig(strategyKey, mode, Some(params), ttl,
-            Some(initialPortfolio.assets.map { case (acc, dbl) => acc.toString -> dbl}),
-            Some(initialPortfolio.positions.map { case (m, pos) => m.toString -> pos } ))))))
+    case ConfigureBot(id, botConfig) =>
+      Future.successful((Done, Seq(BotConfigured(currentTimeMicros, id, botConfig))))
 
     case BotHeartbeat(id) =>
       Future.successful((Done, Seq(BotHeartbeatEvent(id, now.toEpochMilli * 1000))))
@@ -500,14 +526,13 @@ class TradingEngine(engineId: String,
   }
 
   private def startBot(name: String): Future[TradingEngineEvent] = {
-    getBotConfigs(name) match {
-      case BotConfig(strategy, mode, paramsOpt, _, initial_assets, initial_positions) =>
+    allBotConfigs(name) match {
+      case BotConfig(strategy, mode, params, _, initial_assets, initial_positions) =>
 
-        val params = paramsOpt.getOrElse(json"{}")
-        val initialAssets = initial_assets.getOrElse(Map.empty)
-          .map(kv => Account.parse(kv._1) -> kv._2)
-        val initialPositions = initial_positions.getOrElse(Map.empty)
-          .map(kv => Market.parse(kv._1) -> kv._2)
+        log.debug(s"Starting bot $name")
+
+        val initialAssets = initial_assets.map(kv => Account.parse(kv._1) -> kv._2)
+        val initialPositions = initial_positions.map(kv => Market.parse(kv._1) -> kv._2)
 
         // Build our PortfolioRef. Paper trading bots have an isolated portfolio while live bots
         // share the global one.
@@ -559,11 +584,6 @@ class TradingEngine(engineId: String,
     }
   }
 
-  def startBots: Future[Map[String, TradingEngineEvent]] = {
-    val keys = getBotConfigs.keys
-    Future.sequence(keys.map(startBot)).map(keys zip _).map(_.toMap)
-  }
-
   /**
     * Let's keep this idempotent. Not thread safe, like most of the stuff in this class.
     */
@@ -590,7 +610,9 @@ class TradingEngine(engineId: String,
   }
 
   def botStatus(name: String) = state.bots.get(name) match {
-    case None => Future.failed(new IllegalArgumentException(s"Unknown bot $name"))
+    case None =>
+      if (allBotConfigs contains name) Future.successful(Disabled)
+      else Future.failed(new IllegalArgumentException(s"Unknown bot $name"))
     case Some(BotState(_, true, _, _)) => pingBot(name).transform {
       case Success(SessionPong) => Success(Running)
       case _ => Success(Crashed)
@@ -610,20 +632,24 @@ class TradingEngine(engineId: String,
     } yield Portfolio(assets, positions)
 
   private def paramsForExchange(name: String): Option[Json] =
-    state.exchanges.get(name).map(_.params).orElse(defaultExchangeConfigs(name).params)
+    state.exchanges.get(name).map(_.params).orElse(exchangeConfigs(name).params)
 
   private def configForExchange(name: String): Option[ExchangeConfig] =
-    defaultExchangeConfigs.get(name).map(c => c.copy(params = paramsForExchange(name)))
+    exchangeConfigs.get(name).map(c => c.copy(params = paramsForExchange(name)))
 
-  private def getBotConfigs: Map[String, BotConfig] =
-    defaultBotConfigs ++ state.bots.filter(_._2.config.isDefined).mapValues(_.config.get)
+  private def allBotConfigs: Map[String, BotConfig] =
+    staticBotsConfig.configs ++ dynamicBotConfigs
+
+  private def dynamicBotConfigs: Map[String, BotConfig] =
+    state.bots.filter(_._2.config.isDefined).mapValues(_.config.get)
 }
 
 object TradingEngine {
 
-  def props(name: String): Props = {
-    val fbConfig = FlashbotConfig.load
-    Props(new TradingEngine(name, fbConfig.strategies, fbConfig.exchanges,
-      Map.empty, Right(DataServer.props)))
-  }
+  def props(name: String): Props = props(name, FlashbotConfig.load)
+
+  def props(name: String, config: FlashbotConfig): Props =
+    Props(new TradingEngine(name, config.strategies, config.exchanges,
+      config.bots, Right(DataServer.props(config))))
+
 }
