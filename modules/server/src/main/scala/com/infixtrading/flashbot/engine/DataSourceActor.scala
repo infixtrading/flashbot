@@ -3,7 +3,7 @@ package com.infixtrading.flashbot.engine
 import java.util.concurrent.Executors
 
 import akka.{Done, NotUsed}
-import akka.actor.{Actor, ActorLogging, ActorRef, PoisonPill}
+import akka.actor.{Actor, ActorLogging, ActorRef, PoisonPill, Props}
 import akka.stream.{ActorMaterializer, OverflowStrategy}
 import akka.stream.scaladsl.{Keep, Sink, Source}
 import akka.pattern.pipe
@@ -122,15 +122,19 @@ class DataSourceActor(session: SlickSession,
           }
         } yield queue
 
-        // Send to self if there's anything to ingest.
         ingestQueue.andThen {
           case Success(queue) =>
+            // Send Ingest message to self if there's anything to ingest.
             if (ingestMsgOpt(queue).isEmpty) {
               log.debug("Initial queue is empty for matchers: {}", matchers)
             } else {
               log.debug(s"Beginning ingest for $srcKey")
             }
             ingestMsgOpt(queue).foreach(self ! _)
+
+            // Also start the backfill service.
+            context.actorOf(Props(new BackfillService(session)))
+
           case Failure(err) =>
             self ! Init(Some(err))
         }
@@ -237,13 +241,13 @@ class DataSourceActor(session: SlickSession,
                               // Save the deltas
                               a <- session.db.run(Deltas ++= states.flatMap(state =>
                                 state.deltas.map(delta =>
-                                  (bundleId, state.seqId, state.micros,
+                                  DeltaRow(bundleId, state.seqId, state.micros,
                                     fmt.deltaEn(delta).pretty(Printer.noSpaces)))
                               ))
                               // Save the snapshots
                               b <- session.db.run(Snapshots ++=
                                 states.filter(_.snapshot.isDefined).map(state =>
-                                  (bundleId, state.seqId, state.micros,
+                                  SnapshotRow(bundleId, state.seqId, state.micros,
                                     fmt.modelEn(state.item).pretty(Printer.noSpaces))
                                 ))
                             } yield states.last.seqId

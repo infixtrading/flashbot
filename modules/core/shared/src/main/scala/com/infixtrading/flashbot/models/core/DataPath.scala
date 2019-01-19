@@ -1,5 +1,7 @@
 package com.infixtrading.flashbot.models.core
 
+import com.infixtrading.flashbot.core.{DataType, DeltaFmtJson}
+
 final case class DataPath(source: String, topic: String, datatype: String) {
   override def toString: String = List(source, topic, datatype).mkString("/")
 
@@ -23,6 +25,10 @@ final case class DataPath(source: String, topic: String, datatype: String) {
     case (Some(top), Some(src), Some(tpe)) => Some(this)
     case _ => None
   }
+
+  def dataTypeInstance[T]: DataType[T] = DataType(datatype)
+
+  def fmt[T]: DeltaFmtJson[T] = dataTypeInstance[T].fmtJson
 }
 
 object DataPath {
