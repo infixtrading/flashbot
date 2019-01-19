@@ -19,6 +19,7 @@ import com.infixtrading.flashbot.models.api._
 import com.infixtrading.flashbot.models.core.Order.{Buy, Sell}
 import com.infixtrading.flashbot.models.core._
 import com.infixtrading.flashbot.report.Report
+import com.infixtrading.flashbot.util.files.rmRf
 import com.typesafe.config.ConfigFactory
 import de.sciss.chart.api._
 import io.circe.{Json, Printer}
@@ -45,6 +46,11 @@ class TradingEngineSpec extends WordSpecLike
 
   var testFolder: File = _
   implicit val timeout = Timeout(15 seconds)
+
+  override def afterAll() = {
+    // Delete the engine root
+    rmRf(new File(FlashbotConfig.load.`engine-root`))
+  }
 
   "TradingEngine" should {
     "respond to a ping" in {
