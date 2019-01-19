@@ -29,12 +29,10 @@ import scala.language.postfixOps
 import scala.util.{Random, Success}
 
 /**
-  * A DataServer runs and manages a set of data sources. Every Flashbot node runs a local data
-  * server but only nodes with the "data-ingest" role will actually ingest data. All DataServers
-  * share the same data store. Currently this is represented as a JDBC URL. While they share
-  * persistence layers, DataServers differ in the types of live data they have access to. A data
-  * server only has access to live data if it manages a DataSourceActor which is ingesting that
-  * data stream.
+  * A DataServer runs and manages a set of data sources. All DataServers share the same data store.
+  * Currently this is represented as a JDBC Config. While they share persistence layers, DataServers
+  * differ in the types of live data they have access to. A data server only has access to live data
+  * if it manages a DataSourceActor which is ingesting that data stream.
   */
 object DataServer {
 
@@ -52,7 +50,6 @@ object DataServer {
         f <- from
         t <- to
       } yield TimeRange(f, t)
-
   }
 
   /**
@@ -78,13 +75,14 @@ object DataServer {
   case class RemoteServerTerminated(ref: ActorRef)
 
   def props: Props = props(FlashbotConfig.load)
-  def props(config: FlashbotConfig): Props = {
+  def props(config: FlashbotConfig): Props = props(config, useCluster = false)
+  def props(config: FlashbotConfig, useCluster: Boolean): Props = {
     Props(new DataServer(
       config.db,
       config.sources,
       config.exchanges,
-      ingestConfig = None,
-      useCluster = false))
+      ingestConfig = config.ingest,
+      useCluster = useCluster))
   }
 
   sealed trait Wrap extends Any {
@@ -133,7 +131,7 @@ object DataServer {
 class DataServer(dbConfig: Config,
                  configs: Map[String, DataSourceConfig],
                  exchangeConfigs: Map[String, ExchangeConfig],
-                 ingestConfig: Option[IngestConfig],
+                 ingestConfig: IngestConfig,
                  useCluster: Boolean) extends Actor with ActorLogging {
   import DataServer._
 

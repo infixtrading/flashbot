@@ -19,7 +19,9 @@ case class FlashbotConfig(`engine-root`: String,
                           sources: Map[String, DataSourceConfig],
                           bots: StaticBotsConfig,
                           akka: Config,
-                          db: Config)
+                          db: Config) {
+  def noIngest = copy(ingest = ingest.copy(paths = Seq.empty))
+}
 
 object FlashbotConfig {
 

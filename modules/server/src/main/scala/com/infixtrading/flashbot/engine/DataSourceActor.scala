@@ -35,7 +35,7 @@ class DataSourceActor(session: SlickSession,
                       srcKey: String,
                       config: DataSourceConfig,
                       exchangeConfig: Option[ExchangeConfig],
-                      ingestConfig: Option[IngestConfig]) extends Actor with ActorLogging {
+                      ingestConfig: IngestConfig) extends Actor with ActorLogging {
   import DataSourceActor._
   import session.profile.api._
 
@@ -73,7 +73,7 @@ class DataSourceActor(session: SlickSession,
     if (filteredQueue.nonEmpty) Some(Ingest(filteredQueue)) else None
   }
 
-  def matchers: Set[String] = ingestConfig.get.paths.toSet
+  def matchers: Set[String] = ingestConfig.paths.toSet
 
   var itemBuffers = Map.empty[Long, Vector[MarketData[_]]]
 
@@ -107,7 +107,7 @@ class DataSourceActor(session: SlickSession,
     case Init(None) =>
       log.debug("{} DataSource initialized", srcKey)
 
-      if (ingestConfig.isDefined) {
+      if (ingestConfig.paths.nonEmpty) {
         // Build initial queue
         val ingestQueue = for {
           topics <- topicsFut
