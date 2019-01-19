@@ -6,6 +6,7 @@ import scala.xml.{ Elem, Node => XmlNode, NodeSeq => XmlNodeSeq }
 import scala.xml.transform.{ RewriteRule, RuleTransformer }
 
 organization in ThisBuild := "com.infixtrading"
+version in ThisBuild := "0.1.0"
 parallelExecution in ThisBuild := false
 concurrentRestrictions in Global += Tags.limit(Tags.Test, 1)
 
@@ -116,7 +117,6 @@ def scalaCheckVersionFor(scalaVersion: String): String =
   if (priorTo2_13(scalaVersion)) scalaCheckVersion else "1.14.0"
 
 val previousFBVersion = None
-val scalaFiddleFlashbotVersion = "0.0.1-SNAPSHOT"
 
 lazy val baseSettings = Seq(
   scalacOptions ++= compilerOptions,
