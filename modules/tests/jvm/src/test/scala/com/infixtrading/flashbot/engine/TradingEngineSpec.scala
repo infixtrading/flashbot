@@ -176,7 +176,7 @@ class TradingEngineSpec extends WordSpecLike
       val engine = system.actorOf(TradingEngine.props("engine", config))
       val fb = new FlashbotClient(engine)
       fb.botStatus("scanner1") shouldBe Running
-//      fb.botStatus("scanner2") shouldBe Disabled
+      fb.botStatus("scanner2") shouldBe Disabled
     }
 
     "be profitable when using lookahead" in {

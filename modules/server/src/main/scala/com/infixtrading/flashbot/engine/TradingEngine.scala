@@ -610,7 +610,9 @@ class TradingEngine(engineId: String,
   }
 
   def botStatus(name: String) = state.bots.get(name) match {
-    case None => Future.failed(new IllegalArgumentException(s"Unknown bot $name"))
+    case None =>
+      if (allBotConfigs contains name) Future.successful(Disabled)
+      else Future.failed(new IllegalArgumentException(s"Unknown bot $name"))
     case Some(BotState(_, true, _, _)) => pingBot(name).transform {
       case Success(SessionPong) => Success(Running)
       case _ => Success(Crashed)
