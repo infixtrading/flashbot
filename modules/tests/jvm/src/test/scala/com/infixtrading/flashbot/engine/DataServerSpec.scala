@@ -91,5 +91,14 @@ class DataServerSpec extends WordSpecLike with Matchers {
 //      Await.result(rspStream.runForeach(println("foo", _)), timeout.duration)
       Await.ready(system.terminate(), 10 seconds)
     }
+
+    /**
+      * This test uses a DataSource that splits a hard coded seq of trades in two parts.
+      * The first part will be backfilled and the second part will be streamed to ingest.
+      * We should be able to request the entire uninterrupted trade stream in its original
+      * form when ingest and backfill is done.
+      */
+    "ingest and backfill trades" in {
+    }
   }
 }
