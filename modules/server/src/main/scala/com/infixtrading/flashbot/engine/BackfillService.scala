@@ -86,7 +86,8 @@ class BackfillService(session: SlickSession, path: DataPath,
         numInsertedTry <- (Backfills += newRow).asTry
         claimed <- numInsertedTry match {
           // Successful insert.
-          case Success(1) => DBIO.successful(true)
+          case Success(1) =>
+            DBIO.successful(true)
 
           case Success(0) =>
             val err = new RuntimeException("Programmer error")
@@ -117,7 +118,10 @@ class BackfillService(session: SlickSession, path: DataPath,
       hasClaimedOpt.onComplete {
         case Success(true) =>
           // We just claimed a path. Let's get to work!
-          runPage(now)
+          runPage(now) andThen {
+            case Failure(err) =>
+              log.error(err, s"An error occurred during backfill of $path")
+          }
         case Success(false) => // Ignore
         case Failure(err) =>
           log.error(err, "An error occurred during backfill scheduling for {}", path)
@@ -133,6 +137,9 @@ class BackfillService(session: SlickSession, path: DataPath,
     val fmt = path.fmt[T]
     implicit val itemEn = fmt.modelEn
     implicit val deltaEn = fmt.deltaEn
+
+    log.debug("Running backfill page for {}", path)
+
     session.db.run((for {
       // Fetch the selected claim. The negative of the claim id will be the bundle id.
       claim <- selectClaimed.result.head

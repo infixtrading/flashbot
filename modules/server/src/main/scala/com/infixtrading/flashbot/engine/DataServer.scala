@@ -286,16 +286,23 @@ class DataServer(dbConfig: Config,
           b.topic === path.topic && b.datatype === path.datatype)
         .result).runWith(Sink.seq)
 
+      backfills <- Slick.source(Backfills
+        .filter(b => b.source === path.source &&
+          b.topic === path.topic && b.datatype === path.datatype)
+        .result).runWith(Sink.seq)
+
+      bundleIds = bundles.map(_.id).toSet ++ backfills.map(_.bundle).toSet
+
       snapshots: Source[Wrap, NotUsed] = Slick
         .source(Snapshots
           .filter(x => (x.micros >= lookbackFromMicros) && (x.micros < toMicros))
-          .filter(x => x.bundle.inSet(bundles.map(_.id)))
+          .filter(x => x.bundle.inSet(bundleIds))
           .result)
 
       deltas: Source[Wrap, NotUsed] = Slick
         .source(Deltas
           .filter(x => (x.micros >= lookbackFromMicros) && (x.micros < toMicros))
-          .filter(x => x.bundle.inSet(bundles.map(_.id)))
+          .filter(x => x.bundle.inSet(bundleIds))
           .result)
 
     } yield snapshots

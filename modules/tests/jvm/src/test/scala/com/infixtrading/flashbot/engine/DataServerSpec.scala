@@ -15,6 +15,7 @@ import com.infixtrading.flashbot.engine.DataServer.{DataSelection, DataStreamReq
 import com.infixtrading.flashbot.models.core.Ladder
 import com.typesafe.config.ConfigFactory
 import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpecLike}
+import sources.TestBackfillDataSource
 
 import scala.concurrent.Await
 import scala.concurrent.duration._
@@ -99,6 +100,36 @@ class DataServerSpec extends WordSpecLike with Matchers {
       * form when ingest and backfill is done.
       */
     "ingest and backfill trades" in {
+
+      val config = FlashbotConfig.load.copy(
+        ingest = IngestConfig(
+          enabled = Seq("bitfinex/btc_usd/trades"),
+          backfill = Seq("bitfinex/btc_usd/trades"),
+          retention = Seq(Seq())
+        ),
+        sources = Map(
+          "bitfinex" -> DataSourceConfig("sources.TestBackfillDataSource",
+            Some(Seq("btc_usd")), Some(Seq("trades"))))
+      )
+
+      implicit val system = ActorSystem("system1", config.akka)
+      val dataServer = system.actorOf(DataServer.props(config))
+
+      implicit val timeout = Timeout(1 minute)
+      implicit val mat = ActorMaterializer()
+      implicit val ec = system.dispatcher
+
+      def fetchTrades = {
+        val fut = dataServer ? DataStreamReq(DataSelection("bitfinex/btc_usd/trades", Some(0), Some(Long.MaxValue)))
+        val rsp = Await.result(fut.mapTo[StreamResponse[MarketData[Trade]]], timeout.duration)
+        val src = rsp.toSource
+        Await.result(src.toMat(Sink.seq)(Keep.right).run, timeout.duration)
+      }
+
+      Thread.sleep(6000)
+      fetchTrades.map(_.data) shouldEqual TestBackfillDataSource.allTrades
+
+      Await.ready(system.terminate(), 10 seconds)
     }
   }
 }

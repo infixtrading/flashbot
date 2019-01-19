@@ -200,6 +200,7 @@ class DataSourceActor(session: SlickSession,
 
                         // Also start a backfill service for each matching path.
                         if (ingestConfig.backfillMatchers.exists(_.matches(path))) {
+                          log.debug(s"Launching BackfillService for {}", path)
                           context.actorOf(Props(new BackfillService(session, path, dataSource)))
                         }
 
@@ -238,18 +239,17 @@ class DataSourceActor(session: SlickSession,
                           // Group items and batch insert into database.
                           .groupedWithin(1000, 1000 millis)
                           .mapAsync(10) { states: Seq[ScanState] =>
+
                             for {
                               // Save the deltas
-                              a <- session.db.run(Deltas ++= states.drop(1).map(state =>
-                                  DeltaRow(bundleId, state.seqId, state.micros,
-                                    fmt.deltaEn(state.delta.get).pretty(Printer.noSpaces))
-                              ))
+                              a <- session.db.run(Deltas ++= states.filter(_.delta.isDefined)
+                                .map(state => DeltaRow(bundleId, state.seqId, state.micros,
+                                  fmt.deltaEn(state.delta.get).pretty(Printer.noSpaces))))
                               // Save the snapshots
-                              b <- session.db.run(Snapshots ++=
-                                states.filter(_.snapshot.isDefined).map(state =>
+                              b <- session.db.run(Snapshots ++= states
+                                .filter(_.snapshot.isDefined).map(state =>
                                   SnapshotRow(bundleId, state.seqId, state.micros,
-                                    fmt.modelEn(state.item).pretty(Printer.noSpaces))
-                                ))
+                                    fmt.modelEn(state.item).pretty(Printer.noSpaces))))
                             } yield states.last.seqId
                           }
                           // Clear ingested items from buffer.
