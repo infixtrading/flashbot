@@ -73,8 +73,6 @@ class DataSourceActor(session: SlickSession,
     if (filteredQueue.nonEmpty) Some(Ingest(filteredQueue)) else None
   }
 
-  def matchers: Set[String] = ingestConfig.enabled.toSet
-
   var itemBuffers = Map.empty[Long, Vector[MarketData[_]]]
 
   var subscriptions = Map.empty[DataPath, Set[ActorRef]]
@@ -118,7 +116,7 @@ class DataSourceActor(session: SlickSession,
           queue = full.map {
             case (dt, ts) =>
               (dt, ts.filter(topic =>
-                matchers.exists(_.matches(DataPath(srcKey, topic, dt)))))
+                ingestConfig.ingestMatchers.exists(_.matches(DataPath(srcKey, topic, dt)))))
           }
         } yield queue
 
@@ -126,7 +124,7 @@ class DataSourceActor(session: SlickSession,
           case Success(queue) =>
             // Send Ingest message to self if there's anything to ingest.
             if (ingestMsgOpt(queue).isEmpty) {
-              log.debug("Initial queue is empty for matchers: {}", matchers)
+              log.debug("Initial queue is empty for matchers: {}", ingestConfig.ingestMatchers)
             } else {
               log.debug(s"Beginning ingest for $srcKey")
             }
@@ -144,7 +142,8 @@ class DataSourceActor(session: SlickSession,
      * ==========
      */
     case Ingest(queue) =>
-      log.debug("Ingest action for {}: {}", srcKey, matchers.map(_.toString).mkString(","))
+      log.debug("Ingest action for {}: {}", srcKey,
+        ingestConfig.ingestMatchers.map(_.toString).mkString(","))
 
       // Take the first topic set and schedule
       queue.headOption match {
@@ -174,10 +173,10 @@ class DataSourceActor(session: SlickSession,
             val fut = dataSource.scheduleIngest(topicSet, dataType) match {
               case IngestOne(topic, delay) =>
                 scheduledTopics = Set(topic)
-                getStreams(Left(topic), delay, matchers.map(DataPath.parse))
+                getStreams(Left(topic), delay, ingestConfig.ingestMatchers)
               case IngestGroup(topics, delay) =>
                 scheduledTopics = topics
-                getStreams(Right(topics), delay, matchers.map(DataPath.parse))
+                getStreams(Right(topics), delay, ingestConfig.ingestMatchers)
             }
             val remainingTopics = topicSet -- scheduledTopics
             val newQueue =
@@ -199,8 +198,10 @@ class DataSourceActor(session: SlickSession,
                       case Success(bundleId) =>
                         log.info(s"Ingesting $path")
 
-                        // Also start a backfill service for each path.
-                        context.actorOf(Props(new BackfillService(session, path, dataSource)))
+                        // Also start a backfill service for each matching path.
+                        if (ingestConfig.backfillMatchers.exists(_.matches(path))) {
+                          context.actorOf(Props(new BackfillService(session, path, dataSource)))
+                        }
 
                         // Save bundle id for this path.
                         bundleIndex += (path ->
