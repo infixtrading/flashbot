@@ -57,13 +57,7 @@ class TradingEngineSpec extends WordSpecLike
       val config = FlashbotConfig.load
       val system = ActorSystem("System1", config.akka)
 
-      val dataServer = system.actorOf(Props(new DataServer(
-        config.db,
-        config.sources,
-        config.exchanges,
-        None,
-        useCluster = false
-      )))
+      val dataServer = system.actorOf(DataServer.props(config))
 
       val engine = system.actorOf(Props(new TradingEngine(
         "test",
@@ -194,9 +188,7 @@ class TradingEngineSpec extends WordSpecLike
 
       val now = Instant.now()
 
-      val dataServer = system.actorOf(Props(
-        new DataServer(config.db, config.sources, config.exchanges, None,
-          useCluster = false)), "data-server")
+      val dataServer = system.actorOf(DataServer.props(config), "data-server")
 
       val engine = system.actorOf(Props(
         new TradingEngine("test2", config.strategies, config.exchanges, config.bots,

@@ -650,6 +650,10 @@ object TradingEngine {
 
   def props(name: String, config: FlashbotConfig): Props =
     Props(new TradingEngine(name, config.strategies, config.exchanges,
-      config.bots, Right(DataServer.props(config))))
+      config.bots, Right(DataServer.props(config.noIngest))))
+
+  def props(name: String, config: FlashbotConfig, dataServer: ActorRef): Props =
+    Props(new TradingEngine(name, config.strategies, config.exchanges,
+      config.bots, Left(dataServer)))
 
 }
