@@ -1,7 +1,7 @@
 package com.infixtrading.flashbot.core
 
 import com.infixtrading.flashbot.core.FlashbotConfig.{DataSourceConfig, ExchangeConfig, IngestConfig, StaticBotsConfig}
-import com.infixtrading.flashbot.models.core.Position
+import com.infixtrading.flashbot.models.core.{DataPath, Position}
 import com.typesafe.config.{Config, ConfigFactory}
 import io.circe._
 import io.circe.config.syntax._
@@ -25,7 +25,17 @@ case class FlashbotConfig(`engine-root`: String,
 
 object FlashbotConfig {
 
-  case class IngestConfig(enabled: Seq[String], backfill: Seq[String], retention: Seq[Seq[String]])
+  case class IngestConfig(enabled: Seq[String], backfill: Seq[String], retention: Seq[Seq[String]]) {
+    def ingestMatchers: Set[DataPath] = enabled.toSet.map(DataPath.parse)
+    def backfillMatchers: Set[DataPath] = backfill.toSet.map(DataPath.parse)
+
+    def filterIngestSources(sources: Set[String]) = sources.filter(src =>
+      ingestMatchers.exists(_.matches(s"$src/*/*")))
+    def filterBackfillSources(sources: Set[String]) = sources.filter(src =>
+      backfillMatchers.exists(_.matches(s"$src/*/*")))
+    def filterSources(sources: Set[String]) =
+      filterIngestSources(sources) ++ filterBackfillSources(sources)
+  }
 
   case class ExchangeConfig(`class`: String, params: Option[Json], pairs: Option[Seq[String]])
 

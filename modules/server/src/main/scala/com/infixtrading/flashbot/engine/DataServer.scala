@@ -134,27 +134,27 @@ class DataServer(dbConfig: Config,
       log.debug("SQL tables ready")
   }
 
+  def activeSources: Set[String] = ingestConfig.filterSources(configs.keySet)
 
   // Map of child DataSourceActors that this DataServer supervises.
-  var localDataSourceActors: Map[String, ActorRef] = configs.map {
-    case (key, config) =>
-      // Create child DataSource actor with custom back-off supervision.
-      val props = BackoffSupervisor.props(Backoff.onFailure(
-        Props(new DataSourceActor(
-          slickSession, key, config, exchangeConfigs.get(key), ingestConfig)),
-        key,
-        minBackoff = 1 second,
-        maxBackoff = 1 minute,
-        randomFactor = 0.2,
-        maxNrOfRetries = 60
-      ).withAutoReset(30 seconds))
+  var localDataSourceActors: Map[String, ActorRef] = activeSources.map { key =>
+    // Create child DataSource actor with custom back-off supervision.
+    val props = BackoffSupervisor.props(Backoff.onFailure(
+      Props(new DataSourceActor(
+        slickSession, key, configs(key), exchangeConfigs.get(key), ingestConfig)),
+      key,
+      minBackoff = 1 second,
+      maxBackoff = 1 minute,
+      randomFactor = 0.2,
+      maxNrOfRetries = 60
+    ).withAutoReset(30 seconds))
 
-      // When/if the supervisor stops, we should alert.
-      val ref = context.actorOf(props, key)
-      context.watchWith(ref, DataSourceSupervisorTerminated(key))
+    // When/if the supervisor stops, we should alert.
+    val ref = context.actorOf(props, key)
+    context.watchWith(ref, DataSourceSupervisorTerminated(key))
 
-      key -> ref
-  }
+    key -> ref
+  }.toMap
 
   var remoteDataServers = Map.empty[ActorPath, ActorRef]
 
