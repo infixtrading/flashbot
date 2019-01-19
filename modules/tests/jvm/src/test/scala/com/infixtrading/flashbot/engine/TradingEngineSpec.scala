@@ -49,7 +49,7 @@ class TradingEngineSpec extends WordSpecLike
 
   override def afterAll() = {
     // Delete the engine root
-    rmRf(new File(FlashbotConfig.load.engineRoot))
+    rmRf(new File(FlashbotConfig.load.`engine-root`))
   }
 
   "TradingEngine" should {

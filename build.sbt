@@ -57,8 +57,7 @@ lazy val dataStores = List(
 
 lazy val configDeps = List(
   "com.typesafe" % "config" % "1.3.2" % Compile,
-  "io.circe" %% "circe-config" % "0.5.0",
-  "com.github.pureconfig" %% "pureconfig" % "0.10.1"
+  "io.circe" %% "circe-config" % "0.5.0"
 )
 
 lazy val serviceDeps = configDeps ++ List(
