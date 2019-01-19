@@ -183,6 +183,8 @@ class TradingEngineSpec extends WordSpecLike
       val fb = new FlashbotClient(engine)
       fb.botStatus("scanner1") shouldBe Running
       fb.botStatus("scanner2") shouldBe Disabled
+
+      Await.ready(system.terminate(), 10 seconds)
     }
 
     "be profitable when using lookahead" in {
