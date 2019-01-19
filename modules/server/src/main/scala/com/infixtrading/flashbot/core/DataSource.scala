@@ -57,11 +57,13 @@ abstract class DataSource {
 
   /**
     * Given a cursor and a topic/type, returns a page of results for the path and a cursor to the
-    * next reverse chronological page (i.e. with older data).
+    * next reverse chronological page (i.e. with older data). The return type also includes a delay
+    * to wait until the next page will be requested, in case throttling is necessary.
     */
   def backfillPage[T](topic: String, datatype: DataType[T], cursor: Option[String])
                      (implicit ctx: ActorContext, mat: ActorMaterializer)
-      : Future[(Seq[(Long, T)], String, Duration)]
+      : Future[(Seq[(Long, T)], String, Duration)] =
+    Future.failed(new NotImplementedError("This data source does not support backfills."))
 
   /**
     * If this data source emits a custom, non-built-in data type, the type needs to be declared
