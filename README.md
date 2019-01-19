@@ -13,6 +13,7 @@ Market data servers (the `DataServer` actor) connect to outside data sources suc
 * Works with any JDBC compatible database
 * Delta compression for efficient streaming and storage of order books
 * Data retention policies
+* Automatic backfilling of historical data
 * Tolerant to network and websocket failures (i.e. it manages the retries)
 
 The other main actor is the `TradingEngine`. It handles things such as:
