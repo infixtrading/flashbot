@@ -39,7 +39,7 @@ class CoinbaseMarketDataSource extends DataSource {
                              (implicit ctx: ActorContext, mat: ActorMaterializer) = {
 
     val log = ctx.system.log
-    log.info("STARTING INGEST GROUP")
+    log.debug("Starting ingest group {}, {}", topics, datatype)
 
     val (jsonRef, jsonSrc) = Source
       .actorRef[Json](Int.MaxValue, OverflowStrategy.fail)
@@ -53,7 +53,6 @@ class CoinbaseMarketDataSource extends DataSource {
       }
 
       override def onMessage(message: String) = {
-        log.info(message)
         parse(message) match {
           case Left(err) =>
             log.error(err.underlying, "Parsing error in Coinbase Pro Websocket: {}", err.message)
@@ -100,60 +99,60 @@ class CoinbaseMarketDataSource extends DataSource {
             }
           """.pretty(Printer.noSpaces)
           // Send the subscription message
+          log.debug("Sending message: {}", strMsg)
           client.send(strMsg)
         }(ExecutionContext.global)
 
         val snapshotPromises = topics.map(_ -> Promise[StreamItem]).toMap
 
-        jsonSrc
-          // Complete the promise as soon as we have a "subscriptions" event
-          .alsoTo(Sink.foreach { _ =>
-            if (!responsePromise.isCompleted) {
-              responsePromise.success(eventRefs.map {
-                case (topic, (ref, eventSrc)) =>
-                  val snapshotSrc = Source.fromFuture(snapshotPromises(topic).future)
-                  val (done, src: Source[(Long, T), NotUsed]) = eventSrc
-                    .mergeSorted(snapshotSrc)(streamItemOrdering)
-                    .via(util.stream.deDupeBy(_.seq))
-                    .dropWhile(!_.isBook)
-                    .scan[Option[StreamItem]](None) {
-                      case (None, item) if item.isBook => Some(item)
-                      case (Some(memo), item) if !item.isBook => Some(item.copy(data =
-                        Left(memo.book.processOrderEvent(item.event))))
-                    }
-                    .collect { case Some(item) => (item.micros, item.book.asInstanceOf[T]) }
-                    .watchTermination()(Keep.right).preMaterialize()
-                  done.onComplete(_ => {
-                    ref ! PoisonPill
-                  })(ctx.dispatcher)
-                  topic -> src
-              })
-            }
-          })
-
-          // Drop everything except for book events
-          .filter(BookEventTypes contains eventType(_))
-
-          // Map to StreamItem
-          .map[StreamItem] { json =>
-            val unparsed = json.as[UnparsedAPIOrderEvent].right.get
-            val orderEvent = unparsed.toOrderEvent
-            StreamItem(unparsed.sequence.get, unparsed.micros, Right(orderEvent))
+        // Complete the promise as soon as we have a "subscriptions" event
+        jsonSrc.alsoTo(Sink.foreach { _ =>
+          if (!responsePromise.isCompleted) {
+            responsePromise.success(eventRefs.map {
+              case (topic, (ref, eventSrc)) =>
+                val snapshotSrc = Source.fromFuture(snapshotPromises(topic).future)
+                val (done, src: Source[(Long, T), NotUsed]) = eventSrc
+                  .mergeSorted(snapshotSrc)(streamItemOrdering)
+                  .via(util.stream.deDupeBy(_.seq))
+                  .dropWhile(!_.isBook)
+                  .scan[Option[StreamItem]](None) {
+                    case (None, item) if item.isBook => Some(item)
+                    case (Some(memo), item) if !item.isBook => Some(item.copy(data =
+                      Left(memo.book.processOrderEvent(item.event))))
+                  }
+                  .collect { case Some(item) => (item.micros, item.book.asInstanceOf[T]) }
+                  .watchTermination()(Keep.right).preMaterialize()
+                done.onComplete(_ => {
+                  ref ! PoisonPill
+                })(ctx.dispatcher)
+                topic -> src
+            })
           }
+        })
 
-          // Send to event ref
-          .runForeach { item => eventRefs(item.event.product)._1 ! item }
+        // Drop everything except for book events
+        .filter(BookEventTypes contains eventType(_))
 
-          // Shut down all event refs when stream completes.
-          .onComplete { _ =>
-            eventRefs.values.map(_._1).foreach(_ ! PoisonPill)
-            try {
-              client.close()
-            } catch {
-              case err: Throwable =>
-                log.warning("An error occured while closing the Coinbase WebSocket connection: {}", err)
-            }
-          }(ctx.dispatcher)
+        // Map to StreamItem
+        .map[StreamItem] { json =>
+          val unparsed = json.as[UnparsedAPIOrderEvent].right.get
+          val orderEvent = unparsed.toOrderEvent
+          StreamItem(unparsed.sequence.get, unparsed.micros, Right(orderEvent))
+        }
+
+        // Send to event ref
+        .runForeach { item => eventRefs(item.event.product)._1 ! item }
+
+        // Shut down all event refs when stream completes.
+        .onComplete { _ =>
+          eventRefs.values.map(_._1).foreach(_ ! PoisonPill)
+          try {
+            client.close()
+          } catch {
+            case err: Throwable =>
+              log.warning("An error occured while closing the Coinbase WebSocket connection: {}", err)
+          }
+        }(ctx.dispatcher)
 
 
       case LadderType(_) =>
@@ -182,10 +181,18 @@ class CoinbaseMarketDataSource extends DataSource {
           if (!responsePromise.isCompleted) {
             responsePromise.success(eventRefs.map {
               case (topic, (ref, eventSrc)) =>
-                topic -> eventSrc.map {
-                  case StreamItem(seq, micros, Right(om: OrderMatch)) =>
-                    (micros, om.toTrade.asInstanceOf[T])
-                }
+                val (done, src) = eventSrc
+                  .map {
+                    case StreamItem(seq, micros, Right(om: OrderMatch)) =>
+                      (micros, om.toTrade.asInstanceOf[T])
+                  }
+                  .watchTermination()(Keep.right)
+                  .preMaterialize()
+
+                done.onComplete(_ => {
+                  ref ! PoisonPill
+                })(ctx.dispatcher)
+                topic -> src
             })
           }
         })
@@ -204,7 +211,6 @@ class CoinbaseMarketDataSource extends DataSource {
         .runForeach { item => eventRefs(item.event.product)._1 ! item }
 
         .onComplete { _ =>
-          log.debug("STREAM COMPLETE")
           eventRefs.values.map(_._1).foreach(_ ! PoisonPill)
           try {
             client.close()

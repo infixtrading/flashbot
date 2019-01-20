@@ -110,11 +110,6 @@ class DataSourceActor(session: SlickSession,
         val ingestQueue = for {
           topics <- topicsFut
           full = types.toSeq.map { case (dataType, _) => (dataType, topics) }
-          _ = {
-            log.debug("All topics: {}", topics)
-            log.debug("Types: {}", types)
-            log.debug("Full queue: {}", full)
-          }
           queue = full.map {
             case (dt, ts) =>
               (dt, ts.filter(topic =>
@@ -206,13 +201,9 @@ class DataSourceActor(session: SlickSession,
                           context.actorOf(Props(new BackfillService(session, path, dataSource)))
                         }
 
-                        log.info("=== A")
-
                         // Save bundle id for this path.
                         bundleIndex += (path ->
                           (bundleIndex.getOrElse(path, Seq.empty[Long]) :+ bundleId))
-
-                        log.info("=== B")
 
                         subscriptions += (path -> Set.empty[ActorRef])
 
@@ -225,7 +216,6 @@ class DataSourceActor(session: SlickSession,
                           // Buffer items.
                           .alsoTo(Sink.foreach {
                             case ((micros, item), seqId) =>
-                              log.info("FOOBAR DUDEBAR")
                               self ! BaseMarketData(item, path, micros, bundleId, seqId)
                           })
                           // Scan to determine the deltas and snapshots to write on every iteration.
@@ -261,7 +251,6 @@ class DataSourceActor(session: SlickSession,
                           }
                           // Clear ingested items from buffer.
                           .runWith(Sink.foreach { lastIngestedSeqId =>
-                            log.info("=== FINAL?")
                             self ! DataIngested(bundleId, lastIngestedSeqId)
                           })
                           // When the source is terminated, we "close" the bundle. Once a bundle is
