@@ -405,7 +405,7 @@ lazy val server = flashbotModule("server", previousFBVersion).settings(
       "com.lightbend.akka" %% "akka-stream-alpakka-slick" % "1.0-M1",
       "com.h2database" % "h2" % "1.4.192"
     ))
-).dependsOn(core)
+).dependsOn(core, client)
 
 lazy val client = flashbotModule("client", previousFBVersion).dependsOn(core)
 

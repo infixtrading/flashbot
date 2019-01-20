@@ -5,8 +5,8 @@ import akka.stream.Materializer
 import akka.stream.scaladsl.Source
 import com.infixtrading.flashbot.core.MarketData.BaseMarketData
 import com.infixtrading.flashbot.core.{DataSource, MarketData, TimeSeriesTap}
-import com.infixtrading.flashbot.engine.DataServer.DataSelection
 import com.infixtrading.flashbot.engine.{SessionLoader, Strategy, TradingSession}
+import com.infixtrading.flashbot.models.api.DataSelection
 import com.infixtrading.flashbot.models.core.Portfolio
 import io.circe.generic.semiauto._
 

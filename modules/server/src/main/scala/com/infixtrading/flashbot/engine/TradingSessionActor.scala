@@ -19,11 +19,10 @@ import com.infixtrading.flashbot.util.stream._
 import com.infixtrading.flashbot.util._
 import com.infixtrading.flashbot.util.time.currentTimeMicros
 import com.infixtrading.flashbot.core.{DataSource, _}
-import com.infixtrading.flashbot.engine.DataServer.DataSelection
 import com.infixtrading.flashbot.engine.TradingSession._
 import com.infixtrading.flashbot.engine.TradingSessionActor.{SessionPing, SessionPong, StartSession, StopSession}
 import com.infixtrading.flashbot.exchanges.Simulator
-import com.infixtrading.flashbot.models.api.{LogMessage, OrderTarget}
+import com.infixtrading.flashbot.models.api.{DataSelection, LogMessage, OrderTarget}
 import com.infixtrading.flashbot.models.core.{Account, DataPath, Market, Portfolio}
 import com.infixtrading.flashbot.report.Report.ReportError
 import com.infixtrading.flashbot.report.ReportEvent._

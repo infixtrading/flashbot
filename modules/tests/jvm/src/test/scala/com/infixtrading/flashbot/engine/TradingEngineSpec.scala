@@ -11,7 +11,7 @@ import akka.stream.ActorMaterializer
 import akka.stream.scaladsl.Sink
 import akka.testkit.{ImplicitSender, TestKit}
 import akka.util.Timeout
-import com.infixtrading.flashbot.client.scala.client.FlashbotClient
+import com.infixtrading.flashbot.client.FlashbotClient
 import com.infixtrading.flashbot.core.FlashbotConfig.{BotConfig, StaticBotsConfig}
 import com.infixtrading.flashbot.core.{BalancePoint, FlashbotConfig, Paper, Trade}
 import com.infixtrading.flashbot.util.{files, time}

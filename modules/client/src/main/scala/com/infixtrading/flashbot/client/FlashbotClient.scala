@@ -1,12 +1,16 @@
-package com.infixtrading.flashbot.client.scala.client
+package com.infixtrading.flashbot.client
 
-import akka.{Done, NotUsed}
+import java.time.Instant
+
+import akka.Done
 import akka.actor.ActorRef
 import akka.pattern.ask
 import akka.util.Timeout
 import com.infixtrading.flashbot.core.FlashbotConfig.BotConfig
-import com.infixtrading.flashbot.engine.NetworkSource
+import com.infixtrading.flashbot.core.MarketData
+import com.infixtrading.flashbot.engine.{NetworkSource, StreamResponse}
 import com.infixtrading.flashbot.models.api._
+import com.infixtrading.flashbot.models.core.{DataPath, TimeRange}
 import com.infixtrading.flashbot.report.Report
 
 import scala.concurrent.{Await, Future}
@@ -24,6 +28,9 @@ class FlashbotClient(engine: ActorRef, skipTouch: Boolean = false) {
   if (!skipTouch) {
     this.ping
   }
+
+  def pingAsync = req[Pong](Ping)
+  def ping: Pong = await[Pong](pingAsync)
 
   def configureBotAsync(id: String, config: BotConfig) = req[Done](ConfigureBot(id, config))
   def configureBot(id: String, config: BotConfig): Unit = await(configureBotAsync(id, config))
@@ -44,8 +51,30 @@ class FlashbotClient(engine: ActorRef, skipTouch: Boolean = false) {
     req[NetworkSource[Report]](SubscribeToReport(id)).map(_.toSource)
   def subscribeToReport(id: String) = await(subscribeToReportAsync(id))
 
-  def pingAsync = req[Pong](Ping)
-  def ping: Pong = await[Pong](pingAsync)
+  /**
+    * Returns a non-polling market data stream.
+    * If `from` is empty, use the beginning of time.
+    * if `to` is empty, sends up to the most recent data available.
+    */
+  def historicalMarketDataAsync[T](path: DataPath,
+                                   from: Option[Instant] = None,
+                                   to: Option[Instant] = None) =
+    {
+      println("Client is requesting historical data", path, from, to)
+
+      req[StreamResponse[MarketData[T]]](DataStreamReq(
+        DataSelection(path,
+          from.map(_.toEpochMilli * 1000).orElse[Long](Some(0)),
+          to.map(_.toEpochMilli * 1000).orElse[Long](Some(Long.MaxValue)))))
+    }
+
+  /**
+    * Returns a polling stream of live market data.
+    * `lookback` specifies the time duration of historical data to prepend to the live data.
+    */
+  def pollingMarketDataAsync[T](path: DataPath, lookback: Duration = 0.seconds) =
+    req[StreamResponse[MarketData[T]]](DataStreamReq(
+      DataSelection(path, Some(Instant.now.minusMillis(lookback.toMillis).toEpochMilli * 1000))))
 
   private def req[T](query: Any)(implicit tag: ClassTag[T]): Future[T] = (engine ? query).mapTo[T]
   private def await[T](fut: Future[T]): T = Await.result[T](fut, timeout.duration)

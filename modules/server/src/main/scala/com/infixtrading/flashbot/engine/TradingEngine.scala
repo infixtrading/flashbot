@@ -11,6 +11,7 @@ import akka.stream.scaladsl.{Keep, Sink, Source}
 import akka.stream.{ActorMaterializer, OverflowStrategy}
 import akka.util.Timeout
 import com.infixtrading.flashbot
+import com.infixtrading.flashbot.client.FlashbotClient
 import io.circe.Json
 import io.circe.syntax._
 import io.circe.literal._
@@ -91,7 +92,7 @@ class TradingEngine(engineId: String,
   bootEvents.foreach(log.debug("Boot event: {}", _))
 
   // Start the Grafana data source server
-  Http().bindAndHandle(GrafanaServer.routes(self), "localhost", grafana.port)
+  Http().bindAndHandle(GrafanaServer.routes(new FlashbotClient(self, skipTouch = true)), "localhost", grafana.port)
 
   self ! BootEvents(bootEvents)
 
@@ -379,6 +380,18 @@ class TradingEngine(engineId: String,
           }
           // Create and send response
           .map(PortfolioResponse) pipeTo sender
+
+      /**
+        * Proxy market data requests to the data server.
+        */
+      case req: DataStreamReq[_] =>
+        log.debug("Engine got data stream request {}", req)
+        (dataServer ? req)
+          .andThen { case x => log.debug("A {}", x) }
+          .mapTo[StreamResponse[_]]
+          .andThen { case x => log.debug("B {}", x) }
+          .map(_.rebuild)
+          .andThen { case x => log.debug("C {}", x) } pipeTo sender
 
       /**
         * To resolve a backtest query, we start a trading session in Backtest mode and collect

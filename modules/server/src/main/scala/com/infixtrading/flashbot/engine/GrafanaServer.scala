@@ -1,18 +1,27 @@
 package com.infixtrading.flashbot.engine
 
+import java.time.Instant
+
 import akka.actor.ActorRef
 import akka.http.scaladsl.model.{ContentTypes, HttpEntity}
 import akka.http.scaladsl.server.Route
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.model.StatusCodes._
-import com.infixtrading.flashbot.models.core.TimeRange
+import akka.stream.Materializer
+import akka.stream.scaladsl.Sink
+import com.infixtrading.flashbot.client.FlashbotClient
+import com.infixtrading.flashbot.core.{MarketData, Trade}
+import com.infixtrading.flashbot.models.core.{DataPath, TimeRange}
 import com.infixtrading.flashbot.util.time.TimeFmt
-import io.circe.{Decoder, Json}
+import io.circe.{Decoder, Json, JsonObject}
 import io.circe.syntax._
 import io.circe.generic.auto._
 import io.circe.generic.JsonCodec
 import io.circe.generic.extras._
 import de.heikoseeberger.akkahttpcirce.ErrorAccumulatingCirceSupport._
+
+import scala.concurrent.Future
+import scala.concurrent.ExecutionContext.Implicits.global
 
 object GrafanaServer {
 
@@ -30,9 +39,13 @@ object GrafanaServer {
   @JsonCodec case class Filter(key: String, operator: String, value: String)
 
   @ConfiguredJsonCodec case class Column(text: String, @JsonKey("type") Type: String)
-  @ConfiguredJsonCodec case class Table(columns: Seq[Column], rows: Seq[Seq[Json]], @JsonKey("type") Type: String)
 
-  @JsonCodec case class TimeSeries(target: String, datapoints: Seq[(Double, Long)])
+
+  @JsonCodec sealed trait DataSeries
+
+  @ConfiguredJsonCodec case class Table(columns: Seq[Column], rows: Seq[Seq[Json]], @JsonKey("type") Type: String) extends DataSeries
+
+  @JsonCodec case class TimeSeries(target: String, datapoints: Seq[(Double, Long)]) extends DataSeries
 
   @JsonCodec case class Annotation(name: String, datasource: String, iconColor: String, enable: Boolean, query: String)
 
@@ -43,29 +56,52 @@ object GrafanaServer {
 
   @JsonCodec case class AnnotationReqBody(range: TimeRange, annotation: Annotation, variables: Seq[String])
 
-  def routes(engine: ActorRef): Route = get {
+  def pathFromFilters(filters: Seq[Filter]): DataPath = {
+    val filterMap = filters.filter(_.operator == "=").map(f => f.key -> f.value).toMap
+    DataPath(
+      filterMap.getOrElse("source", "*"),
+      filterMap.getOrElse("topic", "*"),
+      filterMap.getOrElse("datatype", "*")
+    )
+  }
+
+  def routes(client: FlashbotClient)(implicit mat: Materializer): Route = get {
     pathSingleSlash {
       complete(HttpEntity(ContentTypes.`application/json`, "{}"))
     }
   } ~ post {
     path("search") {
       entity(as[SearchReqBody]) { body =>
-        val rsp = Seq("foo", "bar")
+        val rsp = Seq("trades")
         complete(HttpEntity(ContentTypes.`application/json`, rsp.asJson.noSpaces ))
       }
     } ~ path("query") {
       entity(as[QueryReqBody]) { body =>
-        val now = System.currentTimeMillis()
-        val tableRsp = Seq(Table(Seq(
-          Column("Time", "time"),
-          Column("Country", "string"),
-          Column("Population", "number")
-        ), Seq(
-          Seq(now.asJson, "SE".asJson, 123.asJson),
-          Seq((now + 1000).asJson, "US".asJson, 456.asJson),
-          Seq((now + 2000).asJson, "RU".asJson, 789.asJson)
-        ), "table"))
-        complete(HttpEntity(ContentTypes.`application/json`, tableRsp.asJson.noSpaces ))
+
+        println("Got request", body)
+
+        val fromMillis = body.range.start
+        val toMillis = body.range.end
+
+        val dataSetsFut = Future.sequence(body.targets.toIterator.map[Future[DataSeries]] { target =>
+
+          println("Processing target", target)
+
+          target.target match {
+            case "trades" =>
+              for {
+                streamRsp <- client.historicalMarketDataAsync[Trade](
+                  pathFromFilters(body.adhocFilters),
+                  Some(Instant.ofEpochMilli(fromMillis)),
+                  Some(Instant.ofEpochMilli(toMillis)))
+                tradeMDs <- streamRsp.toSource.take(body.maxDataPoints).runWith(Sink.seq)
+              } yield buildTable(tradeMDs.map(_.data.asJson.asObject.get))
+          }
+        })
+
+        onSuccess(dataSetsFut) { dataSets =>
+          complete(HttpEntity(ContentTypes.`application/json`, dataSets.toSeq.asJson.noSpaces ))
+        }
       }
     } ~ path("annotations") {
       entity(as[AnnotationReqBody]) { body =>
@@ -73,4 +109,35 @@ object GrafanaServer {
       }
     }
   }
+
+  def inferJsonType(key: String, value: Json): Option[String] = {
+    if ((key == "time" || key == "micros") && (value.isNull || value.isNumber)) {
+      Some("time")
+    } else if (value.isNumber) {
+      Some("number")
+    } else if (value.isString) {
+      Some("string")
+    } else None
+  }
+
+  def buildCols(objects: Seq[JsonObject]): Seq[Column] = {
+    var cols = Vector.empty[Column]
+    for (o <- objects.take(100)) {
+      for (key <- o.keys.toSet[String].diff(cols.toSet[Column].map(_.Type))) {
+        val jsonVal = o(key).get
+        val ty = inferJsonType(key, jsonVal)
+        if (ty.isDefined) {
+          cols :+ Column(key, ty.get)
+        }
+      }
+    }
+    cols
+  }
+
+  def buildTable(objects: Seq[JsonObject]): Table = {
+    var cols = buildCols(objects)
+    var rows: Seq[Seq[Json]] = objects.map(o => cols.map(col => o(col.text).asJson ))
+    Table(cols, rows, "table")
+  }
+
 }

@@ -13,8 +13,7 @@ import com.infixtrading.flashbot.core.FlashbotConfig._
 import com.infixtrading.flashbot.core.MarketData.BaseMarketData
 import com.infixtrading.flashbot.core.{DeltaFmt, DeltaFmtJson, FlashbotConfig, MarketData}
 import com.infixtrading.flashbot.db._
-import com.infixtrading.flashbot.engine.DataSourceActor.StreamLiveData
-import com.infixtrading.flashbot.models.api.RegisterDataServer
+import com.infixtrading.flashbot.models.api.{DataSelection, DataStreamReq, RegisterDataServer, StreamLiveData}
 import com.infixtrading.flashbot.models.core.{DataPath, TimeRange}
 import com.infixtrading.flashbot.util._
 import com.infixtrading.flashbot.util.stream._
@@ -36,28 +35,6 @@ import scala.util.{Random, Success}
   * if it manages a DataSourceActor which is ingesting that data stream.
   */
 object DataServer {
-
-  /**
-    * DataSelection is a description of a stream of market data.
-    *
-    * @param path the data path (source, topic, datatype).
-    * @param from the start time of data. If none, use the current time.
-    * @param to the end time of data. If none, stream indefinitely.
-    */
-  case class DataSelection(path: DataPath, from: Option[Long] = None, to: Option[Long] = None) {
-    def isPolling: Boolean = to.isEmpty
-    def timeRange: Option[TimeRange] =
-      for {
-        f <- from
-        t <- to
-      } yield TimeRange(f, t)
-  }
-
-  /**
-    * Request a data stream source from the cluster. Returns a [[CompressedSourceRef]] if the sender
-    * is remote and just a Source[ MarketData[_] ] if the sender is local.
-    */
-  case class DataStreamReq[T](selection: DataSelection) extends StreamRequest[T]
 
   /**
     * Used internally to remove data sources that don't respond to queries in time.

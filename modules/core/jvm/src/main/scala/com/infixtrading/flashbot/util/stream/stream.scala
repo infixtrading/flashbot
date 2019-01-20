@@ -9,6 +9,7 @@ import akka.stream.{ActorMaterializer, ActorMaterializerSettings, Supervision}
 import akka.util.Timeout
 import akka.pattern.ask
 import com.infixtrading.flashbot.engine.StreamResponse
+import com.infixtrading.flashbot.models.api.StreamRequest
 import com.infixtrading.flashbot.models.core.{DataAddress, TimeRange}
 
 import scala.concurrent.duration._
@@ -87,8 +88,6 @@ package object stream {
 
   implicit def toActorPath(dataAddress: DataAddress): ActorPath =
     ActorPath.fromString(dataAddress.host.get)
-
-  trait StreamRequest[T]
 
   implicit class StreamRequester(ref: ActorRef) {
     def <<?[T](req: StreamRequest[T]): Future[StreamResponse[T]] =

@@ -3,7 +3,7 @@ package com.infixtrading.flashbot.models.api
 import java.time.{Duration, Instant}
 
 import akka.actor.ActorRef
-import com.infixtrading.flashbot.models.core.TimeRange
+import com.infixtrading.flashbot.models.core.{DataPath, TimeRange}
 
 import scala.concurrent.duration.FiniteDuration
 
@@ -34,3 +34,17 @@ case class GetPortfolioHistory(from: Instant = Instant.EPOCH,
                                timeStep: Duration = Duration.ofDays(1)) extends TradingEngineQuery
 
 case class SubscribeToReport(botId: String) extends TradingEngineQuery
+
+
+sealed trait StreamRequest[T]
+
+/**
+  * Request a data stream source from the cluster. Returns a [[com.infixtrading.flashbot.engine.CompressedSourceRef]]
+  * if the sender is remote and just a Source[ MarketData[_] ] if the sender is local.
+  */
+case class DataStreamReq[T](selection: DataSelection) extends StreamRequest[T] with TradingEngineQuery
+
+/**
+  * Used to request data from a DataSourceActor.
+  */
+case class StreamLiveData[T](path: DataPath) extends StreamRequest[T]

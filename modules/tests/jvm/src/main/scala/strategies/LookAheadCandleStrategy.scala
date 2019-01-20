@@ -7,9 +7,8 @@ import akka.stream.scaladsl.{Keep, Sink, Source}
 import com.infixtrading.flashbot.core.Instrument.CurrencyPair
 import com.infixtrading.flashbot.core.MarketData.BaseMarketData
 import com.infixtrading.flashbot.core.{MarketData, TimeSeriesMixin, TimeSeriesTap}
-import com.infixtrading.flashbot.engine.DataServer.DataSelection
 import com.infixtrading.flashbot.engine.{SessionLoader, Strategy, TradingSession}
-import com.infixtrading.flashbot.models.api.OrderTarget
+import com.infixtrading.flashbot.models.api.{DataSelection, OrderTarget}
 import com.infixtrading.flashbot.models.core._
 import io.circe.{Decoder, Encoder}
 import io.circe.generic.auto._

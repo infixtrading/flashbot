@@ -13,7 +13,7 @@ import com.infixtrading.flashbot.core.FlashbotConfig._
 import com.infixtrading.flashbot.core.MarketData.BaseMarketData
 import com.infixtrading.flashbot.core._
 import com.infixtrading.flashbot.db._
-import com.infixtrading.flashbot.engine.DataServer.DataSelection
+import com.infixtrading.flashbot.models.api.StreamLiveData
 import com.infixtrading.flashbot.models.core.DataPath
 import com.infixtrading.flashbot.models.core.Slice.SliceId
 import com.infixtrading.flashbot.util.stream._
@@ -331,8 +331,6 @@ object DataSourceActor {
   case object Index
 
   case class DataBundle(path: DataPath, bundleId: Long, begin: Long, end: Option[Long])
-
-  case class StreamLiveData[T](path: DataPath) extends StreamRequest[T]
 
   // How often to save a snapshot to the db.
   val SnapshotInterval = 4 hours

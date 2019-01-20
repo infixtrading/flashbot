@@ -7,7 +7,7 @@ import com.infixtrading.flashbot.core.{DataSource, MarketData, Trade}
 import com.infixtrading.flashbot.engine.{SessionLoader, Strategy, TradingSession}
 import com.infixtrading.flashbot.models.core.Portfolio
 import com.infixtrading.flashbot.core.State.ops._
-import com.infixtrading.flashbot.engine.DataServer.DataSelection
+import com.infixtrading.flashbot.models.api.DataSelection
 import io.circe.generic.semiauto._
 
 import scala.concurrent.duration._

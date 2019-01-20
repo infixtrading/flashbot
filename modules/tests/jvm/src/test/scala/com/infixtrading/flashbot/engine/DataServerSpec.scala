@@ -11,7 +11,7 @@ import akka.testkit.{ImplicitSender, TestKit}
 import akka.util.Timeout
 import com.infixtrading.flashbot.core.{FlashbotConfig, MarketData, OrderBookTap, Trade}
 import com.infixtrading.flashbot.core.FlashbotConfig.{DataSourceConfig, IngestConfig}
-import com.infixtrading.flashbot.engine.DataServer.{DataSelection, DataStreamReq}
+import com.infixtrading.flashbot.models.api.{DataSelection, DataStreamReq}
 import com.infixtrading.flashbot.models.core.Ladder
 import com.typesafe.config.ConfigFactory
 import org.scalatest.concurrent.{Eventually, IntegrationPatience}
