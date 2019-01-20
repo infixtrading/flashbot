@@ -1,5 +1,7 @@
 package com.infixtrading.flashbot.models.core
 import com.infixtrading.flashbot.models.core.Order.Side
+import io.circe.{Decoder, Encoder, HCursor, Json}
+import io.circe.syntax._
 
 object Order {
   sealed trait Side
@@ -11,12 +13,50 @@ object Order {
   }
 
   object Side {
-    def parseSide(str: String): Side = str match {
+    implicit def apply(str: String): Side = str match {
       case "sell" => Sell
       case "buy" => Buy
     }
   }
 
+  sealed trait TickDirection {
+    override def toString = this match {
+      case Up => "up"
+      case Down => "down"
+    }
+
+    def makerSide: Side = this match {
+      case Up => Sell
+      case Down => Buy
+    }
+
+    def takerSide: Side = this match {
+      case Up => Buy
+      case Down => Sell
+    }
+  }
+  case object Up extends TickDirection
+  case object Down extends TickDirection
+
+  object TickDirection {
+    implicit def apply(str: String): TickDirection = str.toLowerCase match {
+      case "up" => Up
+      case "down" => Down
+    }
+
+    implicit val en: Encoder[TickDirection] = Encoder.encodeString.contramap(_.toString)
+    implicit val de: Decoder[TickDirection] = Decoder.decodeString.map(TickDirection.apply)
+
+    def ofMakerSide(side: Side): TickDirection = side match {
+      case Buy => Down
+      case Sell => Up
+    }
+
+    def ofTakerSide(side: Side): TickDirection = side match {
+      case Buy => Up
+      case Sell => Down
+    }
+  }
 
   trait Liquidity
   case object Maker extends Liquidity

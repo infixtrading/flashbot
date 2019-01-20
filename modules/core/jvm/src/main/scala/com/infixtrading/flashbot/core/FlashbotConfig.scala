@@ -1,6 +1,6 @@
 package com.infixtrading.flashbot.core
 
-import com.infixtrading.flashbot.core.FlashbotConfig.{DataSourceConfig, ExchangeConfig, IngestConfig, StaticBotsConfig}
+import com.infixtrading.flashbot.core.FlashbotConfig._
 import com.infixtrading.flashbot.models.core.{DataPath, Position}
 import com.typesafe.config.{Config, ConfigFactory}
 import io.circe._
@@ -18,6 +18,7 @@ case class FlashbotConfig(`engine-root`: String,
                           exchanges: Map[String, ExchangeConfig],
                           sources: Map[String, DataSourceConfig],
                           bots: StaticBotsConfig,
+                          grafana: GrafanaConfig,
                           akka: Config,
                           db: Config) {
   def noIngest = copy(ingest = ingest.copy(enabled = Seq.empty))
@@ -68,7 +69,9 @@ object FlashbotConfig {
     def enabledConfigs: Map[String, BotConfig] = configs.filterKeys(enabled contains _)
   }
 
-  final case class DataSourceConfig(`class`: String, topics: Option[Seq[String]], datatypes: Option[Seq[String]])
+  case class DataSourceConfig(`class`: String, topics: Option[Seq[String]], datatypes: Option[Seq[String]])
+
+  case class GrafanaConfig(port: Int)
 
 //  implicit val configEncoder: Encoder[FlashbotConfig] = deriveEncoder[FlashbotConfig]
 //  implicit val configDecoder: Decoder[FlashbotConfig] = deriveDecoder[FlashbotConfig]

@@ -37,10 +37,10 @@ final case class OrderMatch(tradeId: Long,
                             micros: Long,
                             size: Double,
                             price: Double,
-                            side: Side,
+                            direction: TickDirection,
                             makerOrderId: String,
                             orderId: String) extends OrderEvent {
-  def toTrade: Trade = Trade(tradeId.toString, micros, price, size, side)
+  def toTrade: Trade = Trade(tradeId.toString, micros, price, size, direction)
 }
 
 final case class OrderReceived(orderId: String,

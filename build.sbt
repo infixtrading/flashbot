@@ -31,8 +31,9 @@ lazy val networkDeps = List(
 
   "org.java-websocket" % "Java-WebSocket" % "1.3.9",
   "com.softwaremill.sttp" %% "core" % "1.5.7",
+  "com.softwaremill.sttp" %% "okhttp-backend" % "1.5.7",
 
-  "de.heikoseeberger" %% "akka-http-circe" % "1.20.0",
+  "de.heikoseeberger" %% "akka-http-circe" % "1.24.3",
 
   // Pusher
   "com.pusher" % "pusher-java-client" % "1.8.1"
@@ -43,7 +44,8 @@ lazy val jsonDeps = List(
   "io.circe" %% "circe-generic",
   "io.circe" %% "circe-parser",
   "io.circe" %% "circe-optics",
-  "io.circe" %% "circe-literal"
+  "io.circe" %% "circe-literal",
+  "io.circe" %% "circe-generic-extras"
 ).map(_ % fbCirceVersion)
 
 lazy val dataStores = List(

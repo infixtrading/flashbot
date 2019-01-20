@@ -119,6 +119,8 @@ class BackfillService(session: SlickSession, path: DataPath,
         case Success(true) =>
           // We just claimed a path. Let's get to work!
           runPage(now) andThen {
+            case Success(data) =>
+              log.debug("Backfilled data: {}", data)
             case Failure(err) =>
               log.error(err, s"An error occurred during backfill of $path")
           }
@@ -145,10 +147,40 @@ class BackfillService(session: SlickSession, path: DataPath,
       claim <- selectClaimed.result.head
 
       // Request the data seq, next cursor, and delay
-      pageResult <- DBIO.from(
+      (data, nextCursorOpt) <- DBIO.from(
         dataSource.backfillPage(claim.topic, path.dataTypeInstance[T], claim.cursor))
 
-      rowsUpdated <- pageResult match {
+      // We got some data from the backfill. Let's insert it and schedule the next page.
+      // Find the earliest seqid for this bundle. Only look at snapshots. There should
+      // never be backfill deltas that predate the earliest snapshot.
+      earliestSeqIdOpt <- Snapshots
+        .filter(_.bundle === claim.bundle)
+        .map(_.seqid)
+        .result.headOption
+      seqIdBound = earliestSeqIdOpt.getOrElse(0L)
+      seqIdStart: Long = seqIdBound - data.size
+
+      // Insert the snapshot
+      _ <- data.headOption.map {
+        case (micros, item) => Snapshots +=
+          SnapshotRow(claim.bundle, seqIdStart, micros,
+            item.asJson.pretty(Printer.noSpaces))
+      }.getOrElse(DBIO.successful(0))
+
+      // Build and insert the deltas
+      _ <- Deltas ++= data.zipWithIndex.toIterator
+        .scanLeft[(Option[T], Option[DeltaRow])]((None, None)) {
+          case ((None, _), ((_, item), i)) => (Some(item), None)
+          case ((Some(prev), _), ((micros, item), i)) =>
+            val delta = fmt.diff(prev, item)
+            val deltaRow = DeltaRow(claim.bundle, seqIdStart + i, micros,
+              delta.asJson.pretty(Printer.noSpaces))
+            (Some(item), Some(deltaRow))
+        }.collect {
+          case (_, Some(deltaRow)) => deltaRow
+        }.toSeq
+
+      rowsUpdated <- nextCursorOpt match {
         // Base case. If page result is None, then the backfill is complete.
         case None =>
           log.info(s"Backfill of $path has completed.")
@@ -156,38 +188,7 @@ class BackfillService(session: SlickSession, path: DataPath,
             .map(bf => (bf.claimedBy, bf.claimedAt, bf.cursor, bf.nextPageAt))
             .update(None, None, None, None)
 
-        // We got some data from the backfill. Let's insert it and schedule the next page.
-        case Some((data, nextCursor, delay)) => for {
-
-          // Find the earliest seqid for this bundle. Only look at snapshots. There should
-          // never be backfill deltas that predate the earliest snapshot.
-          earliestSeqIdOpt <- Snapshots
-            .filter(_.bundle === claim.bundle)
-            .map(_.seqid)
-            .result.headOption
-          seqIdBound = earliestSeqIdOpt.getOrElse(0L)
-          seqIdStart: Long = seqIdBound - data.size
-
-          // Insert the snapshot
-          _ <- data.headOption.map {
-            case (micros, item) => Snapshots +=
-              SnapshotRow(claim.bundle, seqIdStart, micros,
-                item.asJson.pretty(Printer.noSpaces))
-          }.getOrElse(DBIO.successful(0))
-
-          // Build and insert the deltas
-          _ <- Deltas ++= data.zipWithIndex.toIterator
-            .scanLeft[(Option[T], Option[DeltaRow])]((None, None)) {
-              case ((None, _), ((_, item), i)) => (Some(item), None)
-              case ((Some(prev), _), ((micros, item), i)) =>
-                val delta = fmt.diff(prev, item)
-                val deltaRow = DeltaRow(claim.bundle, seqIdStart + i, micros,
-                  delta.asJson.pretty(Printer.noSpaces))
-                (Some(item), Some(deltaRow))
-            }.collect {
-              case (_, Some(deltaRow)) => deltaRow
-            }.toSeq
-
+        case Some((nextCursor, delay)) => for {
           // Update the backfill row. Release the claim. Update the cursor and delay.
           updatedNum <- selectClaimed
             .map(bf => (bf.claimedBy, bf.claimedAt, bf.cursor, bf.nextPageAt))
@@ -208,7 +209,7 @@ class BackfillService(session: SlickSession, path: DataPath,
 
       }
 
-    } yield rowsUpdated).transactionally)
+    } yield data).transactionally)
   }
 
 }

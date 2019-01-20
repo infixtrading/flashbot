@@ -4,6 +4,7 @@ import java.time.Instant
 
 import akka.Done
 import akka.actor.{ActorLogging, ActorRef, ActorSystem, PoisonPill, Props, Status}
+import akka.http.scaladsl.Http
 import akka.pattern.{ask, pipe}
 import akka.persistence._
 import akka.stream.scaladsl.{Keep, Sink, Source}
@@ -14,7 +15,7 @@ import io.circe.Json
 import io.circe.syntax._
 import io.circe.literal._
 import io.circe.parser.parse
-import com.infixtrading.flashbot.core.FlashbotConfig.{BotConfig, ExchangeConfig, StaticBotsConfig}
+import com.infixtrading.flashbot.core.FlashbotConfig.{BotConfig, ExchangeConfig, GrafanaConfig, StaticBotsConfig}
 import com.infixtrading.flashbot.core._
 import com.infixtrading.flashbot.engine.TradingSessionActor.{SessionPing, SessionPong, StartSession, StopSession}
 import com.infixtrading.flashbot.util.time.currentTimeMicros
@@ -39,7 +40,8 @@ class TradingEngine(engineId: String,
                     strategyClassNames: Map[String, String],
                     exchangeConfigs: Map[String, ExchangeConfig],
                     staticBotsConfig: StaticBotsConfig,
-                    dataServerInfo: Either[ActorRef, Props])
+                    dataServerInfo: Either[ActorRef, Props],
+                    grafana: GrafanaConfig)
   extends PersistentActor with ActorLogging {
 
   private implicit val system: ActorSystem = context.system
@@ -87,6 +89,9 @@ class TradingEngine(engineId: String,
 
   log.info("TradingEngine '{}' started at {}", engineId, bootRsp.micros)
   bootEvents.foreach(log.debug("Boot event: {}", _))
+
+  // Start the Grafana data source server
+  Http().bindAndHandle(GrafanaServer.routes(self), "localhost", grafana.port)
 
   self ! BootEvents(bootEvents)
 
@@ -650,10 +655,10 @@ object TradingEngine {
 
   def props(name: String, config: FlashbotConfig): Props =
     Props(new TradingEngine(name, config.strategies, config.exchanges,
-      config.bots, Right(DataServer.props(config.noIngest))))
+      config.bots, Right(DataServer.props(config.noIngest)), config.grafana))
 
   def props(name: String, config: FlashbotConfig, dataServer: ActorRef): Props =
     Props(new TradingEngine(name, config.strategies, config.exchanges,
-      config.bots, Left(dataServer)))
+      config.bots, Left(dataServer), config.grafana))
 
 }

@@ -6,7 +6,7 @@ import akka.stream.ActorMaterializer
 import akka.stream.scaladsl.Source
 import com.infixtrading.flashbot.core.DataType.TradesType
 import com.infixtrading.flashbot.core._
-import com.infixtrading.flashbot.models.core.Order.{Buy, Sell}
+import com.infixtrading.flashbot.models.core.Order.{Buy, Down, Sell, Up}
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
@@ -16,7 +16,7 @@ object TestBackfillDataSource {
   val MicrosPerMinute: Long = 60L * 1000000
   val nowMicros = System.currentTimeMillis() * 1000
   val allTrades = (1 to 120) map { i =>
-    Trade(i.toString, nowMicros + i * MicrosPerMinute, i, i, if (i % 2 == 0) Buy else Sell)
+    Trade(i.toString, nowMicros + i * MicrosPerMinute, i, i, if (i % 2 == 0) Up else Down)
   }
 
   val (_historicalTrades, liveTrades) = allTrades.splitAt(85)
@@ -42,8 +42,7 @@ class TestBackfillDataSource extends DataSource {
     val count: Int = cursor.map(_.toInt).getOrElse(0)
     val page = historicalTrades.dropRight(count).takeRight(batchSize)
       .map(t => (t.micros, t.asInstanceOf[T]))
-    Future.successful(
-      if (page.isEmpty) None
-      else Some((page, (count + batchSize).toString, 100 millis)))
+    val isDone = count + batchSize >= historicalTrades.size
+    Future.successful((page, if (isDone) None else Some(((count + batchSize).toString, 100 millis))))
   }
 }

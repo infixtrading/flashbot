@@ -62,7 +62,7 @@ abstract class DataSource {
     */
   def backfillPage[T](topic: String, datatype: DataType[T], cursor: Option[String])
                      (implicit ctx: ActorContext, mat: ActorMaterializer)
-      : Future[Option[(Seq[(Long, T)], String, Duration)]] =
+      : Future[(Seq[(Long, T)], Option[(String, Duration)])] =
     Future.failed(new NotImplementedError("This data source does not support backfills."))
 
   /**

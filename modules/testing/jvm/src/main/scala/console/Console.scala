@@ -8,7 +8,7 @@ import akka.stream.scaladsl.{Keep, Source}
 import com.infixtrading.flashbot.core.Trade
 import com.infixtrading.flashbot.engine.TimeLog
 import com.infixtrading.flashbot.engine.TimeLog.TimeLog
-import com.infixtrading.flashbot.models.core.Order.{Buy, Sell}
+import com.infixtrading.flashbot.models.core.Order.{Buy, Down, Sell, Up}
 
 import scala.concurrent.duration._
 
@@ -20,7 +20,7 @@ object Console {
   val MicrosPerMinute: Long = 60L * 1000000
 
   val trades: Seq[Trade] = (1 to 1440) map { i =>
-    Trade(i.toString, nowMicros + i * MicrosPerMinute, i, i, if (i % 2 == 0) Buy else Sell)
+    Trade(i.toString, nowMicros + i * MicrosPerMinute, i, i, if (i % 2 == 0) Up else Down)
   }
 
   def tradeSrc(implicit mat: ActorMaterializer): (UniqueKillSwitch, Source[Trade, NotUsed]) =

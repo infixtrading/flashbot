@@ -5,7 +5,7 @@ import akka.stream.ActorMaterializer
 import akka.stream.scaladsl.Source
 import com.infixtrading.flashbot.core.DataType.TradesType
 import com.infixtrading.flashbot.core._
-import com.infixtrading.flashbot.models.core.Order.{Buy, Sell}
+import com.infixtrading.flashbot.models.core.Order.{Buy, Down, Sell, Up}
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
@@ -19,7 +19,7 @@ class TestDataSource extends DataSource {
     case TradesType =>
       val nowMicros = System.currentTimeMillis() * 1000
       val src: Source[(Long, T), NotUsed] = Source((1 to 120) map { i =>
-        Trade(i.toString, nowMicros + i * MicrosPerMinute, i, i, if (i % 2 == 0) Buy else Sell)
+        Trade(i.toString, nowMicros + i * MicrosPerMinute, i, i, if (i % 2 == 0) Up else Down)
       }) map (t => (t.micros, t.asInstanceOf[T]))
       Future.successful(src.throttle(1, 50 millis))
   }

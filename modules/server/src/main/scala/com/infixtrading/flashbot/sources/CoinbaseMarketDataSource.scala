@@ -10,10 +10,11 @@ import com.infixtrading.flashbot.core.DataSource.IngestGroup
 import com.infixtrading.flashbot.core.DataType.{LadderType, OrderBookType, TradesType}
 import com.infixtrading.flashbot.core.Instrument.CurrencyPair
 import com.infixtrading.flashbot.core._
-import com.infixtrading.flashbot.models.core.Order.{OrderType, Side}
+import com.infixtrading.flashbot.models.core.Order.{OrderType, Side, TickDirection}
 import com.infixtrading.flashbot.models.core.OrderBook
 import com.infixtrading.flashbot.util.time.TimeFmt
 import com.infixtrading.flashbot.util
+import com.softwaremill.sttp.Uri.QueryFragment.KeyValue
 import io.circe.generic.JsonCodec
 import io.circe.{Json, Printer}
 import io.circe.parser._
@@ -21,6 +22,8 @@ import io.circe.literal._
 import io.circe.syntax._
 import org.java_websocket.client.WebSocketClient
 import org.java_websocket.handshake.ServerHandshake
+import com.softwaremill.sttp._
+import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 
 import scala.concurrent.{ExecutionContext, Future, Promise}
 import scala.concurrent.duration._
@@ -29,6 +32,8 @@ import scala.language.postfixOps
 class CoinbaseMarketDataSource extends DataSource {
 
   import CoinbaseMarketDataSource._
+
+  implicit val okHttpBackend = OkHttpFutureBackend()
 
   override def scheduleIngest(topics: Set[String], dataType: String) = {
     println("Scheduling")
@@ -58,7 +63,6 @@ class CoinbaseMarketDataSource extends DataSource {
             log.error(err.underlying, "Parsing error in Coinbase Pro Websocket: {}", err.message)
             jsonRef ! PoisonPill
           case Right(jsonValue) =>
-            log.info("JSON value")
             jsonRef ! jsonValue
         }
       }
@@ -91,13 +95,13 @@ class CoinbaseMarketDataSource extends DataSource {
             responsePromise.failure(new RuntimeException("Unable to connect to Coinbase Pro WebSocket"))
           }
           val cbProducts: Set[String] = topics.map(toCBProduct)
-          val strMsg = json"""
+          val strMsg = s"""
             {
               "type": "subscribe",
-              "product_ids": $cbProducts,
+              "product_ids": ${cbProducts.asJson.noSpaces},
               "channels": ["full"]
             }
-          """.pretty(Printer.noSpaces)
+          """
           // Send the subscription message
           log.debug("Sending message: {}", strMsg)
           client.send(strMsg)
@@ -164,13 +168,13 @@ class CoinbaseMarketDataSource extends DataSource {
             responsePromise.failure(new RuntimeException("Unable to connect to Coinbase Pro WebSocket"))
           }
           val cbProducts: Set[String] = topics.map(toCBProduct)
-          val strMsg = json"""
+          val strMsg = s"""
             {
               "type": "subscribe",
-              "product_ids": $cbProducts,
+              "product_ids": ${cbProducts.asJson.noSpaces},
               "channels": ["matches"]
             }
-          """.pretty(Printer.noSpaces)
+          """
           // Send the subscription message
           log.debug("Sending message: {}", strMsg)
           client.send(strMsg)
@@ -222,6 +226,28 @@ class CoinbaseMarketDataSource extends DataSource {
     }
 
     responsePromise.future
+  }
+
+  override def backfillPage[T](topic: String, datatype: DataType[T], cursor: Option[String])
+                              (implicit ctx: ActorContext, mat: ActorMaterializer)
+      : Future[(Seq[(Long, T)], Option[(String, Duration)])] = datatype match {
+    case TradesType =>
+      val product = toCBProduct(topic)
+      var uri = uri"https://api.pro.coinbase.com/products/$product/trades"
+      if (cursor.isDefined) {
+        uri = uri.queryFragment(KeyValue("after", cursor.get))
+      }
+      sttp.get(uri).send().flatMap { rsp =>
+        val nextCursorOpt = rsp.headers.toMap.get("cb-after").filterNot(_.isEmpty)
+        rsp.body match {
+          case Left(err) => Future.failed(new RuntimeException(s"Error in Coinbase backfill: $err"))
+          case Right(bodyStr) => Future.fromTry(decode[Seq[CoinbaseTrade]](bodyStr).toTry)
+            .map { cbTrades =>
+              (cbTrades.map(_.toTrade).map(t => (t.micros, t.asInstanceOf[T])),
+                nextCursorOpt.map((_, 4 seconds)))
+            }(ctx.dispatcher)
+        }
+      }(ctx.dispatcher)
   }
 }
 
@@ -289,22 +315,35 @@ object CoinbaseMarketDataSource {
     def toOrderEvent: OrderEvent = {
       `type` match {
         case Open =>
-          OrderOpen(order_id.get, CurrencyPair(product_id), price.get.toDouble, remaining_size.get.toDouble,
-            Side.parseSide(side.get))
+          OrderOpen(order_id.get, CurrencyPair(product_id), price.get.toDouble, remaining_size.get.toDouble, side.get)
         case Done =>
-          OrderDone(order_id.get, CurrencyPair(product_id), Side.parseSide(side.get),
+          OrderDone(order_id.get, CurrencyPair(product_id), side.get,
             DoneReason.parse(reason.get), price.map(_.toDouble), remaining_size.map(_.toDouble))
         case Change =>
           OrderChange(order_id.get, CurrencyPair(product_id), price.map(_.toDouble), new_size.get.toDouble)
         case Match =>
           OrderMatch(trade_id.get, CurrencyPair(product_id), micros, size.get.toDouble, price.get.toDouble,
-            Side.parseSide(side.get), maker_order_id.get, taker_order_id.get)
+            TickDirection.ofMakerSide(side.get), maker_order_id.get, taker_order_id.get)
         case Received =>
           OrderReceived(order_id.get, CurrencyPair(product_id), client_oid, OrderType.parseOrderType(order_type.get))
       }
     }
 
     def micros: Long = time.map(TimeFmt.ISO8601ToMicros).get
+  }
+
+  /**
+    * {
+    *   "time": "2014-11-07T22:19:28.578544Z",
+    *   "trade_id": 74,
+    *   "price": "10.00000000",
+    *   "size": "0.01000000",
+    *   "side": "buy"
+    * }
+    */
+  @JsonCodec case class CoinbaseTrade(time: String, trade_id: Long, price: String, size: String, side: String) {
+    implicit def toTrade: Trade = Trade(trade_id.toString,
+      TimeFmt.ISO8601ToMicros(time), price.toDouble, size.toDouble, TickDirection.ofMakerSide(side))
   }
 
 }

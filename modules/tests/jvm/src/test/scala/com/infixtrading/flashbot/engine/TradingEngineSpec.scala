@@ -16,7 +16,7 @@ import com.infixtrading.flashbot.core.FlashbotConfig.{BotConfig, StaticBotsConfi
 import com.infixtrading.flashbot.core.{BalancePoint, FlashbotConfig, Paper, Trade}
 import com.infixtrading.flashbot.util.{files, time}
 import com.infixtrading.flashbot.models.api._
-import com.infixtrading.flashbot.models.core.Order.{Buy, Sell}
+import com.infixtrading.flashbot.models.core.Order.{Buy, Down, Sell, Up}
 import com.infixtrading.flashbot.models.core._
 import com.infixtrading.flashbot.report.Report
 import com.infixtrading.flashbot.util.files.rmRf
@@ -64,7 +64,8 @@ class TradingEngineSpec extends WordSpecLike
         config.strategies,
         config.exchanges,
         config.bots,
-        Left(dataServer)
+        Left(dataServer),
+        config.grafana
       )))
 
       val fb = new FlashbotClient(engine)
@@ -136,7 +137,7 @@ class TradingEngineSpec extends WordSpecLike
 
       val nowMicros = time.currentTimeMicros
       val trades = 1 to 20 map { i =>
-        Trade(i.toString, nowMicros + i * 1000000, i, i, if (i % 2 == 0) Buy else Sell)
+        Trade(i.toString, nowMicros + i * 1000000, i, i, if (i % 2 == 0) Up else Down)
       }
 
       // Configure and enable bot that writes a list of trades to the report.
@@ -192,7 +193,7 @@ class TradingEngineSpec extends WordSpecLike
 
       val engine = system.actorOf(Props(
         new TradingEngine("test2", config.strategies, config.exchanges, config.bots,
-          Left(dataServer))), "trading-engine-2")
+          Left(dataServer), config.grafana)), "trading-engine-2")
 
       val params = LookaheadParams(Market("bitfinex/eth_usd"), sabotage = false)
 
