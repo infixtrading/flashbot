@@ -47,7 +47,7 @@ class CoinbaseMarketDataSource extends DataSource {
 
     val log = ctx.system.log
 
-    val (jsonRef, src) = Source
+    val (jsonRef, jsonSrc) = Source
       .actorRef[Json](Int.MaxValue, OverflowStrategy.fail)
       .preMaterialize()
 
@@ -79,9 +79,8 @@ class CoinbaseMarketDataSource extends DataSource {
 
     val client = new FullChannelClient(new URI("wss://ws-feed.pro.coinbase.com"))
 
-    val eventRefs = topics.map(_ -> {
-      Source.actorRef[StreamItem](Int.MaxValue, OverflowStrategy.fail).preMaterialize()
-    }).toMap
+    val eventRefs = topics.map(_ ->
+      Source.actorRef[StreamItem](Int.MaxValue, OverflowStrategy.fail).preMaterialize()).toMap
 
     val snapshotPromises = topics.map(_ -> Promise[StreamItem]).toMap
 
@@ -104,7 +103,7 @@ class CoinbaseMarketDataSource extends DataSource {
     val strMsg = msgJson.pretty(Printer.noSpaces)
     client.send(strMsg)
 
-    src
+    jsonSrc
       // Ignore any events that come in before the "subscribed" event
       .dropWhile(eventType(_) != Subscribed)
 
@@ -114,15 +113,18 @@ class CoinbaseMarketDataSource extends DataSource {
           subscribedPromise.success(eventRefs.map {
             case (topic, (ref, eventSrc)) =>
               val snapshotSrc = Source.fromFuture(snapshotPromises(topic).future)
-              val src = eventSrc
+              val (done, src: Source[(Long, T), NotUsed]) = eventSrc
                 .mergeSorted(snapshotSrc)(streamItemOrdering)
                 .via(util.stream.deDupeBy(_.seq))
                 .dropWhile(!_.isBook)
                 .scan[Option[StreamItem]](None) {
                   case (None, item) if item.isBook => Some(item)
-                  case (Some(book), item) if !item.isBook => Some(item.copy(data =
-                    Left(book.book.processOrderEvent(item.event))))
-                }.collect { case Some(item) => (item.micros, item.book.asInstanceOf[T]) }
+                  case (Some(memo), item) if !item.isBook => Some(item.copy(data =
+                    Left(memo.book.processOrderEvent(item.event))))
+                }
+                .collect { case Some(item) => (item.micros, item.book.asInstanceOf[T]) }
+                .watchTermination()(Keep.right).preMaterialize()
+              done.onComplete(_ => ref ! PoisonPill)(ctx.dispatcher)
               topic -> src
           })
         }
