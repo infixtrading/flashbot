@@ -40,6 +40,7 @@ final case class OrderMatch(tradeId: Long,
                             side: Side,
                             makerOrderId: String,
                             orderId: String) extends OrderEvent {
+  def toTrade: Trade = Trade(tradeId.toString, micros, price, size, side)
 }
 
 final case class OrderReceived(orderId: String,

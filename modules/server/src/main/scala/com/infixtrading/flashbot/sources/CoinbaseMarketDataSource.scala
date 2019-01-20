@@ -7,7 +7,7 @@ import akka.actor.{ActorContext, ActorRef, PoisonPill}
 import akka.stream.{ActorMaterializer, OverflowStrategy}
 import akka.stream.scaladsl.{Flow, Keep, Sink, Source}
 import com.infixtrading.flashbot.core.DataSource.IngestGroup
-import com.infixtrading.flashbot.core.DataType.{OrderBookType, TradesType}
+import com.infixtrading.flashbot.core.DataType.{LadderType, OrderBookType, TradesType}
 import com.infixtrading.flashbot.core.Instrument.CurrencyPair
 import com.infixtrading.flashbot.core._
 import com.infixtrading.flashbot.models.core.Order.{OrderType, Side}
@@ -35,13 +35,6 @@ class CoinbaseMarketDataSource extends DataSource {
     IngestGroup(topics, 0 seconds)
   }
 
-//  override def ingest[T](topic: String, datatype: DataType[T])
-//                        (implicit ctx: ActorContext, mat: ActorMaterializer) = {
-//    datatype match {
-//      case OrderBookType => ???
-//    }
-//  }
-
   override def ingestGroup[T](topics: Set[String], datatype: DataType[T])
                              (implicit ctx: ActorContext, mat: ActorMaterializer) = {
 
@@ -49,6 +42,8 @@ class CoinbaseMarketDataSource extends DataSource {
 
     val (jsonRef, jsonSrc) = Source
       .actorRef[Json](Int.MaxValue, OverflowStrategy.fail)
+      // Ignore any events that come in before the "subscribed" event
+      .dropWhile(eventType(_) != Subscribed)
       .preMaterialize()
 
     class FullChannelClient(uri: URI) extends WebSocketClient(uri) {
@@ -79,82 +74,116 @@ class CoinbaseMarketDataSource extends DataSource {
 
     val client = new FullChannelClient(new URI("wss://ws-feed.pro.coinbase.com"))
 
+    // Complete this promise once we get a "subscribed" message.
+    val responsePromise = Promise[Map[String, Source[(Long, T), NotUsed]]]
+
+    // Events are sent here as StreamItem instances
     val eventRefs = topics.map(_ ->
       Source.actorRef[StreamItem](Int.MaxValue, OverflowStrategy.fail).preMaterialize()).toMap
 
-    val snapshotPromises = topics.map(_ -> Promise[StreamItem]).toMap
+    datatype match {
+      case OrderBookType =>
+        // Asynchronously connect to the client and send the subscription message
+        Future {
+          if (!client.connectBlocking(30, SECONDS)) {
+            responsePromise.failure(new RuntimeException("Unable to connect to Coinbase Pro WebSocket"))
+          }
+          val strMsg = json"""
+            {
+              "type": "subscribe",
+              "product_ids": $topics,
+              "channels": "full"
+            }
+          """.pretty(Printer.noSpaces)
+          // Send the subscription message
+          client.send(strMsg)
+        }(ExecutionContext.global)
 
-    // Complete this promise once we get a "subscribed" message.
-    val subscribedPromise = Promise[Map[String, Source[(Long, T), NotUsed]]]
+        val snapshotPromises = topics.map(_ -> Promise[StreamItem]).toMap
 
-    Future {
-      if (!client.connectBlocking(30, SECONDS)) {
-        subscribedPromise.failure(new RuntimeException("Unable to connect to Coinbase Pro WebSocket"))
-      }
-    }(ExecutionContext.global)
-
-    val msgJson = json"""
-      {
-        "type": "subscribe",
-        "product_ids": $topics,
-        "channels": "full"
-      }
-    """
-    val strMsg = msgJson.pretty(Printer.noSpaces)
-    client.send(strMsg)
-
-    jsonSrc
-      // Ignore any events that come in before the "subscribed" event
-      .dropWhile(eventType(_) != Subscribed)
-
-      // Complete the promise as soon as we have a "subscribed" event
-      .alsoTo(Sink.foreach { _ =>
-        if (!subscribedPromise.isCompleted) {
-          subscribedPromise.success(eventRefs.map {
-            case (topic, (ref, eventSrc)) =>
-              val snapshotSrc = Source.fromFuture(snapshotPromises(topic).future)
-              val (done, src: Source[(Long, T), NotUsed]) = eventSrc
-                .mergeSorted(snapshotSrc)(streamItemOrdering)
-                .via(util.stream.deDupeBy(_.seq))
-                .dropWhile(!_.isBook)
-                .scan[Option[StreamItem]](None) {
-                  case (None, item) if item.isBook => Some(item)
-                  case (Some(memo), item) if !item.isBook => Some(item.copy(data =
-                    Left(memo.book.processOrderEvent(item.event))))
-                }
-                .collect { case Some(item) => (item.micros, item.book.asInstanceOf[T]) }
-                .watchTermination()(Keep.right).preMaterialize()
-              done.onComplete(_ => ref ! PoisonPill)(ctx.dispatcher)
-              topic -> src
+        jsonSrc
+          // Complete the promise as soon as we have a "subscribed" event
+          .alsoTo(Sink.foreach { _ =>
+            if (!responsePromise.isCompleted) {
+              responsePromise.success(eventRefs.map {
+                case (topic, (ref, eventSrc)) =>
+                  val snapshotSrc = Source.fromFuture(snapshotPromises(topic).future)
+                  val (done, src: Source[(Long, T), NotUsed]) = eventSrc
+                    .mergeSorted(snapshotSrc)(streamItemOrdering)
+                    .via(util.stream.deDupeBy(_.seq))
+                    .dropWhile(!_.isBook)
+                    .scan[Option[StreamItem]](None) {
+                      case (None, item) if item.isBook => Some(item)
+                      case (Some(memo), item) if !item.isBook => Some(item.copy(data =
+                        Left(memo.book.processOrderEvent(item.event))))
+                    }
+                    .collect { case Some(item) => (item.micros, item.book.asInstanceOf[T]) }
+                    .watchTermination()(Keep.right).preMaterialize()
+                  done.onComplete(_ => ref ! PoisonPill)(ctx.dispatcher)
+                  topic -> src
+              })
+            }
           })
-        }
-      })
 
-      // Drop everything except for book events
-      .filter(BookEventTypes contains eventType(_))
+          // Drop everything except for book events
+          .filter(BookEventTypes contains eventType(_))
 
-      // Map to StreamItem
-      .map[StreamItem] { json =>
-        val unparsed = json.as[UnparsedAPIOrderEvent].right.get
-        val orderEvent = unparsed.toOrderEvent
-        StreamItem(unparsed.sequence.get, unparsed.micros, Right(orderEvent))
-      }
+          // Map to StreamItem
+          .map[StreamItem] { json =>
+            val unparsed = json.as[UnparsedAPIOrderEvent].right.get
+            val orderEvent = unparsed.toOrderEvent
+            StreamItem(unparsed.sequence.get, unparsed.micros, Right(orderEvent))
+          }
 
-      // Send to event ref
-      .runForeach { item => eventRefs(item.event.product)._1 ! item }
+          // Send to event ref
+          .runForeach { item => eventRefs(item.event.product)._1 ! item }
 
-      // Shut down all event refs when stream completes.
-      .onComplete { _ =>
-        eventRefs.values.map(_._1).foreach(_ ! PoisonPill)
-        try {
-          client.close()
-        } catch {
-          case err: Throwable =>
-            log.warning("An error occured while closing the Coinbase WebSocket connection: {}", err)
-        }
-      }(ctx.dispatcher)
+          // Shut down all event refs when stream completes.
+          .onComplete { _ =>
+            eventRefs.values.map(_._1).foreach(_ ! PoisonPill)
+            try {
+              client.close()
+            } catch {
+              case err: Throwable =>
+                log.warning("An error occured while closing the Coinbase WebSocket connection: {}", err)
+            }
+          }(ctx.dispatcher)
 
-    subscribedPromise.future
+
+      case LadderType(_) =>
+
+      case TradesType =>
+        // Asynchronously connect to the client and send the subscription message
+        Future {
+          if (!client.connectBlocking(30, SECONDS)) {
+            responsePromise.failure(new RuntimeException("Unable to connect to Coinbase Pro WebSocket"))
+          }
+          val strMsg = json"""
+            {
+              "type": "subscribe",
+              "product_ids": $topics,
+              "channels": "matches"
+            }
+          """.pretty(Printer.noSpaces)
+          // Send the subscription message
+          client.send(strMsg)
+        }(ExecutionContext.global)
+
+        jsonSrc
+          .alsoTo(Sink.foreach { _ =>
+            if (!responsePromise.isCompleted) {
+              responsePromise.success(eventRefs.map {
+                case (topic, (ref, eventSrc)) =>
+                  topic -> eventSrc.map {
+                    case StreamItem(seq, micros, Right(om: OrderMatch)) =>
+                      (micros, om.toTrade.asInstanceOf[T])
+                  }
+              })
+            }
+          })
+    }
+
+    responsePromise.future
   }
 }
 
