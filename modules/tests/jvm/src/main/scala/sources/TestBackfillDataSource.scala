@@ -19,7 +19,9 @@ object TestBackfillDataSource {
     Trade(i.toString, nowMicros + i * MicrosPerMinute, i, i, if (i % 2 == 0) Buy else Sell)
   }
 
-  val (historicalTrades, liveTrades) = allTrades.splitAt(85)
+  val (_historicalTrades, liveTrades) = allTrades.splitAt(85)
+  // Add some overlap. The two data sets won't be evenly split in the real world.
+  val historicalTrades = _historicalTrades ++ liveTrades.take(20)
 }
 
 class TestBackfillDataSource extends DataSource {
