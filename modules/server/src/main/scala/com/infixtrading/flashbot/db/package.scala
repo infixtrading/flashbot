@@ -46,6 +46,8 @@ package object db {
   val Bundles = new TableQuery(tag => new Bundles(tag))
   val Backfills = new TableQuery(tag => new Backfills(tag))
 
+  val Tables = List(Bundles, Snapshots, Deltas, Backfills)
+
   def createBundle(path: DataPath)(implicit session: SlickSession): Future[Long] = {
     import session.profile.api._
     val item = BundleRow(0l, path.source, path.topic, path.datatype)
