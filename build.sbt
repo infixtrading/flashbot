@@ -29,8 +29,8 @@ lazy val networkDeps = List(
   // CORS
   "ch.megard" %% "akka-http-cors" % "0.3.0",
 
-  //  "com.github.andyglow" %% "websocket-scala-client" % "0.2.4" % Compile,
-  "org.java-websocket" % "Java-WebSocket" % "1.3.8",
+  "org.java-websocket" % "Java-WebSocket" % "1.3.9",
+  "com.softwaremill.sttp" %% "core" % "1.5.7",
 
   "de.heikoseeberger" %% "akka-http-circe" % "1.20.0",
 

@@ -111,6 +111,4 @@ object OrderBook {
                                  id: String,
                                  price: Double,
                                  size: Double)
-
-
 }

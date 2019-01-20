@@ -84,7 +84,7 @@ object Instrument {
       var list = str.split("-")
       if (list.length == 1)
         list = str.split("_")
-      CurrencyPair(list(0), list(1))
+      CurrencyPair(list(0).toLowerCase, list(1).toLowerCase)
     }
 
     implicit class CurrencyPairOps(product: String) {
