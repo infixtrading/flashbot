@@ -13,7 +13,7 @@ import com.infixtrading.flashbot.client.FlashbotClient
 import com.infixtrading.flashbot.core.{MarketData, Trade}
 import com.infixtrading.flashbot.models.core.{DataPath, TimeRange}
 import com.infixtrading.flashbot.util.time._
-import io.circe.{Decoder, Encoder, Json, JsonObject}
+import io.circe._
 import io.circe.syntax._
 import io.circe.generic.auto._
 import io.circe.generic.JsonCodec
@@ -24,6 +24,9 @@ import scala.concurrent.Future
 import scala.concurrent.ExecutionContext.Implicits.global
 
 object GrafanaServer {
+
+  // Preferred ordering of columns. Columns not listed here are added to the end.
+  val ColumnOrder = Seq("path", "time")
 
   implicit val config: Configuration = Configuration.default
   implicit val timeRangeDecoder: Decoder[TimeRange] = Decoder.decodeJsonObject.map { obj =>
@@ -36,11 +39,21 @@ object GrafanaServer {
     TimeRange(TimeFmt.ISO8601ToMicros(from), TimeFmt.ISO8601ToMicros(to))
   }
 
+  implicit def mdEncoder[T](implicit tEn: Encoder[T]): ObjectEncoder[MarketData[T]] =
+    Encoder.encodeJsonObject.contramapObject { md =>
+      val dataObj = md.data.asJson.asObject.get
+      dataObj
+        .filterKeys(_ != "micros")
+        .add("time", (md.micros / 1000).asJson)
+        .add("path", md.path.toString.asJson)
+    }
+
   @ConfiguredJsonCodec case class Target(target: String, refId: String, @JsonKey("type") Type: String, data: Json)
 
   @JsonCodec case class Filter(key: String, operator: String, value: String)
 
-  @ConfiguredJsonCodec case class Column(text: String, @JsonKey("type") Type: String)
+  @ConfiguredJsonCodec case class Column(text: String, @JsonKey("type") Type: String,
+                                         sort: Boolean = false, desc: Boolean = false)
 
 
   sealed trait DataSeries
@@ -98,7 +111,7 @@ object GrafanaServer {
                   Some(Instant.ofEpochMilli(toMillis)))
                 _ = println("Got a stream src", streamSrc)
                 tradeMDs <- streamSrc.take(body.maxDataPoints).runWith(Sink.seq)
-              } yield buildTable(tradeMDs.map(_.data.asJson.asObject.get))
+              } yield buildTable(tradeMDs.map(_.asJsonObject))
           }
         })
 
@@ -128,13 +141,22 @@ object GrafanaServer {
   def buildCols(objects: Seq[JsonObject]): Seq[Column] = {
     objects.flatMap(o => o.keys.map(key => key -> inferJsonType(key, o(key).get)))
       .collect {
+//        case ("time", Some(ty)) => ("time", Column("time", ty, sort = true, desc = true))
         case (k, Some(ty)) => (k, Column(k, ty))
       }.toMap.values.toSeq
   }
 
+  def sortCols(cols: Seq[Column]): Seq[Column] = {
+    val byKey = cols.sortBy(_.text)
+    val preferred = ColumnOrder.map(c => byKey.find(_.text == c)) collect { case Some(x) => x }
+    val rest = byKey.filterNot(ColumnOrder contains _.text)
+    preferred ++ rest
+  }
+
   def buildTable(objects: Seq[JsonObject]): Table = {
-    var cols = buildCols(objects)
-    var rows: Seq[Seq[Json]] = objects.map(o => cols.map(col => o(col.text).asJson ))
+    var cols = sortCols(buildCols(objects))
+    var rows: Seq[Seq[Json]] = objects.map(o =>
+      cols.map(col => o(col.text).asJson ))
     Table(cols, rows, "table")
   }
 
