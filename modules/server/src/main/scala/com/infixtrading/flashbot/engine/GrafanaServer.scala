@@ -34,8 +34,6 @@ object GrafanaServer {
       from <- obj("from").map(_.as[String].right.get)
       to <- obj("to").map(_.as[String].right.get)
     } yield (from, to)).get
-    val parsed = TimeFmt.ISO8601ToMicros(from)
-    println(s"PARSE from $from to $parsed and back ${parsed.microsToInstant}")
     TimeRange(TimeFmt.ISO8601ToMicros(from), TimeFmt.ISO8601ToMicros(to))
   }
 
@@ -109,15 +107,13 @@ object GrafanaServer {
                   pathFromFilters(body.adhocFilters),
                   Some(Instant.ofEpochMilli(fromMillis)),
                   Some(Instant.ofEpochMilli(toMillis)))
-                _ = println("Got a stream src", streamSrc)
-                tradeMDs <- streamSrc.take(body.maxDataPoints).runWith(Sink.seq)
-              } yield buildTable(tradeMDs.map(_.asJsonObject))
+                tradeMDs <- streamSrc.runWith(Sink.seq)
+              } yield buildTable(tradeMDs.reverse.take(body.maxDataPoints.toInt).map(_.asJsonObject))
           }
         })
 
         onSuccess(dataSetsFut) { dataSets =>
           val jsonRsp = dataSets.toSeq.asJson
-          println(s"Responding with: $jsonRsp")
           complete(HttpEntity(ContentTypes.`application/json`, jsonRsp.noSpaces ))
         }
       }
