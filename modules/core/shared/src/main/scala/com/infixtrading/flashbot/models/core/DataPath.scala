@@ -22,9 +22,11 @@ final case class DataPath(source: String, topic: String, datatype: String) {
   def typeValue: Option[String] = if (datatype == "*") None else Some(datatype)
 
   def value: Option[DataPath] = (topicValue, sourceValue, typeValue) match {
-    case (Some(top), Some(src), Some(tpe)) => Some(this)
+    case (Some(_), Some(_), Some(_)) => Some(this)
     case _ => None
   }
+
+  def isPattern: Boolean = value.isEmpty
 
   def dataTypeInstance[T]: DataType[T] = DataType(datatype)
 

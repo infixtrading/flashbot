@@ -35,6 +35,8 @@ case class GetPortfolioHistory(from: Instant = Instant.EPOCH,
 
 case class SubscribeToReport(botId: String) extends TradingEngineQuery
 
+case object MarketDataIndexQuery extends TradingEngineQuery
+
 
 sealed trait StreamRequest[T]
 

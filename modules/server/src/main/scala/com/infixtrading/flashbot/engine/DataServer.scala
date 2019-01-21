@@ -13,7 +13,7 @@ import com.infixtrading.flashbot.core.FlashbotConfig._
 import com.infixtrading.flashbot.core.MarketData.BaseMarketData
 import com.infixtrading.flashbot.core.{DeltaFmt, DeltaFmtJson, FlashbotConfig, MarketData}
 import com.infixtrading.flashbot.db._
-import com.infixtrading.flashbot.models.api.{DataSelection, DataStreamReq, RegisterDataServer, StreamLiveData}
+import com.infixtrading.flashbot.models.api._
 import com.infixtrading.flashbot.models.core.{DataPath, TimeRange}
 import com.infixtrading.flashbot.util._
 import com.infixtrading.flashbot.util.stream._
@@ -144,6 +144,16 @@ class DataServer(dbConfig: Config,
       *   Queries
       * ===========
       */
+
+    /**
+      * Returns a set of all known bundles of historical data.
+      */
+    case MarketDataIndexQuery =>
+      slickSession.db.run(for {
+        bundles <- Bundles.result
+        backfills <- Backfills.result
+        index = bundles.map(b => b.id -> b.path) ++ backfills.map(b => b.bundle -> b.path)
+      } yield index.toMap) pipeTo sender
 
     /**
       * A data stream is constructed out of two parts: A historical stream, and a live component.

@@ -78,23 +78,18 @@ object GrafanaServer {
     } ~ path("query") {
       entity(as[QueryReqBody]) { body =>
 
-        println("Got request", body)
-
         val fromMillis = body.range.start
         val toMillis = body.range.end
 
         val dataSetsFut = Future.sequence(body.targets.toIterator.map[Future[DataSeries]] { target =>
-
-          println("Processing target", target)
-
           target.target match {
             case "trades" =>
               for {
-                streamRsp <- client.historicalMarketDataAsync[Trade](
+                streamSrc <- client.historicalMarketDataAsync[Trade](
                   pathFromFilters(body.adhocFilters),
                   Some(Instant.ofEpochMilli(fromMillis)),
                   Some(Instant.ofEpochMilli(toMillis)))
-                tradeMDs <- streamRsp.toSource.take(body.maxDataPoints).runWith(Sink.seq)
+                tradeMDs <- streamSrc.take(body.maxDataPoints).runWith(Sink.seq)
               } yield buildTable(tradeMDs.map(_.data.asJson.asObject.get))
           }
         })

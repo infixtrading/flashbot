@@ -5,6 +5,7 @@ import java.time.Instant
 import akka.Done
 import akka.actor.ActorRef
 import akka.pattern.ask
+import akka.stream.scaladsl.Source
 import akka.util.Timeout
 import com.infixtrading.flashbot.core.FlashbotConfig.BotConfig
 import com.infixtrading.flashbot.core.MarketData
@@ -51,6 +52,9 @@ class FlashbotClient(engine: ActorRef, skipTouch: Boolean = false) {
     req[NetworkSource[Report]](SubscribeToReport(id)).map(_.toSource)
   def subscribeToReport(id: String) = await(subscribeToReportAsync(id))
 
+  def indexAsync = req[Map[String, DataPath]](MarketDataIndexQuery)
+  def index = await(indexAsync)
+
   /**
     * Returns a non-polling market data stream.
     * If `from` is empty, use the beginning of time.
@@ -60,12 +64,24 @@ class FlashbotClient(engine: ActorRef, skipTouch: Boolean = false) {
                                    from: Option[Instant] = None,
                                    to: Option[Instant] = None) =
     {
-      println("Client is requesting historical data", path, from, to)
+      def singleStream(path: DataPath) = {
+        assert(!path.isPattern)
+        req[StreamResponse[MarketData[T]]](DataStreamReq(
+          DataSelection(path,
+            from.map(_.toEpochMilli * 1000).orElse[Long](Some(0)),
+            to.map(_.toEpochMilli * 1000).orElse[Long](Some(Long.MaxValue))))).map(_.toSource)
+      }
 
-      req[StreamResponse[MarketData[T]]](DataStreamReq(
-        DataSelection(path,
-          from.map(_.toEpochMilli * 1000).orElse[Long](Some(0)),
-          to.map(_.toEpochMilli * 1000).orElse[Long](Some(Long.MaxValue)))))
+      // If the path is not a pattern, request it.
+      if (!path.isPattern) singleStream(path)
+
+      // But if the path is a pattern, we have to resolve it to concrete paths from the index
+      // and then request them individually and merge.
+      else for {
+        idx <- indexAsync
+        paths = idx.valuesIterator.filter(_.matches(path))
+        allStreamRsps <- Future.sequence(paths.map(singleStream))
+      } yield allStreamRsps.reduce(_.mergeSorted(_)(Ordering.by(_.micros)))
     }
 
   /**

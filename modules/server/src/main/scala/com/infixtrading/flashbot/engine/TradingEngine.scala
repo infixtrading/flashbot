@@ -381,17 +381,16 @@ class TradingEngine(engineId: String,
           // Create and send response
           .map(PortfolioResponse) pipeTo sender
 
+      case query @ MarketDataIndexQuery =>
+        (dataServer ? query) pipeTo sender
+
       /**
         * Proxy market data requests to the data server.
         */
       case req: DataStreamReq[_] =>
-        log.debug("Engine got data stream request {}", req)
         (dataServer ? req)
-          .andThen { case x => log.debug("A {}", x) }
           .mapTo[StreamResponse[_]]
-          .andThen { case x => log.debug("B {}", x) }
-          .map(_.rebuild)
-          .andThen { case x => log.debug("C {}", x) } pipeTo sender
+          .map(_.rebuild) pipeTo sender
 
       /**
         * To resolve a backtest query, we start a trading session in Backtest mode and collect
