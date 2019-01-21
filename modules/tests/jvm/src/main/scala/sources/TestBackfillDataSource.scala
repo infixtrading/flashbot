@@ -40,7 +40,9 @@ class TestBackfillDataSource extends DataSource {
     println(s"Backfill request for $topic/$datatype with cursor $cursor")
     val batchSize = 40
     val count: Int = cursor.map(_.toInt).getOrElse(0)
-    val page = historicalTrades.dropRight(count).takeRight(batchSize)
+    val page = historicalTrades
+      .dropRight(count)
+      .takeRight(batchSize)
       .map(t => (t.micros, t.asInstanceOf[T]))
     val isDone = count + batchSize >= historicalTrades.size
     Future.successful((page, if (isDone) None else Some(((count + batchSize).toString, 100 millis))))

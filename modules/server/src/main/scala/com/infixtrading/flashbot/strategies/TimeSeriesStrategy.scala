@@ -6,6 +6,7 @@ import com.infixtrading.flashbot.models.core.{DataPath, Portfolio}
 import io.circe.Decoder
 import io.circe.generic.JsonCodec
 import io.circe.generic.semiauto._
+import io.prometheus.client.{Counter, Summary}
 
 import scala.concurrent.Future
 
@@ -20,11 +21,21 @@ class TimeSeriesStrategy extends Strategy with TimeSeriesMixin {
   override def initialize(portfolio: Portfolio, loader: SessionLoader) =
     Future.successful(Seq(params.path))
 
+  var lastMillis: Option[Long] = None
+
   override def handleData(marketData: MarketData[_])(implicit ctx: TradingSession) = marketData.data match {
 
     case trade: Trade =>
-      println(s"DATA $trade")
-//      record(marketData.source, marketData.topic, marketData.micros, trade.price, Some(trade.size))
+      println(s"DATA $marketData")
+      TimeSeriesStrategy.dataCounter.inc()
+
+      val thisMillis = marketData.micros / 1000
+
+      if (lastMillis.isDefined)
+        TimeSeriesStrategy.timeIncrement.observe(thisMillis - lastMillis.get)
+      lastMillis = Some(thisMillis)
+
+      record(marketData.source, marketData.topic, marketData.micros, trade.price, Some(trade.size))
 
     case data: Priced =>
       println(s"PRICED DATA $data")
@@ -37,4 +48,11 @@ class TimeSeriesStrategy extends Strategy with TimeSeriesMixin {
 
 object TimeSeriesStrategy {
   @JsonCodec case class Params(path: DataPath)
+
+  lazy val dataCounter = Counter.build("time_series_strategy_data_count",
+    "Counter of data items sent to the TimeSeriesStrategy").register()
+
+  lazy val timeIncrement = Summary.build("time_series_strategy_time_incr",
+    "How many millis after the previous data item is this one.").register()
+
 }

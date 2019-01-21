@@ -155,6 +155,9 @@ class BackfillService(session: SlickSession, path: DataPath,
       (data, nextCursorOpt) <- DBIO.from(
         dataSource.backfillPage(claim.topic, path.dataTypeInstance[T], claim.cursor))
 
+      // Ensure the data isn't backwards. It can be easy to mess this up.
+      // The first element should be the most recent!
+
       // We got some data from the backfill. Let's insert it and schedule the next page.
       // Find the earliest seqid for this bundle. Only look at snapshots. There should
       // never be backfill deltas that predate the earliest snapshot.

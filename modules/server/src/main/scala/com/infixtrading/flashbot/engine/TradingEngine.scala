@@ -29,7 +29,7 @@ import com.infixtrading.flashbot.models.core._
 import com.infixtrading.flashbot.report.ReportEvent.{BalanceEvent, PositionEvent, SessionComplete}
 import com.infixtrading.flashbot.report._
 import com.infixtrading.flashbot.strategies.TimeSeriesStrategy
-import io.prometheus.client.{Gauge, Summary}
+import io.prometheus.client.{Counter, Gauge, Summary}
 import io.prometheus.client.Gauge.Timer
 import io.prometheus.client.exporter.HTTPServer
 
@@ -48,7 +48,9 @@ class TradingEngine(engineId: String,
                     staticBotsConfig: StaticBotsConfig,
                     dataServerInfo: Either[ActorRef, Props],
                     grafana: GrafanaConfig)
-  extends PersistentActor with ActorLogging {
+    extends PersistentActor with ActorLogging {
+
+  import TradingEngine.Metrics._
 
   val blockingEc: ExecutionContext =
     ExecutionContext.fromExecutor(Executors.newFixedThreadPool(32))
@@ -62,12 +64,6 @@ class TradingEngine(engineId: String,
   private val snapshotInterval = 100000
 
   val dataServer = dataServerInfo.left.getOrElse(context.actorOf(dataServerInfo.right.get))
-
-  /**
-    * Metrics
-    */
-  val backtestLatency = Summary.build("backtest_ms", "Backtest latency in millis").register()
-  val dataQueryLatency = Summary.build("data_query_ms", "Data stream request latency in millis").register()
 
   /**
     * The portfolio instance which represents your actual balances on all configured exchanges.
@@ -446,12 +442,15 @@ class TradingEngine(engineId: String,
 
           val (ref, reportEventSrc) = Source
             .actorRef[ReportEvent](Int.MaxValue, OverflowStrategy.fail)
+            .alsoTo(Sink.foreach { x =>
+              reportEventCounter.inc()
+            })
             .preMaterialize()
 
           // Fold the empty report over the ReportEvents emitted from the session.
           val fut: Future[Report] = reportEventSrc
             .scan[(Report, scala.Seq[Json])]((report, Seq.empty))((r, ev) => {
-              implicit var newReport = r._1
+              var newReport = r._1
               // Complete this stream once a SessionComplete event comes in.
               ev match {
                 case SessionComplete(None) => ref ! Status.Success(Done)
@@ -461,8 +460,10 @@ class TradingEngine(engineId: String,
 
               val deltas = r._1.genDeltas(ev)
               var jsonDeltas = Seq.empty[Json]
+            backtestReportDeltaSize.observe(deltas.size)
               deltas.foreach { delta =>
                 jsonDeltas :+= delta.asJson
+                backtestReportDeltaCounter.inc()
               }
               (deltas.foldLeft(r._1)(_.update(_)), jsonDeltas)
             })
@@ -710,4 +711,17 @@ object TradingEngine {
     Props(new TradingEngine(name, config.strategies, config.exchanges,
       config.bots, Left(dataServer), config.grafana))
 
+  /**
+    * Metrics
+    */
+  object Metrics {
+    lazy val backtestLatency = Summary.build("backtest_ms", "Backtest latency in millis").register()
+    lazy val dataQueryLatency = Summary.build("data_query_ms", "Data stream request latency in millis").register()
+    lazy val reportEventCounter = Counter.build("report_event_count",
+      "Counter of report events emitted by backtests").register()
+    lazy val backtestReportDeltaSize = Summary.build("backtest_report_delta_size",
+      "Length of each generated report delta seq").register()
+    lazy val backtestReportDeltaCounter = Counter.build("backtest_report_delta_counter",
+      "Counter of report deltas").register()
+  }
 }

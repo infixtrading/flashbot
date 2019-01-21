@@ -241,6 +241,7 @@ class CoinbaseMarketDataSource extends DataSource {
       if (cursor.isDefined) {
         uri = uri.queryFragment(KeyValue("after", cursor.get))
       }
+
       sttp.get(uri).send().flatMap { rsp =>
         val nextCursorOpt = rsp.headers.toMap.get("cb-after").filterNot(_.isEmpty)
         rsp.body match {

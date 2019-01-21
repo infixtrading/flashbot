@@ -72,7 +72,7 @@ trait TimeSeriesMixin { self: Strategy =>
         // it should never be empty.
         val secondToLastBar = series.getBar(series.getEndIndex - 1)
         lastBar.get.addPrice(secondToLastBar.getClosePrice)
-        ctx.send(CandleUpdate(key, barToCandle(series.getLastBar)))
+//        ctx.send(CandleUpdate(key, barToCandle(series.getLastBar)))
       }
       // Ok, now we can add the new bar.
       addedNewBar = true
@@ -85,9 +85,9 @@ trait TimeSeriesMixin { self: Strategy =>
     } else {
       series.addPrice(price)
     }
-    if (addedNewBar)
-      ctx.send(CandleAdd(key, barToCandle(series.getLastBar)))
-    else ctx.send(CandleUpdate(key, barToCandle(series.getLastBar)))
+//    if (addedNewBar)
+//      ctx.send(CandleAdd(key, barToCandle(series.getLastBar)))
+//    else ctx.send(CandleUpdate(key, barToCandle(series.getLastBar)))
   }
 
   def record(exchange: String,

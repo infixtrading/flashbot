@@ -297,8 +297,7 @@ class DataServer(dbConfig: Config,
           .filter(x => x.bundle.inSet(bundleIds))
           .result)
 
-    } yield snapshots
-      .mergeSorted[Wrap, NotUsed](deltas)(Wrap.ordering)
+    } yield snapshots.mergeSorted[Wrap, NotUsed](deltas)(Wrap.ordering)
       .scan[Option[MarketData[T]]](None) {
         /**
           * Base case.
