@@ -120,8 +120,9 @@ object GrafanaServer {
 
             case "price" =>
               val path = pathFromFilters(body.adhocFilters).copy(datatype = "trades")
+              println("PATH", path)
               client.pricesAsync(path, body.range, body.intervalMs millis)
-              .map(buildSeries("price", s"local.${path.source}.${path.topic}", _))
+                .map(buildSeries("price", s"local.${path.source}.${path.topic}", _))
           }
         })
 

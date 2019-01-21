@@ -92,6 +92,7 @@ class FlashbotClient(engine: ActorRef, skipTouch: Boolean = false)(implicit ec: 
 
   def pricesAsync(path: DataPath, timeRange: TimeRange, interval: FiniteDuration) =
     req[Map[String, Vector[Candle]]](PriceQuery(path, timeRange, interval))
+
   def prices(path: DataPath, timeRange: TimeRange, interval: FiniteDuration) =
     await(pricesAsync(path, timeRange, interval))
 

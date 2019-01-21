@@ -29,6 +29,9 @@ import com.infixtrading.flashbot.models.core._
 import com.infixtrading.flashbot.report.ReportEvent.{BalanceEvent, PositionEvent, SessionComplete}
 import com.infixtrading.flashbot.report._
 import com.infixtrading.flashbot.strategies.TimeSeriesStrategy
+import io.prometheus.client.{Gauge, Summary}
+import io.prometheus.client.Gauge.Timer
+import io.prometheus.client.exporter.HTTPServer
 
 import scala.concurrent.duration._
 import scala.concurrent._
@@ -59,6 +62,12 @@ class TradingEngine(engineId: String,
   private val snapshotInterval = 100000
 
   val dataServer = dataServerInfo.left.getOrElse(context.actorOf(dataServerInfo.right.get))
+
+  /**
+    * Metrics
+    */
+  val backtestLatency = Summary.build("backtest_ms", "Backtest latency in millis").register()
+  val dataQueryLatency = Summary.build("data_query_ms", "Data stream request latency in millis").register()
 
   /**
     * The portfolio instance which represents your actual balances on all configured exchanges.
@@ -394,9 +403,11 @@ class TradingEngine(engineId: String,
         * Proxy market data requests to the data server.
         */
       case req: DataStreamReq[_] =>
+        val timer = dataQueryLatency.startTimer()
         (dataServer ? req)
           .mapTo[StreamResponse[MarketData[_]]]
-          .flatMap[StreamResponse[MarketData[_]]](_.rebuild) pipeTo sender
+          .flatMap[StreamResponse[MarketData[_]]](_.rebuild)
+          .andThen { case _ => timer.observeDuration() } pipeTo sender
 
       /**
         * A TimeSeriesQuery is a thin wrapper around a backtest of the TimeSeriesStrategy.
@@ -420,6 +431,8 @@ class TradingEngine(engineId: String,
         * all session events into a stream that we fold over to create a report.
         */
       case BacktestQuery(strategyName, params, timeRange, portfolioStr, barSize, eventsOut) =>
+
+        val timer = backtestLatency.startTimer()
 
         // TODO: Remove the try catch
         try {
@@ -477,6 +490,7 @@ class TradingEngine(engineId: String,
 
           fut.andThen {
             case x =>
+              timer.observeDuration()
               log.info("Fut: {}", x)
           }.map(ReportResponse) pipeTo sender
         } catch {

@@ -15,7 +15,7 @@ trait TimeSeriesMixin { self: Strategy =>
 
   var allSeries: Map[String, TimeSeries] = Map.empty
 
-  def getGlobalIndex(micros: Long): Long = micros / timePeriod.toMillis
+  def getGlobalIndex(micros: Long): Long = micros / (timePeriod.toMillis * 1000)
 
   def hasNonZeroClosePrice(bar: Bar): Boolean = {
     var ret = false

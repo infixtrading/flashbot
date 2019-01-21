@@ -50,7 +50,7 @@ trait MarketData[+T] extends Timestamped {
 }
 
 object MarketData {
-  def orderByTime: Ordering[MarketData[_]] = Ordering.by(_.micros)
+  def orderByTime: Ordering[MarketData[_]] = Ordering.by[MarketData[_], Long](_.micros)
   def orderBySequence[T]: Ordering[MarketData[T]] = Ordering.by(x => (x.bundle, x.seqid))
 
   case class MarketDelta[D](delta: D, micros: Long, bundle: Long)

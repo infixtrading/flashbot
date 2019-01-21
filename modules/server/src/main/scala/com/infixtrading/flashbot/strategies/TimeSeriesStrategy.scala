@@ -24,11 +24,11 @@ class TimeSeriesStrategy extends Strategy with TimeSeriesMixin {
 
     case trade: Trade =>
       println(s"DATA $trade")
-      record(marketData.source, marketData.topic, marketData.micros, trade.price, Some(trade.size))
+//      record(marketData.source, marketData.topic, marketData.micros, trade.price, Some(trade.size))
 
     case data: Priced =>
       println(s"PRICED DATA $data")
-      record(marketData.source, marketData.topic, marketData.micros, data.price)
+//      record(marketData.source, marketData.topic, marketData.micros, data.price)
 
     case x => // Ignore non-priced data
       println(s"IGNORED DATA $x")
