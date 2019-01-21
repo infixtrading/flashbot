@@ -11,7 +11,7 @@ import akka.stream.Materializer
 import akka.stream.scaladsl.Sink
 import com.infixtrading.flashbot.client.FlashbotClient
 import com.infixtrading.flashbot.core.{MarketData, Trade}
-import com.infixtrading.flashbot.models.core.{DataPath, TimeRange}
+import com.infixtrading.flashbot.models.core.{Candle, DataPath, TimeRange}
 import com.infixtrading.flashbot.util.time._
 import io.circe._
 import io.circe.syntax._
@@ -21,7 +21,9 @@ import io.circe.generic.extras._
 import de.heikoseeberger.akkahttpcirce.ErrorAccumulatingCirceSupport._
 
 import scala.concurrent.Future
+import scala.concurrent.duration._
 import scala.concurrent.ExecutionContext.Implicits.global
+import scala.language.postfixOps
 
 object GrafanaServer {
 
@@ -74,6 +76,11 @@ object GrafanaServer {
 
   @JsonCodec case class AnnotationReqBody(range: TimeRange, annotation: Annotation, variables: Seq[String])
 
+  @ConfiguredJsonCodec case class TagKey(@JsonKey("type") Type: String, text: String)
+  @JsonCodec case class TagValue(text: String)
+
+  @JsonCodec case class TagValReq(key: String)
+
   def pathFromFilters(filters: Seq[Filter]): DataPath = {
     val filterMap = filters.filter(_.operator == "=").map(f => f.key -> f.value).toMap
     DataPath(
@@ -90,7 +97,7 @@ object GrafanaServer {
   } ~ post {
     path("search") {
       entity(as[SearchReqBody]) { body =>
-        val rsp = Seq("trades")
+        val rsp = Seq("trades", "price")
         complete(HttpEntity(ContentTypes.`application/json`, rsp.asJson.noSpaces ))
       }
     } ~ path("query") {
@@ -101,14 +108,20 @@ object GrafanaServer {
 
         val dataSetsFut = Future.sequence(body.targets.toIterator.map[Future[DataSeries]] { target =>
           target.target match {
+
             case "trades" =>
               for {
                 streamSrc <- client.historicalMarketDataAsync[Trade](
-                  pathFromFilters(body.adhocFilters),
+                  pathFromFilters(body.adhocFilters).copy(datatype = "trades"),
                   Some(Instant.ofEpochMilli(fromMillis)),
                   Some(Instant.ofEpochMilli(toMillis)))
                 tradeMDs <- streamSrc.runWith(Sink.seq)
               } yield buildTable(tradeMDs.reverse.take(body.maxDataPoints.toInt).map(_.asJsonObject))
+
+            case "price" =>
+              val path = pathFromFilters(body.adhocFilters).copy(datatype = "trades")
+              client.pricesAsync(path, body.range, body.intervalMs millis)
+              .map(buildSeries("price", s"local.${path.source}.${path.topic}", _))
           }
         })
 
@@ -120,6 +133,18 @@ object GrafanaServer {
     } ~ path("annotations") {
       entity(as[AnnotationReqBody]) { body =>
         complete(HttpEntity(ContentTypes.`application/json`, body.asJson.noSpaces ))
+      }
+    } ~ path("tag-keys") {
+      val keys = Seq(TagKey("string", "source"), TagKey("string", "topic"))
+      complete(HttpEntity(ContentTypes.`application/json`, keys.asJson.noSpaces ))
+
+    } ~ path("tag-values") {
+      entity(as[TagValReq]) { req =>
+        val vals = req.key match {
+          case "source" => Seq(TagValue("coinbase"), TagValue("bitstamp"))
+          case "topic" => Seq(TagValue("btc_usd"), TagValue("eth_usd"))
+        }
+        complete(HttpEntity(ContentTypes.`application/json`, vals.asJson.noSpaces ))
       }
     }
   }
@@ -155,5 +180,12 @@ object GrafanaServer {
       cols.map(col => o(col.text).asJson ))
     Table(cols, rows, "table")
   }
+
+  def buildSeries(target: String, seriesKey: String, seriesMap: Map[String, Seq[Candle]]): TimeSeries =
+    {
+      println(seriesMap.keySet)
+      TimeSeries(target, seriesMap.getOrElse[Seq[Candle]](seriesKey, Seq.empty)
+        .map(c => (c.close, c.micros / 1000)))
+    }
 
 }

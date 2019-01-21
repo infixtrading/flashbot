@@ -26,10 +26,10 @@ object State {
 
   object Get {
     // TC variety 1
-    // def get[T](key: String)(implicit ctx: TradingSession, tc: Get[T]) = tc.get(key)
+    // def series[T](key: String)(implicit ctx: TradingSession, tc: Get[T]) = tc.series(key)
 
     // TC variety 2
-    // def get[T: Get](key: String)(implicit ctx: TradingSession) = implicitly[Get[T]].get(key)
+    // def series[T: Get](key: String)(implicit ctx: TradingSession) = implicitly[Get[T]].series(key)
 
     // TC variety 3. Apply with type params.
     // A trick/convention to pull out the type class from implicits.
@@ -110,7 +110,7 @@ object State {
         Set[T].set(x, value)
     }
 
-    // Actually we'll add a "get" operation on String.
+    // Actually we'll add a "series" operation on String.
     implicit class GetOps(val x: String) extends AnyVal {
       def get[T : Get](implicit ctx: TradingSession, buffer: VarBuffer,
                        fmt: DeltaFmtJson[T], ct: ClassTag[T]): Option[Var[T]] =

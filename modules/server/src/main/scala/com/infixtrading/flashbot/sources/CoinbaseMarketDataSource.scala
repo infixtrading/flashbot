@@ -80,7 +80,7 @@ class CoinbaseMarketDataSource extends DataSource {
 
     val client = new FullChannelClient(new URI("wss://ws-feed.pro.coinbase.com"))
 
-    // Complete this promise once we get a "subscriptions" message.
+    // Complete this promise once we series a "subscriptions" message.
     val responsePromise = Promise[Map[String, Source[(Long, T), NotUsed]]]
 
     // Events are sent here as StreamItem instances
@@ -241,7 +241,7 @@ class CoinbaseMarketDataSource extends DataSource {
           case Right(bodyStr) => Future.fromTry(decode[Seq[CoinbaseTrade]](bodyStr).toTry)
             .map { cbTrades =>
               (cbTrades.map(_.toTrade).map(t => (t.micros, t.asInstanceOf[T])),
-                nextCursorOpt.map((_, 4 seconds)))
+                nextCursorOpt.map((_, 10 seconds)))
             }(ctx.dispatcher)
         }
       }(ctx.dispatcher)

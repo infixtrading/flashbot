@@ -40,7 +40,7 @@ class DataSourceActor(session: SlickSession,
   import session.profile.api._
 
   implicit val ec: ExecutionContext =
-    ExecutionContext.fromExecutor(Executors.newFixedThreadPool(100))
+    ExecutionContext.fromExecutor(Executors.newFixedThreadPool(20))
   implicit val system = context.system
   implicit val mat = ActorMaterializer()
   implicit val slickSession = session

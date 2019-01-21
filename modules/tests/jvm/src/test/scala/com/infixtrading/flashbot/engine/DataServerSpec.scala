@@ -51,7 +51,7 @@ class DataServerSpec extends WordSpecLike with Matchers with Eventually {
       // Ingest for 2 second with no subscriptions.
       Thread.sleep(2000)
 
-      // Then subscribe to a path and get a data stream.
+      // Then subscribe to a path and series a data stream.
       val fut = dataserver ? DataStreamReq(DataSelection("bitfinex/btc_usd/trades", Some(0)))
       val rsp = Await.result(fut.mapTo[StreamResponse[MarketData[Trade]]], timeout.duration)
       val rspStream = rsp.toSource
@@ -90,7 +90,7 @@ class DataServerSpec extends WordSpecLike with Matchers with Eventually {
       // Ingest for 2 second with no subscriptions.
       Thread.sleep(2000)
 
-      // Then subscribe to a path and get a data stream.
+      // Then subscribe to a path and series a data stream.
       val fut = dataserver ? DataStreamReq(DataSelection("bitfinex/btc_usd/ladder", Some(0)))
       val rsp = Await.result(fut.mapTo[StreamResponse[MarketData[Ladder]]], timeout.duration)
       val rspStream = rsp.toSource

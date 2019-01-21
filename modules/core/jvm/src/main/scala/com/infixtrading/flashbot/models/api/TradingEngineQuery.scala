@@ -37,6 +37,13 @@ case class SubscribeToReport(botId: String) extends TradingEngineQuery
 
 case object MarketDataIndexQuery extends TradingEngineQuery
 
+sealed trait TimeSeriesQuery extends TradingEngineQuery {
+  def path: DataPath
+  def range: TimeRange
+  def interval: FiniteDuration
+}
+case class PriceQuery(path: DataPath, range: TimeRange, interval: FiniteDuration) extends TimeSeriesQuery
+
 
 sealed trait StreamRequest[T]
 

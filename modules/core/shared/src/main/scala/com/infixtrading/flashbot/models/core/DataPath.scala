@@ -1,8 +1,9 @@
 package com.infixtrading.flashbot.models.core
 
 import com.infixtrading.flashbot.core.{DataType, DeltaFmtJson}
+import io.circe.generic.JsonCodec
 
-final case class DataPath(source: String, topic: String, datatype: String) {
+@JsonCodec case class DataPath(source: String, topic: String, datatype: String) {
   override def toString: String = List(source, topic, datatype).mkString("/")
 
   def matches(matcher: DataPath): Boolean = {

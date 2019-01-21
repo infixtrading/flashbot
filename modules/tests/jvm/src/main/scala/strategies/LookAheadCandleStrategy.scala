@@ -96,7 +96,7 @@ class LookAheadCandleStrategy extends Strategy
         if (prediction.get != candle.close) {
           println(s"ERROR: Expected prediction ${prediction.get}, got ${candle}")
         } else {
-//          println(s"Successful prediction. We predicted ${prediction.get}, and we got $candle")
+//          println(s"Successful prediction. We predicted ${prediction.series}, and we got $candle")
         }
       }
       // If high confidence prediction, follow it blindly. If low, do nothing.

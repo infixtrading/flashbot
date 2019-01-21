@@ -11,7 +11,7 @@ import com.infixtrading.flashbot.core.FlashbotConfig.BotConfig
 import com.infixtrading.flashbot.core.MarketData
 import com.infixtrading.flashbot.engine.{NetworkSource, StreamResponse}
 import com.infixtrading.flashbot.models.api._
-import com.infixtrading.flashbot.models.core.{DataPath, TimeRange}
+import com.infixtrading.flashbot.models.core.{Candle, DataPath, TimeRange}
 import com.infixtrading.flashbot.report.Report
 
 import scala.concurrent.{Await, Future}
@@ -63,9 +63,6 @@ class FlashbotClient(engine: ActorRef, skipTouch: Boolean = false) {
   def historicalMarketDataAsync[T](path: DataPath,
                                    from: Option[Instant] = None,
                                    to: Option[Instant] = None) = {
-    println(s"req from: $from")
-    println(s"req to: $to")
-
     def singleStream(path: DataPath) = {
       assert(!path.isPattern)
       req[StreamResponse[MarketData[T]]](DataStreamReq(
@@ -93,6 +90,11 @@ class FlashbotClient(engine: ActorRef, skipTouch: Boolean = false) {
   def pollingMarketDataAsync[T](path: DataPath, lookback: Duration = 0.seconds) =
     req[StreamResponse[MarketData[T]]](DataStreamReq(
       DataSelection(path, Some(Instant.now.minusMillis(lookback.toMillis).toEpochMilli * 1000))))
+
+  def pricesAsync(path: DataPath, timeRange: TimeRange, interval: FiniteDuration) =
+    req[Map[String, Vector[Candle]]](PriceQuery(path, timeRange, interval))
+  def prices(path: DataPath, timeRange: TimeRange, interval: FiniteDuration) =
+    await(pricesAsync(path, timeRange, interval))
 
   private def req[T](query: Any)(implicit tag: ClassTag[T]): Future[T] = (engine ? query).mapTo[T]
   private def await[T](fut: Future[T]): T = Await.result[T](fut, timeout.duration)

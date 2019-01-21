@@ -152,10 +152,10 @@ trait TimeSeriesMixin { self: Strategy =>
              candle: Candle)
             (implicit ctx: TradingSession): Unit = record(exchange, product.toString, candle)
 
-  def get(exchange: String, product: String): Option[TimeSeries] =
+  def series(exchange: String, product: String): Option[TimeSeries] =
     allSeries.get(_key(exchange, product))
 
-  def get(exchange: String, product: Instrument): Option[TimeSeries] = get(exchange, product.toString)
+  def series(exchange: String, product: Instrument): Option[TimeSeries] = series(exchange, product.toString)
 
   def _key(exchange: String, product: String): String = s"$exchange.$product"
 }

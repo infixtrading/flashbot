@@ -26,13 +26,8 @@ object Market {
   implicit def en: Encoder[Market] = deriveEncoder[Market]
   implicit def de: Decoder[Market] = deriveDecoder[Market]
 
-  implicit val marketKeyEncoder: KeyEncoder[Market] = new KeyEncoder[Market] {
-    override def apply(key: Market) = key.toString
-  }
-
-  implicit val marketKeyDecoder: KeyDecoder[Market] = new KeyDecoder[Market] {
-    override def apply(key: String) = Some(parse(key))
-  }
+  implicit val marketKeyEncoder: KeyEncoder[Market] = KeyEncoder.instance(_.toString)
+  implicit val marketKeyDecoder: KeyDecoder[Market] = KeyDecoder.instance(x => Some(parse(x)))
 
   implicit def pairToMarket(pair: (String, String)): Market = Market(pair._1, pair._2)
 }

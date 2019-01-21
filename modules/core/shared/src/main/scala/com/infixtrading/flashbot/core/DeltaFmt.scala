@@ -88,5 +88,34 @@ object DeltaFmt {
 //      case None => formats(str)
 //    }
   }
+
+
+  trait HasUpdateEvent[T, D] {
+    def lastUpdate: Option[D]
+    protected def withLastUpdate(d: D): T
+    protected def step(delta: D): T
+    final def update(d: D): T =
+      step(d).asInstanceOf[this.type].withLastUpdate(d)
+  }
+
+  def updateEventFmtJson[T <: HasUpdateEvent[T, E], E](name: String)
+                                                      (implicit mEn: Encoder[T], mDe: Decoder[T],
+                                                       dEn: Encoder[E], dDe: Decoder[E]): DeltaFmtJson[T] =
+    new DeltaFmtJson[T] {
+      override type D = E
+
+      override def modelEn = mEn
+      override def modelDe = mDe
+      override def deltaEn = dEn.asInstanceOf[Encoder[D]]
+      override def deltaDe = dDe.asInstanceOf[Decoder[D]]
+
+      override def fmtName = name
+
+      override def update(model: T, delta: D) = model.update(delta)
+      override def diff(prev: T, current: T) = current.lastUpdate.get
+
+      override def fold(x: T, y: T) = y
+      override def unfold(x: T) = (x, None)
+    }
 }
 

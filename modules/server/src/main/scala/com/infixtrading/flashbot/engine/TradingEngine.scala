@@ -1,6 +1,7 @@
 package com.infixtrading.flashbot.engine
 
 import java.time.Instant
+import java.util.concurrent.Executors
 
 import akka.Done
 import akka.actor.{ActorLogging, ActorRef, ActorSystem, PoisonPill, Props, Status}
@@ -8,7 +9,7 @@ import akka.http.scaladsl.Http
 import akka.pattern.{ask, pipe}
 import akka.persistence._
 import akka.stream.scaladsl.{Keep, Sink, Source}
-import akka.stream.{ActorMaterializer, OverflowStrategy}
+import akka.stream.{ActorMaterializer, ActorMaterializerSettings, Materializer, OverflowStrategy}
 import akka.util.Timeout
 import com.infixtrading.flashbot
 import com.infixtrading.flashbot.client.FlashbotClient
@@ -27,6 +28,7 @@ import com.infixtrading.flashbot.models.api._
 import com.infixtrading.flashbot.models.core._
 import com.infixtrading.flashbot.report.ReportEvent.{BalanceEvent, PositionEvent, SessionComplete}
 import com.infixtrading.flashbot.report._
+import com.infixtrading.flashbot.strategies.TimeSeriesStrategy
 
 import scala.concurrent.duration._
 import scala.concurrent._
@@ -46,9 +48,10 @@ class TradingEngine(engineId: String,
   extends PersistentActor with ActorLogging {
 
   private implicit val system: ActorSystem = context.system
-  private implicit val mat: ActorMaterializer = buildMaterializer
   private implicit val ec: ExecutionContext = system.dispatcher
-  private implicit val timeout: Timeout = Timeout(5 seconds)
+  private implicit val mat: Materializer =
+    ActorMaterializer(ActorMaterializerSettings(system).withDispatcher("engine-dispatcher"))
+  private implicit val timeout: Timeout = Timeout(15 seconds)
 
   override def persistenceId: String = engineId
   private val snapshotInterval = 100000
@@ -59,9 +62,9 @@ class TradingEngine(engineId: String,
     * The portfolio instance which represents your actual balances on all configured exchanges.
     * This isn't persisted in [[TradingEngineState]] for two reasons: One is that this is the only
     * case of shared state between trading sessions, and it would be great if sessions don't have
-    * to block on disk IO in order to safely update it. The other reason is that we can get away
+    * to block on disk IO in order to safely update it. The other reason is that we can series away
     * with it because the global portfolio must be synced from the exchanges on engine startup
-    * anyway, which means we wouldn't get value out of Akka persistence in the first place.
+    * anyway, which means we wouldn't series value out of Akka persistence in the first place.
     */
   val globalPortfolio = new SyncVar[Portfolio]
   private def isInitialized = globalPortfolio.isSet
@@ -393,6 +396,23 @@ class TradingEngine(engineId: String,
           .flatMap[StreamResponse[MarketData[_]]](_.rebuild) pipeTo sender
 
       /**
+        * A TimeSeriesQuery is a thin wrapper around a backtest of the TimeSeriesStrategy.
+        */
+      case query: TimeSeriesQuery =>
+        (if (query.path.isPattern) Future.failed(
+          new IllegalArgumentException("Patterns are not currently supported in time series queries."))
+//        else if (query.selection.isPolling) Future.failed(
+//          new IllegalArgumentException("Polling time series queries are not currently supported."))
+        else {
+          val params = TimeSeriesStrategy.Params(query.path)
+          (self ? BacktestQuery("time_series", params.asJson.noSpaces, query.range,
+              Portfolio.empty.asJson.noSpaces, Some(query.interval)))
+            .andThen { case x => log.debug("GOT RESPONSE BACK {}", x) }
+            .mapTo[ReportResponse]
+            .map(_.report.timeSeries)
+        }) pipeTo sender()
+
+      /**
         * To resolve a backtest query, we start a trading session in Backtest mode and collect
         * all session events into a stream that we fold over to create a report.
         */
@@ -431,7 +451,7 @@ class TradingEngine(engineId: String,
               (deltas.foldLeft(r._1)(_.update(_)), jsonDeltas)
             })
             // Send the report deltas to the client if requested.
-            .alsoTo(Sink.foreach(rd => {
+            .alsoTo(Sink.foreach((rd: (Report, Seq[Json])) => {
               eventsOut.foreach(ref => rd._2.foreach(ref ! _))
             }))
             .map(_._1)
@@ -454,7 +474,7 @@ class TradingEngine(engineId: String,
 
           fut.andThen {
             case x =>
-//              log.info("Fut: {}", x)
+              log.info("Fut: {}", x)
           }.map(ReportResponse) pipeTo sender
         } catch {
           case err: Throwable =>

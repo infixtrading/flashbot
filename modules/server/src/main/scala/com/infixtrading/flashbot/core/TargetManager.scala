@@ -86,8 +86,8 @@ case class TargetManager(instuments: InstrumentIndex,
 //          val currentBase = balances.getOrElse[Double](pair.base, 0)
 //          val lotSize = exchange.lotSize(pair)
 //          val baseDiff =
-//            if (lotSize.isDefined) (((targetBase - currentBase) / lotSize.get).toLong *
-//              BigDecimal(lotSize.get)).doubleValue
+//            if (lotSize.isDefined) (((targetBase - currentBase) / lotSize.series).toLong *
+//              BigDecimal(lotSize.series)).doubleValue
 //            else targetBase - currentBase
 //
 //          if (baseDiff > 0 && exchange.useFundsForMarketBuys && isMarketOrder) {

@@ -25,7 +25,7 @@ import scala.util.{Failure, Random, Success}
   * mechanism, they do not conflict with one another, even if they are assigned to the same paths.
   *
   * Every ~1s, this actor sends itself a BackfillTick which triggers a few operations. First it
-  * cleans up stale locks to ensure backfills can't get stuck for unforseen reasons. Then it tries
+  * cleans up stale locks to ensure backfills can't series stuck for unforseen reasons. Then it tries
   * to claim an available backfill. If the claim is successful, then it's this actor's duty to:
   *
   *   1. Fetch the data at the current cursor.
@@ -62,7 +62,7 @@ class BackfillService(session: SlickSession, path: DataPath,
     /**
       * In order to know what action to take for the given path, we need to try to create a new
       * backfill record with us as the claimer. If the insert succeeds, then we have claimed a new
-      * row and need to get to work.
+      * row and need to series to work.
       *
       * However if the record already does exist, which we'll know from a unique key violation
       * during insert, then we need to try to claim it, which we can only do if no one else holds
@@ -117,7 +117,7 @@ class BackfillService(session: SlickSession, path: DataPath,
 
       hasClaimedOpt.onComplete {
         case Success(true) =>
-          // We just claimed a path. Let's get to work!
+          // We just claimed a path. Let's series to work!
           runPage(now) andThen {
             case Success(data) =>
               log.debug("Backfilled data: {}", data)
