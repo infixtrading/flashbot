@@ -389,8 +389,8 @@ class TradingEngine(engineId: String,
         */
       case req: DataStreamReq[_] =>
         (dataServer ? req)
-          .mapTo[StreamResponse[_]]
-          .map(_.rebuild) pipeTo sender
+          .mapTo[StreamResponse[MarketData[_]]]
+          .flatMap[StreamResponse[MarketData[_]]](_.rebuild) pipeTo sender
 
       /**
         * To resolve a backtest query, we start a trading session in Backtest mode and collect

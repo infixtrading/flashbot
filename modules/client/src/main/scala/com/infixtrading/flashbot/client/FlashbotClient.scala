@@ -62,27 +62,29 @@ class FlashbotClient(engine: ActorRef, skipTouch: Boolean = false) {
     */
   def historicalMarketDataAsync[T](path: DataPath,
                                    from: Option[Instant] = None,
-                                   to: Option[Instant] = None) =
-    {
-      def singleStream(path: DataPath) = {
-        assert(!path.isPattern)
-        req[StreamResponse[MarketData[T]]](DataStreamReq(
-          DataSelection(path,
-            from.map(_.toEpochMilli * 1000).orElse[Long](Some(0)),
-            to.map(_.toEpochMilli * 1000).orElse[Long](Some(Long.MaxValue))))).map(_.toSource)
-      }
+                                   to: Option[Instant] = None) = {
+    println(s"req from: $from")
+    println(s"req to: $to")
 
-      // If the path is not a pattern, request it.
-      if (!path.isPattern) singleStream(path)
-
-      // But if the path is a pattern, we have to resolve it to concrete paths from the index
-      // and then request them individually and merge.
-      else for {
-        idx <- indexAsync
-        paths = idx.valuesIterator.filter(_.matches(path))
-        allStreamRsps <- Future.sequence(paths.map(singleStream))
-      } yield allStreamRsps.reduce(_.mergeSorted(_)(Ordering.by(_.micros)))
+    def singleStream(path: DataPath) = {
+      assert(!path.isPattern)
+      req[StreamResponse[MarketData[T]]](DataStreamReq(
+        DataSelection(path,
+          from.map(_.toEpochMilli * 1000).orElse[Long](Some(0)),
+          to.map(_.toEpochMilli * 1000).orElse[Long](Some(Long.MaxValue))))).map(_.toSource)
     }
+
+    // If the path is not a pattern, request it.
+    if (!path.isPattern) singleStream(path)
+
+    // But if the path is a pattern, we have to resolve it to concrete paths from the index
+    // and then request them individually and merge.
+    else for {
+      idx <- indexAsync
+      paths = idx.values.toSet.toIterator.filter(_.matches(path))
+      allStreamRsps <- Future.sequence(paths.map(singleStream))
+    } yield allStreamRsps.reduce(_.mergeSorted(_)(Ordering.by(_.micros)))
+  }
 
   /**
     * Returns a polling stream of live market data.

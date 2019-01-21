@@ -58,8 +58,11 @@ case class NetworkSource[T](fmt: DeltaFmt[T],
 object NetworkSource {
   def build[T](src: Source[T, NotUsed])
               (implicit fmt: DeltaFmt[T], mat: Materializer, ec: ExecutionContext) =
-    compressStream(src).runWith(StreamRefs.sourceRef())
-      .map(s => NetworkSource(fmt, CompressedSourceRef[T](fmt, s)))
+    {
+      println("BUILDING NETWORK SOURCE")
+      compressStream(src).runWith(StreamRefs.sourceRef())
+        .map(s => NetworkSource(fmt, CompressedSourceRef[T](fmt, s)))
+    }
 }
 
 case class SourceRspList[T](fmt: DeltaFmt[T],
@@ -76,7 +79,6 @@ object StreamResponse {
 
     if (actorIsLocal(recipient))
       Future.successful(MemorySource(fmt, src))
-
     else NetworkSource.build(src)
 
 

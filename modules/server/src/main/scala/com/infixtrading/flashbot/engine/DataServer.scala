@@ -1,5 +1,7 @@
 package com.infixtrading.flashbot.engine
 
+import java.time.Instant
+
 import akka.{Done, NotUsed}
 import akka.actor.{Actor, ActorLogging, ActorPath, ActorRef, Props, RootActorPath}
 import akka.cluster.ClusterEvent._
@@ -162,7 +164,9 @@ class DataServer(dbConfig: Config,
     case DataStreamReq(DataSelection(path, from, to)) =>
       val nowMicros = time.currentTimeMicros
       val isLive = to.isEmpty
-      log.debug("Received data stream request")
+      log.debug("Received data stream request for path {} ({} to {})", path,
+        from.map(x => Instant.ofEpochMilli(x / 1000)),
+        to.map(x => Instant.ofEpochMilli(x / 1000)))
       def buildRsp[T](implicit fmt: DeltaFmtJson[T]): Future[StreamResponse[MarketData[T]]] = {
         val src: Future[Source[MarketData[T], NotUsed]] = for {
           // Validate selection and build the live stream response.

@@ -12,8 +12,8 @@ import akka.stream.scaladsl.Sink
 import com.infixtrading.flashbot.client.FlashbotClient
 import com.infixtrading.flashbot.core.{MarketData, Trade}
 import com.infixtrading.flashbot.models.core.{DataPath, TimeRange}
-import com.infixtrading.flashbot.util.time.TimeFmt
-import io.circe.{Decoder, Json, JsonObject}
+import com.infixtrading.flashbot.util.time._
+import io.circe.{Decoder, Encoder, Json, JsonObject}
 import io.circe.syntax._
 import io.circe.generic.auto._
 import io.circe.generic.JsonCodec
@@ -31,6 +31,8 @@ object GrafanaServer {
       from <- obj("from").map(_.as[String].right.get)
       to <- obj("to").map(_.as[String].right.get)
     } yield (from, to)).get
+    val parsed = TimeFmt.ISO8601ToMicros(from)
+    println(s"PARSE from $from to $parsed and back ${parsed.microsToInstant}")
     TimeRange(TimeFmt.ISO8601ToMicros(from), TimeFmt.ISO8601ToMicros(to))
   }
 
@@ -41,7 +43,12 @@ object GrafanaServer {
   @ConfiguredJsonCodec case class Column(text: String, @JsonKey("type") Type: String)
 
 
-  @JsonCodec sealed trait DataSeries
+  sealed trait DataSeries
+
+  implicit val en: Encoder[DataSeries] = Encoder.encodeJsonObject.contramap {
+    case ts: TimeSeries => ts.asJsonObject
+    case table: Table => table.asJsonObject
+  }
 
   @ConfiguredJsonCodec case class Table(columns: Seq[Column], rows: Seq[Seq[Json]], @JsonKey("type") Type: String) extends DataSeries
 
@@ -78,8 +85,8 @@ object GrafanaServer {
     } ~ path("query") {
       entity(as[QueryReqBody]) { body =>
 
-        val fromMillis = body.range.start
-        val toMillis = body.range.end
+        val fromMillis = body.range.start / 1000
+        val toMillis = body.range.end / 1000
 
         val dataSetsFut = Future.sequence(body.targets.toIterator.map[Future[DataSeries]] { target =>
           target.target match {
@@ -89,13 +96,16 @@ object GrafanaServer {
                   pathFromFilters(body.adhocFilters),
                   Some(Instant.ofEpochMilli(fromMillis)),
                   Some(Instant.ofEpochMilli(toMillis)))
+                _ = println("Got a stream src", streamSrc)
                 tradeMDs <- streamSrc.take(body.maxDataPoints).runWith(Sink.seq)
               } yield buildTable(tradeMDs.map(_.data.asJson.asObject.get))
           }
         })
 
         onSuccess(dataSetsFut) { dataSets =>
-          complete(HttpEntity(ContentTypes.`application/json`, dataSets.toSeq.asJson.noSpaces ))
+          val jsonRsp = dataSets.toSeq.asJson
+          println(s"Responding with: $jsonRsp")
+          complete(HttpEntity(ContentTypes.`application/json`, jsonRsp.noSpaces ))
         }
       }
     } ~ path("annotations") {
@@ -116,17 +126,10 @@ object GrafanaServer {
   }
 
   def buildCols(objects: Seq[JsonObject]): Seq[Column] = {
-    var cols = Vector.empty[Column]
-    for (o <- objects.take(100)) {
-      for (key <- o.keys.toSet[String].diff(cols.toSet[Column].map(_.Type))) {
-        val jsonVal = o(key).get
-        val ty = inferJsonType(key, jsonVal)
-        if (ty.isDefined) {
-          cols :+ Column(key, ty.get)
-        }
-      }
-    }
-    cols
+    objects.flatMap(o => o.keys.map(key => key -> inferJsonType(key, o(key).get)))
+      .collect {
+        case (k, Some(ty)) => (k, Column(k, ty))
+      }.toMap.values.toSeq
   }
 
   def buildTable(objects: Seq[JsonObject]): Table = {
