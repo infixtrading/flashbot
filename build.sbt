@@ -33,6 +33,7 @@ lazy val networkDeps = List(
   "com.softwaremill.sttp" %% "core" % "1.5.7",
   "com.softwaremill.sttp" %% "okhttp-backend" % "1.5.7",
 
+  // Warning! Changing this to a newer version may cause a conflict with the circe version (0.10.0)
   "de.heikoseeberger" %% "akka-http-circe" % "1.20.0",
 
   // Pusher
