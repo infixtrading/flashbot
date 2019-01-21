@@ -246,7 +246,6 @@ class DataSourceActor(session: SlickSession,
                                 .filter(_.snapshot.isDefined).map(state =>
                                   SnapshotRow(bundleId, state.seqId, state.micros,
                                     fmt.modelEn(state.item).pretty(Printer.noSpaces))))
-                              _ = log.debug("Ingested {}", states)
                             } yield states.last.seqId
                           }
                           // Clear ingested items from buffer.

@@ -158,9 +158,6 @@ class CoinbaseMarketDataSource extends DataSource {
           }
         }(ctx.dispatcher)
 
-
-      case LadderType(_) =>
-
       case TradesType =>
         // Asynchronously connect to the client and send the subscription message
         Future {

@@ -56,13 +56,8 @@ case class Ladder(depth: Int,
 
 object Ladder {
 
-  implicit val doubleKeyEncoder: KeyEncoder[Double] = new KeyEncoder[Double] {
-    override def apply(key: Double): String = key.toString
-  }
-
-  implicit val doubleKeyDecoder: KeyDecoder[Double] = new KeyDecoder[Double] {
-    override def apply(key: String): Option[Double] = Some(key.toDouble)
-  }
+  implicit val doubleKeyEncoder: KeyEncoder[Double] = KeyEncoder.encodeKeyString.contramap(_.toString)
+  implicit val doubleKeyDecoder: KeyDecoder[Double] = KeyDecoder.decodeKeyString.map(_.toDouble)
 
   case class LadderDelta(side: QuoteSide, priceLevel: Double, quantity: Double)
   object LadderDelta {

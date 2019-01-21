@@ -33,7 +33,7 @@ lazy val networkDeps = List(
   "com.softwaremill.sttp" %% "core" % "1.5.7",
   "com.softwaremill.sttp" %% "okhttp-backend" % "1.5.7",
 
-  "de.heikoseeberger" %% "akka-http-circe" % "1.24.3",
+  "de.heikoseeberger" %% "akka-http-circe" % "1.20.0",
 
   // Pusher
   "com.pusher" % "pusher-java-client" % "1.8.1"

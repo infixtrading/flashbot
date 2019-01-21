@@ -18,7 +18,7 @@ object DataType {
   }
   case class LadderType(depth: Option[Int]) extends DataType[Ladder] {
     override def name = "ladder"
-    override def fmtJson = implicitly[DeltaFmtJson[Ladder]]
+    override def fmtJson = DeltaFmt.defaultFmtJson[Ladder]("ladder")
   }
   case object TradesType extends DataType[Trade] {
     override def name = "trades"
