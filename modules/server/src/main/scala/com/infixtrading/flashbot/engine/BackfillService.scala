@@ -47,7 +47,7 @@ class BackfillService(session: SlickSession, path: DataPath,
   val ClaimTTL = 10 seconds
 
   // Every 500-1500 ms we send a process a BackfillTick event.
-  system.scheduler.schedule(0 millis, 500 millis) (Future {
+  system.scheduler.schedule(0 millis, 2000 millis) (Future {
     Thread.sleep(random.nextInt(1000))
     self ! BackfillTick
   })

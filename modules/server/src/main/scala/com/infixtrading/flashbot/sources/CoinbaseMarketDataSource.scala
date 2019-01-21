@@ -241,7 +241,8 @@ class CoinbaseMarketDataSource extends DataSource {
           case Right(bodyStr) => Future.fromTry(decode[Seq[CoinbaseTrade]](bodyStr).toTry)
             .map { cbTrades =>
               (cbTrades.map(_.toTrade).map(t => (t.micros, t.asInstanceOf[T])),
-                nextCursorOpt.map((_, 10 seconds)))
+                // TODO: Change this back to something like 4 secs
+                nextCursorOpt.map((_, 1 minute)))
             }(ctx.dispatcher)
         }
       }(ctx.dispatcher)

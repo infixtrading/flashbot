@@ -7,7 +7,7 @@ import akka.actor.{Actor, ActorLogging, ActorPath, ActorRef, Props, RootActorPat
 import akka.cluster.ClusterEvent._
 import akka.cluster.{Cluster, Member}
 import akka.pattern.{Backoff, BackoffSupervisor, ask, pipe}
-import akka.stream.ActorMaterializer
+import akka.stream.{ActorMaterializer, ActorMaterializerSettings}
 import akka.stream.alpakka.slick.scaladsl._
 import akka.stream.scaladsl.{Flow, Sink, Source}
 import akka.util.Timeout
@@ -68,8 +68,9 @@ class DataServer(dbConfig: Config,
                  useCluster: Boolean) extends Actor with ActorLogging {
   import DataServer._
 
-  implicit val mat = ActorMaterializer()(context)
   implicit val ec: ExecutionContext = context.system.dispatcher
+  implicit val mat = ActorMaterializer(ActorMaterializerSettings(context.system)
+    .withDispatcher("flashbot-dispatcher"))
 
   val random = new Random()
 

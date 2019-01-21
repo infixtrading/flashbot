@@ -95,7 +95,8 @@ class TradingEngine(engineId: String,
   bootEvents.foreach(log.debug("Boot event: {}", _))
 
   // Start the Grafana data source server
-  Http().bindAndHandle(GrafanaServer.routes(new FlashbotClient(self, skipTouch = true)), "localhost", grafana.port)
+  Http().bindAndHandle(GrafanaServer.routes(new FlashbotClient(self, skipTouch = true)),
+    "localhost", grafana.port)
 
   self ! BootEvents(bootEvents)
 

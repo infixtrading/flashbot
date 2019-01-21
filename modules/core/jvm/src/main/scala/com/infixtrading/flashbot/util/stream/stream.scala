@@ -51,12 +51,18 @@ package object stream {
     .drop(1)
     .map(e => (e._1, e._2.get))
 
-  def buildMaterializer(implicit system: ActorSystem): ActorMaterializer =
-    ActorMaterializer(ActorMaterializerSettings(system).withSupervisionStrategy { err =>
-      println(s"Exception in stream: $err")
-      throw err
-      Supervision.Stop
-    })
+  def buildMaterializer(name: Option[String])(implicit system: ActorSystem): ActorMaterializer =
+    {
+      var settings = ActorMaterializerSettings(system).withSupervisionStrategy { err =>
+        println(s"Exception in stream: $err")
+        throw err
+        Supervision.Stop
+      }
+      if (name.isDefined) {
+        settings = settings.withBlockingIoDispatcher(name.get)
+      }
+      ActorMaterializer()
+    }
 
   def iteratorToSource[T](it: Iterator[T])(implicit ec: ExecutionContext): Source[T, NotUsed] = {
     Source.unfoldAsync[Iterator[T], T](it) { memo =>

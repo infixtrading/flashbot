@@ -18,13 +18,13 @@ object CoinbaseIngest extends App {
     )
   )
   implicit val system = ActorSystem("coinbase-system", config.akka)
-  implicit val ec = system.dispatcher
+//  implicit val ec = system.dispatcher
 
   val dataServer = system.actorOf(DataServer.props(config))
 
   val engine = system.actorOf(TradingEngine.props("trading-engine", config, dataServer))
 
-  Thread.sleep(1000 * 60)
+//  Thread.sleep(1000 * 60)
 
 //  Await.ready(for {
 //    _ <- system.terminate()
