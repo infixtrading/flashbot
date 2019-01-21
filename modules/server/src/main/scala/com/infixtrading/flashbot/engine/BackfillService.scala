@@ -152,11 +152,16 @@ class BackfillService(session: SlickSession, path: DataPath,
       claim <- selectClaimed.result.head
 
       // Request the data seq, next cursor, and delay
-      (data, nextCursorOpt) <- DBIO.from(
+      (rspData, nextCursorOpt) <- DBIO.from(
         dataSource.backfillPage(claim.topic, path.dataTypeInstance[T], claim.cursor))
 
       // Ensure the data isn't backwards. It can be easy to mess this up.
       // The first element should be the most recent!
+      data <-
+        if (rspData.size >= 2 && rspData.head._1 < rspData.last._1)
+          DBIO.failed(new IllegalStateException(
+            "Backfill data must be in reverse chronological order."))
+        else DBIO.successful(rspData.reverse)
 
       // We got some data from the backfill. Let's insert it and schedule the next page.
       // Find the earliest seqid for this bundle. Only look at snapshots. There should

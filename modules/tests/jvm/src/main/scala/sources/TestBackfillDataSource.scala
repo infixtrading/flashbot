@@ -44,6 +44,7 @@ class TestBackfillDataSource extends DataSource {
       .dropRight(count)
       .takeRight(batchSize)
       .map(t => (t.micros, t.asInstanceOf[T]))
+      .reverse
     val isDone = count + batchSize >= historicalTrades.size
     Future.successful((page, if (isDone) None else Some(((count + batchSize).toString, 100 millis))))
   }
