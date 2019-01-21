@@ -3,11 +3,13 @@ package com.infixtrading.flashbot.engine
 import java.sql.Timestamp
 import java.time.Instant
 import java.util.UUID
+import java.util.concurrent.Executors
 
 import akka.actor.{Actor, ActorLogging}
 import akka.stream.ActorMaterializer
 import akka.stream.alpakka.slick.javadsl.SlickSession
 import com.infixtrading.flashbot.core.DataSource
+import com.infixtrading.flashbot.util.stream._
 import com.infixtrading.flashbot.db._
 import com.infixtrading.flashbot.engine.BackfillService.BackfillTick
 import com.infixtrading.flashbot.models.core.DataPath
@@ -15,7 +17,7 @@ import io.circe.Printer
 import io.circe.syntax._
 
 import scala.concurrent.ExecutionContext.Implicits.global
-import scala.concurrent.Future
+import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration._
 import scala.language.postfixOps
 import scala.util.{Failure, Random, Success}
@@ -37,9 +39,12 @@ class BackfillService(session: SlickSession, path: DataPath,
                       dataSource: DataSource) extends Actor with ActorLogging {
   import session.profile.api._
 
-  val system = context.system
+  implicit val system = context.system
+  implicit val mat = buildMaterializer()
   val random = new Random()
-  implicit val mat = ActorMaterializer()
+
+  val blockingEc: ExecutionContext =
+    ExecutionContext.fromExecutor(Executors.newFixedThreadPool(2))
 
   val instanceId = UUID.randomUUID().toString
 
@@ -50,7 +55,7 @@ class BackfillService(session: SlickSession, path: DataPath,
   system.scheduler.schedule(0 millis, 2000 millis) (Future {
     Thread.sleep(random.nextInt(1000))
     self ! BackfillTick
-  })
+  }) (blockingEc)
 
   def selectBackfill = Backfills.filter(row => row.source === path.source &&
     row.topic === path.topic && row.datatype === path.datatype)

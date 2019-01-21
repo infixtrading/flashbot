@@ -1,6 +1,7 @@
 package com.infixtrading.flashbot.sources
 
 import java.net.URI
+import java.util.concurrent.Executors
 
 import akka.NotUsed
 import akka.actor.{ActorContext, ActorRef, PoisonPill}
@@ -31,9 +32,12 @@ import scala.language.postfixOps
 
 class CoinbaseMarketDataSource extends DataSource {
 
+  val blockingEc: ExecutionContext =
+    ExecutionContext.fromExecutor(Executors.newFixedThreadPool(5))
+
   import CoinbaseMarketDataSource._
 
-  implicit val okHttpBackend = OkHttpFutureBackend()
+  implicit val okHttpBackend = OkHttpFutureBackend()(blockingEc)
 
   override def scheduleIngest(topics: Set[String], dataType: String) = {
     println("Scheduling")
@@ -42,6 +46,8 @@ class CoinbaseMarketDataSource extends DataSource {
 
   override def ingestGroup[T](topics: Set[String], datatype: DataType[T])
                              (implicit ctx: ActorContext, mat: ActorMaterializer) = {
+
+    implicit val ec: ExecutionContext = ctx.dispatcher
 
     val log = ctx.system.log
     log.debug("Starting ingest group {}, {}", topics, datatype)
@@ -105,7 +111,7 @@ class CoinbaseMarketDataSource extends DataSource {
           // Send the subscription message
           log.debug("Sending message: {}", strMsg)
           client.send(strMsg)
-        }(ExecutionContext.global)
+        }(blockingEc)
 
         val snapshotPromises = topics.map(_ -> Promise[StreamItem]).toMap
 
@@ -128,7 +134,7 @@ class CoinbaseMarketDataSource extends DataSource {
                   .watchTermination()(Keep.right).preMaterialize()
                 done.onComplete(_ => {
                   ref ! PoisonPill
-                })(ctx.dispatcher)
+                })
                 topic -> src
             })
           }
@@ -156,7 +162,7 @@ class CoinbaseMarketDataSource extends DataSource {
             case err: Throwable =>
               log.warning("An error occured while closing the Coinbase WebSocket connection: {}", err)
           }
-        }(ctx.dispatcher)
+        }
 
       case TradesType =>
         // Asynchronously connect to the client and send the subscription message
@@ -175,7 +181,7 @@ class CoinbaseMarketDataSource extends DataSource {
           // Send the subscription message
           log.debug("Sending message: {}", strMsg)
           client.send(strMsg)
-        }(ExecutionContext.global)
+        } (blockingEc)
 
         jsonSrc.alsoTo(Sink.foreach { json =>
           // Resolve promise if necessary
@@ -192,7 +198,7 @@ class CoinbaseMarketDataSource extends DataSource {
 
                 done.onComplete(_ => {
                   ref ! PoisonPill
-                })(ctx.dispatcher)
+                })
                 topic -> src
             })
           }
@@ -219,7 +225,7 @@ class CoinbaseMarketDataSource extends DataSource {
             case err: Throwable =>
               log.warning("An error occured while closing the Coinbase WebSocket connection: {}", err)
           }
-        }(ctx.dispatcher)
+        }
     }
 
     responsePromise.future
@@ -229,6 +235,7 @@ class CoinbaseMarketDataSource extends DataSource {
                               (implicit ctx: ActorContext, mat: ActorMaterializer)
       : Future[(Seq[(Long, T)], Option[(String, Duration)])] = datatype match {
     case TradesType =>
+      implicit val ec = ctx.dispatcher
       val product = toCBProduct(topic)
       var uri = uri"https://api.pro.coinbase.com/products/$product/trades"
       if (cursor.isDefined) {
@@ -242,10 +249,10 @@ class CoinbaseMarketDataSource extends DataSource {
             .map { cbTrades =>
               (cbTrades.map(_.toTrade).map(t => (t.micros, t.asInstanceOf[T])),
                 // TODO: Change this back to something like 4 secs
-                nextCursorOpt.map((_, 1 minute)))
-            }(ctx.dispatcher)
+                nextCursorOpt.map((_, 4 seconds)))
+            }
         }
-      }(ctx.dispatcher)
+      }
   }
 }
 

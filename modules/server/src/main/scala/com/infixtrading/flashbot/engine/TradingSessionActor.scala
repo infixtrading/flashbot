@@ -45,8 +45,8 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
                           dataServer: ActorRef) extends Actor with ActorLogging {
 
   implicit val system: ActorSystem = context.system
-  implicit val mat: ActorMaterializer = buildMaterializer
-  implicit val ec: ExecutionContext = mat.executionContext
+  implicit val mat: ActorMaterializer = buildMaterializer()
+  implicit val ec: ExecutionContext = system.dispatcher
 
   // Setup a thread safe reference to an event buffer which allows the session to process
   // events synchronously when possible.

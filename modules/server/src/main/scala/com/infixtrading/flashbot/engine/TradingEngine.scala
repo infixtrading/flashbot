@@ -21,8 +21,8 @@ import com.infixtrading.flashbot.core.FlashbotConfig.{BotConfig, ExchangeConfig,
 import com.infixtrading.flashbot.core._
 import com.infixtrading.flashbot.engine.TradingSessionActor.{SessionPing, SessionPong, StartSession, StopSession}
 import com.infixtrading.flashbot.util.time.currentTimeMicros
-import com.infixtrading.flashbot.util.stream.buildMaterializer
 import com.infixtrading.flashbot.util.json._
+import com.infixtrading.flashbot.util.stream._
 import com.infixtrading.flashbot.util._
 import com.infixtrading.flashbot.models.api._
 import com.infixtrading.flashbot.models.core._
@@ -47,10 +47,12 @@ class TradingEngine(engineId: String,
                     grafana: GrafanaConfig)
   extends PersistentActor with ActorLogging {
 
+  val blockingEc: ExecutionContext =
+    ExecutionContext.fromExecutor(Executors.newFixedThreadPool(32))
+
   private implicit val system: ActorSystem = context.system
+  private implicit val mat: Materializer = buildMaterializer()
   private implicit val ec: ExecutionContext = system.dispatcher
-  private implicit val mat: Materializer =
-    ActorMaterializer(ActorMaterializerSettings(system).withDispatcher("engine-dispatcher"))
   private implicit val timeout: Timeout = Timeout(15 seconds)
 
   override def persistenceId: String = engineId
@@ -95,7 +97,7 @@ class TradingEngine(engineId: String,
   bootEvents.foreach(log.debug("Boot event: {}", _))
 
   // Start the Grafana data source server
-  Http().bindAndHandle(GrafanaServer.routes(new FlashbotClient(self, skipTouch = true)),
+  Http().bindAndHandle(GrafanaServer.routes(new FlashbotClient(self, skipTouch = true)(blockingEc)),
     "localhost", grafana.port)
 
   self ! BootEvents(bootEvents)

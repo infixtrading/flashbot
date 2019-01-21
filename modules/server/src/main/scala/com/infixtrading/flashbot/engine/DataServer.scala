@@ -68,9 +68,9 @@ class DataServer(dbConfig: Config,
                  useCluster: Boolean) extends Actor with ActorLogging {
   import DataServer._
 
-  implicit val ec: ExecutionContext = context.system.dispatcher
-  implicit val mat = ActorMaterializer(ActorMaterializerSettings(context.system)
-    .withDispatcher("flashbot-dispatcher"))
+  implicit val system = context.system
+  implicit val ec: ExecutionContext = system.dispatcher
+  implicit val mat = buildMaterializer()
 
   val random = new Random()
 

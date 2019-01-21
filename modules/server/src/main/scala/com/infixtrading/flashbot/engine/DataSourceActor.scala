@@ -39,10 +39,11 @@ class DataSourceActor(session: SlickSession,
   import DataSourceActor._
   import session.profile.api._
 
-  implicit val ec: ExecutionContext =
-    ExecutionContext.fromExecutor(Executors.newFixedThreadPool(20))
+  val blockingEc: ExecutionContext =
+    ExecutionContext.fromExecutor(Executors.newFixedThreadPool(2))
   implicit val system = context.system
-  implicit val mat = ActorMaterializer()
+  implicit val mat = buildMaterializer()
+  implicit val ec = system.dispatcher
   implicit val slickSession = session
 
   val random = new Random()
@@ -155,12 +156,12 @@ class DataSourceActor(session: SlickSession,
           def getStreams[T](topics: Either[String, Set[String]],
                             delay: Duration, matchers: Set[DataPath])
                            (implicit fmt: DeltaFmtJson[T]) = for {
-            _ <- Future { Thread.sleep(delay.toMillis) }
+            _ <- Future { Thread.sleep(delay.toMillis) } (blockingEc)
 
             streams <- topics match {
               case Left(topic) => dataSource.ingest[T](topic, DataType(dataType))
                 .map(src => Map(topic -> src))
-              case Right(ts)   => dataSource.ingestGroup[T](ts, DataType(dataType))
+              case Right(ts) => dataSource.ingestGroup[T](ts, DataType(dataType))
             }
           } yield streams.filterKeys(topic =>
             matchers.exists(_.matches(DataPath(srcKey, topic, dataType))))
@@ -198,7 +199,7 @@ class DataSourceActor(session: SlickSession,
                         // Also start a backfill service for each matching path.
                         if (ingestConfig.backfillMatchers.exists(_.matches(path))) {
                           log.debug(s"Launching BackfillService for {}", path)
-//                          context.actorOf(Props(new BackfillService(session, path, dataSource)))
+                          context.actorOf(Props(new BackfillService(session, path, dataSource)))
                         }
 
                         // Save bundle id for this path.
