@@ -26,22 +26,18 @@ Market data servers (the `DataServer` actor) connect to outside data sources suc
 * Tolerant to network and websocket failures (i.e. it manages the retries)
 
 ## Docs
-
-* Read the [Getting Started](https://github.com/infixtrading/flashbot/wiki/Getting-Started) page
-* Follow along to some tutorials and examples:
-  1. Built-in strategy: MACD Crossover backtest & bot (with [Scala](https://github.com/infixtrading/flashbot/wiki/Getting-Started) or [Java](https://github.com/infixtrading/flashbot/wiki/Getting-Started))
-  2. Custom strategy: Building a simple market maker (with [Scala](https://github.com/infixtrading/flashbot/wiki/Getting-Started))
-  3. Building a currency conversion service (with [Scala](https://github.com/infixtrading/flashbot/wiki/Getting-Started))
-* [Flashbot Terminology](https://github.com/infixtrading/flashbot/wiki/Terminology)
-
-## Status
-This project is alpha software. In it's current state it's a good tool for prototyping and simulating strategies however the unit tests are minimal and it hasn't been battle tested in production yet. Do not use it out of the box for real trading yet! You have been warned.
-
-The client library and actor APIs support both Java and Scala, however extensions such as custom exchanges, data sources, and strategies currently require Scala. Full Java support is planned for future releases.
+Check out the [Getting Started](https://github.com/infixtrading/flashbot/wiki/Getting-Started) page for documentation.
 
 ## Configuration
-Check out the default [configuration file](https://github.com/infixtrading/flashbot/blob/master/modules/server/src/main/resources/reference.conf) to see a list of available options. You can override any of the settings in your own `application.conf` file.
+The default [configuration file](https://github.com/infixtrading/flashbot/blob/master/modules/server/src/main/resources/reference.conf) contains a list of available options. You can override any of the settings in your own `application.conf` file.
 
 ## Requirements
 Flashbot fully embraces Akka for persistence, streaming, clustering, fault-tolerance, and concurrency control. [Akka Cluster 2.5.x](https://doc.akka.io/docs/akka/2.5/index-cluster.html) is a dependency, but running a cluster is not required. You may use Flashbot in standalone mode on a non-cluster actor system.
 
+## Status
+This project is alpha software. In it's current state it's a good tool for prototyping and simulating strategies however the unit tests are minimal and it hasn't been battle tested in production yet. Do not use it out of the box with real money yet! You have been warned.
+
+The client library and actor APIs support both Java and Scala, however extensions such as custom exchanges, data sources, and strategies currently require Scala. Full Java support is planned for future releases.
+
+## Contributing
+Contributions are very welcome! This project is young, it's scope is large, and needs more manpower. Please propose issues through GitHub first before submitting a pull request.
