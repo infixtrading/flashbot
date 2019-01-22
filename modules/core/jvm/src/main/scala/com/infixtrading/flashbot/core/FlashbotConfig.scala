@@ -19,7 +19,7 @@ case class FlashbotConfig(`engine-root`: String,
                           sources: Map[String, DataSourceConfig],
                           bots: StaticBotsConfig,
                           grafana: GrafanaConfig,
-                          akka: Config,
+                          conf: Config,
                           db: Config) {
   def noIngest = copy(ingest = ingest.copy(enabled = Seq.empty))
 }
@@ -73,29 +73,30 @@ object FlashbotConfig {
 
   case class GrafanaConfig(port: Int)
 
-//  implicit val configEncoder: Encoder[FlashbotConfig] = deriveEncoder[FlashbotConfig]
-//  implicit val configDecoder: Decoder[FlashbotConfig] = deriveDecoder[FlashbotConfig]
-
-//  def load(config: Config): Either[Error, FlashbotConfig] =
-//    config.as[FlashbotConfig].map(c => c.copy(akka = ))
-
   def tryLoad: Try[FlashbotConfig] = {
     val overrides = ConfigFactory.defaultOverrides()
     val apps = ConfigFactory.parseResources("application.conf")
     val refs = ConfigFactory.parseResources("reference.conf")
 
-    val conf = overrides
+    var conf = overrides
       // Initial fallback is to `application.conf`
       .withFallback(apps)
       // We want `flashbot.akka` reference to override `akka` reference.
       .withFallback(refs.getConfig("flashbot").withOnlyPath("akka"))
       // Then we fallback to default references.
-      .withFallback(refs)
+      .withFallback(refs.withoutPath("flashbot.akka"))
       // Finally, resolve.
       .resolve()
 
-    conf.getConfig("flashbot").as[FlashbotConfig]
-      .map(c => c.copy(akka = conf)).toTry
+    // Replace db with the chosen config.
+    val dbOverride = conf.getConfig(conf.getString("flashbot.db"))
+    conf = dbOverride.atPath("flashbot.db").withFallback(conf)
+
+    // Place full copy of the config into "flashbot.conf".
+    conf = conf.withoutPath("flashbot").atPath("flashbot.conf").withFallback(conf)
+
+    // Decode into a FlashbotConfig
+    conf.getConfig("flashbot").as[FlashbotConfig].toTry
   }
   def load: FlashbotConfig = tryLoad.get
 }

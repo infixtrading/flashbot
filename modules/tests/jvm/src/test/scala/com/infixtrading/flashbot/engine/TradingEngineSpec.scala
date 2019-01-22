@@ -55,7 +55,7 @@ class TradingEngineSpec extends WordSpecLike
   "TradingEngine" should {
     "respond to a ping" in {
       val config = FlashbotConfig.load
-      val system = ActorSystem("System1", config.akka)
+      val system = ActorSystem("System1", config.conf)
 
       val dataServer = system.actorOf(DataServer.props(config))
 
@@ -82,7 +82,7 @@ class TradingEngineSpec extends WordSpecLike
 
     "respect bot TTL" in {
       val config = FlashbotConfig.load
-      val system = ActorSystem("System1", config.akka)
+      val system = ActorSystem("System1", config.conf)
 
       val engine = system.actorOf(TradingEngine.props("test-engine"))
       val fb = new FlashbotClient(engine)
@@ -129,7 +129,7 @@ class TradingEngineSpec extends WordSpecLike
     "subscribe to the report of a running bot" in {
 
       val config = FlashbotConfig.load
-      implicit val system = ActorSystem("System1", config.akka)
+      implicit val system = ActorSystem("System1", config.conf)
 
       val engine = system.actorOf(TradingEngine.props("test-engine"))
       val fb = new FlashbotClient(engine)
@@ -173,7 +173,7 @@ class TradingEngineSpec extends WordSpecLike
         )
       ))
 
-      implicit val system = ActorSystem("System1", config.akka)
+      implicit val system = ActorSystem("System1", config.conf)
       val engine = system.actorOf(TradingEngine.props("engine", config))
       val fb = new FlashbotClient(engine)
       fb.botStatus("scanner1") shouldBe Running
@@ -185,7 +185,7 @@ class TradingEngineSpec extends WordSpecLike
     "be profitable when using lookahead" in {
 
       val config = FlashbotConfig.load
-      implicit val system = ActorSystem("System1", config.akka)
+      implicit val system = ActorSystem("System1", config.conf)
 
       val now = Instant.now()
 

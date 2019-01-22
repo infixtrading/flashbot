@@ -18,53 +18,54 @@ import scala.language.postfixOps
 
 object CoinbaseIngest extends App {
 
-
   implicit val config = FlashbotConfig.load.copy(
     ingest = IngestConfig(
       enabled = Seq("coinbase/btc_usd/trades"),
+//      enabled = Seq(),
       backfill = Seq("coinbase/btc_usd/trades"),
+//      backfill = Seq(),
       retention = Seq()
     )
   )
 
   var metricsServer: HTTPServer = new HTTPServer(9322)
 
-  implicit val system = ActorSystem("coinbase-system", config.akka)
+  implicit val system = ActorSystem("coinbase-system", config.conf)
 
   val dataServer = system.actorOf(DataServer.props(config))
 
   val engine = system.actorOf(TradingEngine.props("trading-engine", config, dataServer))
 
-  val blockingEc: ExecutionContext =
-    ExecutionContext.fromExecutor(Executors.newFixedThreadPool(5))
+//  val blockingEc: ExecutionContext =
+//    ExecutionContext.fromExecutor(Executors.newFixedThreadPool(5))
 
-  implicit val ec: ExecutionContext = system.dispatcher
-  val client = new FlashbotClient(engine)(ec)
+//  implicit val ec: ExecutionContext = system.dispatcher
+//  val client = new FlashbotClient(engine)(ec)
 
-  val marketDataLatency = Summary.build("client_marketdata_ms",
-    "Client market data request latency in millis").register()
-  val backtestLatency = Summary.build("client_price_ms",
-    "Client price request latency in millis").register()
+//  val marketDataLatency = Summary.build("client_marketdata_ms",
+//    "Client market data request latency in millis").register()
+//  val backtestLatency = Summary.build("client_price_ms",
+//    "Client price request latency in millis").register()
 
-  Future {
-    Thread.sleep(5000)
-    while (true) {
-      val timer = marketDataLatency.startTimer()
-      client.historicalMarketDataAsync("coinbase/btc_usd/trades", Some(0.microsToInstant))
-          .andThen { case _ => timer.observeDuration() }
-      Thread.sleep(1000)
-    }
-  }(blockingEc)
-
-  Future {
-    Thread.sleep(6500)
-    while (true) {
-      val timer = backtestLatency.startTimer()
-      client.pricesAsync("coinbase/btc_usd/trades", TimeRange(0, Long.MaxValue), 5 minutes)
-        .andThen { case _ => timer.observeDuration() }
-      Thread.sleep(1000)
-    }
-  }(blockingEc)
+//  Future {
+//    Thread.sleep(5000)
+//    while (true) {
+//      val timer = marketDataLatency.startTimer()
+//      client.historicalMarketDataAsync("coinbase/btc_usd/trades", Some(0.microsToInstant))
+//          .andThen { case _ => timer.observeDuration() }
+//      Thread.sleep(1000)
+//    }
+//  }(blockingEc)
+//
+//  Future {
+//    Thread.sleep(6500)
+//    while (true) {
+//      val timer = backtestLatency.startTimer()
+//      client.pricesAsync("coinbase/btc_usd/trades", TimeRange(0, Long.MaxValue), 5 minutes)
+//        .andThen { case _ => timer.observeDuration() }
+//      Thread.sleep(1000)
+//    }
+//  }(blockingEc)
 
 
 //  Thread.sleep(1000 * 60)

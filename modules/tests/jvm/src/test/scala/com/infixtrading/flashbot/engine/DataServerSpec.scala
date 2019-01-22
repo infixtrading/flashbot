@@ -120,7 +120,7 @@ class DataServerSpec extends WordSpecLike with Matchers with Eventually {
             Some(Seq("btc_usd")), Some(Seq("trades"))))
       )
 
-      implicit val system = ActorSystem("system1", config.akka)
+      implicit val system = ActorSystem("system1", config.conf)
       val dataServer = system.actorOf(DataServer.props(config))
 
       implicit val timeout = Timeout(1 minute)

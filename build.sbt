@@ -5,6 +5,15 @@ import sbtcrossproject.{ CrossProject, CrossType }
 import scala.xml.{ Elem, Node => XmlNode, NodeSeq => XmlNodeSeq }
 import scala.xml.transform.{ RewriteRule, RuleTransformer }
 
+/**
+  * How to run from the command line with options:
+  * Example assumes there is a MyMainApp object in the classpath.
+  *
+  * $ sbt '; set javaOptions += "-Dflashbot.db=postgresdb" ; runMain MyMainApp'
+  * 
+  * $ sbt '; set javaOptions += "-Dflashbot.db=postgresdb"; set javaOptions += "-Dakka.loglevel=INFO" ; runMain examples.CoinbaseIngest'
+  */
+
 organization in ThisBuild := "com.infixtrading"
 version in ThisBuild := "0.1.0"
 parallelExecution in ThisBuild := false
@@ -307,6 +316,7 @@ lazy val flashbot = project
         |implicit val mat = ActorMaterializer()
       """.stripMargin
   )
+  .settings(fork in run := true)
   .aggregate(aggregatedProjects: _*)
   .dependsOn(core, server, testing)
 
@@ -403,8 +413,11 @@ lazy val server = flashbotModule("server", previousFBVersion).settings(
       "com.twitter" %% "chill-akka" % "0.9.3",
 
       "com.typesafe.slick" %% "slick" % "3.2.3",
-      "com.lightbend.akka" %% "akka-stream-alpakka-slick" % "1.0-M1",
-      "com.h2database" % "h2" % "1.4.192"
+      "com.typesafe.slick" %% "slick-hikaricp" % "3.2.3",
+//      "com.zaxxer" % "HikariCP" % "3.3.0",
+      "com.lightbend.akka" %% "akka-stream-alpakka-slick" % "1.0-M2",
+      "com.h2database" % "h2" % "1.4.192",
+      "org.postgresql" % "postgresql" % "42.2.5"
     ))
 ).dependsOn(core, client)
 
@@ -418,8 +431,6 @@ lazy val testingBase = crossModule("testing", previousFBVersion)
       _.filterNot(Set("-Yno-predef"))
     },
     libraryDependencies ++= Seq(
-      "org.scalacheck" %%% "scalacheck" % scalaCheckVersionFor(scalaVersion.value),
-      "org.scalatest" %%% "scalatest" % scalaTestVersionFor(scalaVersion.value)
     )
   ).dependsOn(coreBase)
 

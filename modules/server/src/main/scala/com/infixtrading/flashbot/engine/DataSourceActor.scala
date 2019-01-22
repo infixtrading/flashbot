@@ -200,6 +200,8 @@ class DataSourceActor(session: SlickSession,
                         if (ingestConfig.backfillMatchers.exists(_.matches(path))) {
                           log.debug(s"Launching BackfillService for {}", path)
                           context.actorOf(Props(new BackfillService(session, path, dataSource)))
+                        } else {
+                          log.error("{} does not match any of {}", path, ingestConfig.backfillMatchers)
                         }
 
                         // Save bundle id for this path.

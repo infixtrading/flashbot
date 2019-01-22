@@ -74,7 +74,7 @@ class DataServer(dbConfig: Config,
 
   val random = new Random()
 
-  val slickSession = SlickSession.forConfig(dbConfig)
+  implicit val slickSession = SlickSession.forConfig(dbConfig)
 
   // Subscribe to cluster MemberUp events to register ourselves with all other data servers.
   val cluster: Option[Cluster] = if (useCluster) Some(Cluster(context.system)) else None
@@ -269,7 +269,7 @@ class DataServer(dbConfig: Config,
   def buildHistoricalStream[T](path: DataPath, fromMicros: Long, toMicros: Long)
                               (implicit fmt: DeltaFmtJson[T])
       : Future[Source[MarketData[T], NotUsed]] = {
-    implicit val session = SlickSession.forConfig(dbConfig)
+//    implicit val session = SlickSession.forConfig(dbConfig)
     val lookbackFromMicros = fromMicros - DataSourceActor.SnapshotInterval.toMicros
     log.debug("Building historical stream")
     for {
@@ -289,12 +289,14 @@ class DataServer(dbConfig: Config,
         .source(Snapshots
           .filter(x => (x.micros >= lookbackFromMicros) && (x.micros < toMicros))
           .filter(x => x.bundle.inSet(bundleIds))
+          .sortBy(x => (x.bundle, x.seqid))
           .result)
 
       deltas: Source[Wrap, NotUsed] = Slick
         .source(Deltas
           .filter(x => (x.micros >= lookbackFromMicros) && (x.micros < toMicros))
           .filter(x => x.bundle.inSet(bundleIds))
+          .sortBy(x => (x.bundle, x.seqid))
           .result)
 
     } yield snapshots.mergeSorted[Wrap, NotUsed](deltas)(Wrap.ordering)

@@ -477,7 +477,7 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
 
       fut.onComplete {
         case Success(_) =>
-          log.info("session success")
+          log.debug("session success")
           sessionEventsRef ! SessionComplete(error = None)
           context.stop(self)
         case Failure(err) =>

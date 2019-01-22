@@ -248,6 +248,10 @@ class CoinbaseMarketDataSource extends DataSource {
           case Left(err) => Future.failed(new RuntimeException(s"Error in Coinbase backfill: $err"))
           case Right(bodyStr) => Future.fromTry(decode[Seq[CoinbaseTrade]](bodyStr).toTry)
             .map { cbTrades =>
+              println(cbTrades.size + " elements")
+              println(cbTrades.head)
+              println(cbTrades.last)
+              println(s"Next cursor: $nextCursorOpt")
               (cbTrades.map(_.toTrade).map(t => (t.micros, t.asInstanceOf[T])),
                 // TODO: Change this back to something like 4 secs
                 nextCursorOpt.map((_, 4 seconds)))

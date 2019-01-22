@@ -411,13 +411,10 @@ class TradingEngine(engineId: String,
       case query: TimeSeriesQuery =>
         (if (query.path.isPattern) Future.failed(
           new IllegalArgumentException("Patterns are not currently supported in time series queries."))
-//        else if (query.selection.isPolling) Future.failed(
-//          new IllegalArgumentException("Polling time series queries are not currently supported."))
         else {
           val params = TimeSeriesStrategy.Params(query.path)
           (self ? BacktestQuery("time_series", params.asJson.noSpaces, query.range,
               Portfolio.empty.asJson.noSpaces, Some(query.interval)))
-            .andThen { case x => log.debug("GOT RESPONSE BACK {}", x) }
             .mapTo[ReportResponse]
             .map(_.report.timeSeries)
         }) pipeTo sender()
@@ -450,7 +447,6 @@ class TradingEngine(engineId: String,
           // Fold the empty report over the ReportEvents emitted from the session.
           val fut: Future[Report] = reportEventSrc
             .scan[(Report, scala.Seq[Json])]((report, Seq.empty))((r, ev) => {
-              var newReport = r._1
               // Complete this stream once a SessionComplete event comes in.
               ev match {
                 case SessionComplete(None) => ref ! Status.Success(Done)
@@ -460,7 +456,7 @@ class TradingEngine(engineId: String,
 
               val deltas = r._1.genDeltas(ev)
               var jsonDeltas = Seq.empty[Json]
-            backtestReportDeltaSize.observe(deltas.size)
+
               deltas.foreach { delta =>
                 jsonDeltas :+= delta.asJson
                 backtestReportDeltaCounter.inc()
@@ -492,7 +488,6 @@ class TradingEngine(engineId: String,
           fut.andThen {
             case x =>
               timer.observeDuration()
-              log.info("Fut: {}", x)
           }.map(ReportResponse) pipeTo sender
         } catch {
           case err: Throwable =>
@@ -719,8 +714,6 @@ object TradingEngine {
     lazy val dataQueryLatency = Summary.build("data_query_ms", "Data stream request latency in millis").register()
     lazy val reportEventCounter = Counter.build("report_event_count",
       "Counter of report events emitted by backtests").register()
-    lazy val backtestReportDeltaSize = Summary.build("backtest_report_delta_size",
-      "Length of each generated report delta seq").register()
     lazy val backtestReportDeltaCounter = Counter.build("backtest_report_delta_counter",
       "Counter of report deltas").register()
   }
