@@ -14,6 +14,7 @@ import com.infixtrading.flashbot.core._
 import com.infixtrading.flashbot.models.core.Order.{OrderType, Side, TickDirection}
 import com.infixtrading.flashbot.models.core.OrderBook
 import com.infixtrading.flashbot.util.time.TimeFmt
+import com.infixtrading.flashbot.util.stream._
 import com.infixtrading.flashbot.util
 import com.softwaremill.sttp.Uri.QueryFragment.KeyValue
 import io.circe.generic.JsonCodec
@@ -249,7 +250,10 @@ class CoinbaseMarketDataSource extends DataSource {
           case Left(err) => Future.failed(new RuntimeException(s"Error in Coinbase backfill: $err"))
           case Right(bodyStr) => Future.fromTry(decode[Seq[CoinbaseTrade]](bodyStr).toTry)
 
-            // Filter out duplicates.
+            // When you reach the end, it looks like they just return a list of the same trade.
+            .map(_.toStream.dropDuplicates(Ordering.by(_.trade_id)))
+
+            // Filter out any overlapping trades with prev page.
             .map(_.dropWhile(_.trade_id >=
               cursor.map(_.lastItemId.toLong).getOrElse[Long](Long.MaxValue)))
 

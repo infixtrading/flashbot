@@ -111,11 +111,12 @@ package object stream {
   implicit class StreamOps[T](stream: Stream[T]) {
 
     def scanPrev: Stream[(Option[T], T)] = {
-      val init: Option[(Option[T], T)] = None
+      val init: (Option[T], Option[T]) = (None, None)
       stream.scanLeft(init) {
-        case (None, item) => Some((Some(item), item))
-        case (Some((_, prev)), item) => Some((Some(prev), item))
-      }.drop(1).map(_.get)
+        case ((None, None), item) => (None, Some(item))
+        case ((None, Some(a)), item) => (Some(a), Some(item))
+        case ((Some(_), Some(a)), item) => (Some(a), Some(item))
+      } drop 1 map (x => (x._1, x._2.get))
     }
 
     def dropUnordered(implicit ordering: Ordering[T]): Stream[T] =

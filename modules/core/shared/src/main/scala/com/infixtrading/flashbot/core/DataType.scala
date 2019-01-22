@@ -6,8 +6,13 @@ import com.infixtrading.flashbot.util.time.parseDuration
 import scala.concurrent.duration.FiniteDuration
 
 sealed trait DataType[T] {
+  private val defaultOrdering = new Ordering[T] {
+    override def compare(x: T, y: T) = 0
+  }
+
   def name: String
   def fmtJson: DeltaFmtJson[T]
+  def ordering: Ordering[T] = defaultOrdering
 }
 
 object DataType {

@@ -8,7 +8,7 @@ import java.util.concurrent.Executors
 import akka.actor.{Actor, ActorLogging}
 import akka.stream.ActorMaterializer
 import akka.stream.alpakka.slick.javadsl.SlickSession
-import com.infixtrading.flashbot.core.DataSource
+import com.infixtrading.flashbot.core.{DataSource, DataType}
 import com.infixtrading.flashbot.util.stream._
 import com.infixtrading.flashbot.db._
 import com.infixtrading.flashbot.engine.BackfillService.BackfillTick
@@ -16,6 +16,7 @@ import com.infixtrading.flashbot.models.core.DataPath
 import io.circe.Printer
 import io.circe.syntax._
 
+import scala.collection.immutable
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration._
@@ -147,25 +148,25 @@ class BackfillService(session: SlickSession, path: DataPath,
 
     log.debug("Running backfill page for {}", path)
 
+    val dataType = path.dataTypeInstance[T]
+
     session.db.run((for {
       // Fetch the selected claim. The negative of the claim id will be the bundle id.
       claim <- selectClaimed.result.head
 
       // Request the data seq, next cursor, and delay
-      (rawRspData, nextCursorOpt) <- DBIO.from(
+      (rspData, nextCursorOpt) <- DBIO.from(
         dataSource.backfillPage(claim.topic, path.dataTypeInstance[T], claim.cursor))
-
-      rspData = rawRspData.toStream.distinct
 
       // Ensure the data isn't backwards. It can be easy to mess this up.
       // The first element should be the most recent!
       data <-
-        if (rspData.size >= 2 && rspData.head._1 < rspData.last._1)
+        if (rspData.size >= 2 && dataType.ordering.compare(rspData.head._2, rspData.last._2) < 0)
           DBIO.failed(new IllegalStateException(
             s"Backfill data out of order. It must be in reverse chronological order. ${rspData}"))
         else DBIO.successful(rspData.reverse)
 
-      _ = log.info(s"Fetched backfill page ({} items) for path {}", data.size, path)
+      _ = log.debug(s"Fetched backfill page ({} items) for path {}", data.size, path)
 
       // We got some data from the backfill. Let's insert it and schedule the next page.
       // Find the earliest seqid for this bundle. Only look at snapshots. There should
