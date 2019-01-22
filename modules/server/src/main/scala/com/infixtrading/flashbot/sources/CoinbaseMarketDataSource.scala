@@ -231,30 +231,37 @@ class CoinbaseMarketDataSource extends DataSource {
     responsePromise.future
   }
 
-  override def backfillPage[T](topic: String, datatype: DataType[T], cursor: Option[String])
+  override def backfillPage[T](topic: String, datatype: DataType[T], cursorStr: Option[String])
                               (implicit ctx: ActorContext, mat: ActorMaterializer)
       : Future[(Seq[(Long, T)], Option[(String, Duration)])] = datatype match {
     case TradesType =>
       implicit val ec = ctx.dispatcher
+      val cursor = cursorStr.map(decode[BackfillCursor](_).right.get)
       val product = toCBProduct(topic)
       var uri = uri"https://api.pro.coinbase.com/products/$product/trades"
       if (cursor.isDefined) {
-        uri = uri.queryFragment(KeyValue("after", cursor.get))
+        uri = uri.queryFragment(KeyValue("after", cursor.get.cbAfter))
       }
 
       sttp.get(uri).send().flatMap { rsp =>
-        val nextCursorOpt = rsp.headers.toMap.get("cb-after").filterNot(_.isEmpty)
+        val nextCbAfterOpt = rsp.headers.toMap.get("cb-after").filterNot(_.isEmpty)
         rsp.body match {
           case Left(err) => Future.failed(new RuntimeException(s"Error in Coinbase backfill: $err"))
           case Right(bodyStr) => Future.fromTry(decode[Seq[CoinbaseTrade]](bodyStr).toTry)
-            .map { cbTrades =>
-              println(cbTrades.size + " elements")
-              println(cbTrades.head)
-              println(cbTrades.last)
-              println(s"Next cursor: $nextCursorOpt")
-              (cbTrades.map(_.toTrade).map(t => (t.micros, t.asInstanceOf[T])),
-                // TODO: Change this back to something like 4 secs
-                nextCursorOpt.map((_, 4 seconds)))
+
+            // Filter out duplicates.
+            .map(_.dropWhile(_.trade_id >=
+              cursor.map(_.lastItemId.toLong).getOrElse[Long](Long.MaxValue)))
+
+            // Map to page response.
+            .map { trades =>
+              val nextCursorOpt = for {
+                nextCbAfter <- nextCbAfterOpt
+                lastTrade <- trades.lastOption
+              } yield BackfillCursor(nextCbAfter, lastTrade.trade_id.toString)
+
+              (trades.map(_.toTrade).map(t => (t.micros, t.asInstanceOf[T])),
+                nextCursorOpt.map(x => (x.asJson.noSpaces, 4 seconds)))
             }
         }
       }
@@ -356,4 +363,5 @@ object CoinbaseMarketDataSource {
       TimeFmt.ISO8601ToMicros(time), price.toDouble, size.toDouble, TickDirection.ofMakerSide(side))
   }
 
+  @JsonCodec case class BackfillCursor(cbAfter: String, lastItemId: String)
 }

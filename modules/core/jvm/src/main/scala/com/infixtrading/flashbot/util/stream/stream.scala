@@ -108,4 +108,32 @@ package object stream {
     }).takeWhile(_.isBefore(endAt))
   }
 
+  implicit class StreamOps[T](stream: Stream[T]) {
+
+    def scanPrev: Stream[(Option[T], T)] = {
+      val init: Option[(Option[T], T)] = None
+      stream.scanLeft(init) {
+        case (None, item) => Some((Some(item), item))
+        case (Some((_, prev)), item) => Some((Some(prev), item))
+      }.drop(1).map(_.get)
+    }
+
+    def dropUnordered(implicit ordering: Ordering[T]): Stream[T] =
+      _dropByOrdering(stream, allowDupes = true, allowUnordered = false)
+
+    def dropDuplicates(implicit ordering: Ordering[T]): Stream[T] =
+      _dropByOrdering(stream, allowDupes = false, allowUnordered = true)
+  }
+
+  private def _dropByOrdering[T](stream: Stream[T], allowDupes: Boolean, allowUnordered: Boolean)
+                                (implicit ordering: Ordering[T]): Stream[T] =
+    stream.scanPrev filter {
+      case (Some(prev), item) =>
+        val order = ordering.compare(prev, item)
+        val isDupe = order == 0
+        val isUnordered = order > 0
+        (allowDupes || !isDupe) && (allowUnordered || !isUnordered)
+      case _ => true
+    } map (_._2)
+
 }

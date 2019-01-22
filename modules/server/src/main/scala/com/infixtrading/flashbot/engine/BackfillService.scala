@@ -152,15 +152,17 @@ class BackfillService(session: SlickSession, path: DataPath,
       claim <- selectClaimed.result.head
 
       // Request the data seq, next cursor, and delay
-      (rspData, nextCursorOpt) <- DBIO.from(
+      (rawRspData, nextCursorOpt) <- DBIO.from(
         dataSource.backfillPage(claim.topic, path.dataTypeInstance[T], claim.cursor))
+
+      rspData = rawRspData.toStream.distinct
 
       // Ensure the data isn't backwards. It can be easy to mess this up.
       // The first element should be the most recent!
       data <-
         if (rspData.size >= 2 && rspData.head._1 < rspData.last._1)
           DBIO.failed(new IllegalStateException(
-            "Backfill data out of order. It must be in reverse chronological order."))
+            s"Backfill data out of order. It must be in reverse chronological order. ${rspData}"))
         else DBIO.successful(rspData.reverse)
 
       _ = log.info(s"Fetched backfill page ({} items) for path {}", data.size, path)
@@ -171,7 +173,7 @@ class BackfillService(session: SlickSession, path: DataPath,
       earliestSeqIdOpt <- Snapshots
         .filter(_.bundle === claim.bundle)
         .map(_.seqid)
-        .result.headOption
+        .min.result
       seqIdBound = earliestSeqIdOpt.getOrElse(0L)
       seqIdStart: Long = seqIdBound - data.size
 
@@ -213,7 +215,7 @@ class BackfillService(session: SlickSession, path: DataPath,
           _ = updatedNum match {
             // Success
             case 1 =>
-              log.info("Updated backfill metadata")
+              log.debug("Updated backfill metadata")
 
             // This means that the claim was expired before we got a chance to update it.
             // This fails the transaction and logs an error.
