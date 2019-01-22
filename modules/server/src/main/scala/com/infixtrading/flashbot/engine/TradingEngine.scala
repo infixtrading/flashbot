@@ -29,7 +29,6 @@ import com.infixtrading.flashbot.models.core._
 import com.infixtrading.flashbot.report.ReportEvent.{BalanceEvent, PositionEvent, SessionComplete}
 import com.infixtrading.flashbot.report._
 import com.infixtrading.flashbot.strategies.TimeSeriesStrategy
-import io.prometheus.client.{Counter, Gauge, Summary}
 import io.prometheus.client.Gauge.Timer
 import io.prometheus.client.exporter.HTTPServer
 
@@ -399,7 +398,7 @@ class TradingEngine(engineId: String,
         * Proxy market data requests to the data server.
         */
       case req: DataStreamReq[_] =>
-        val timer = dataQueryLatency.startTimer()
+        val timer = Metrics.startTimer("data_query_ms")
         (dataServer ? req)
           .mapTo[StreamResponse[MarketData[_]]]
           .flatMap[StreamResponse[MarketData[_]]](_.rebuild)
@@ -425,7 +424,7 @@ class TradingEngine(engineId: String,
         */
       case BacktestQuery(strategyName, params, timeRange, portfolioStr, barSize, eventsOut) =>
 
-        val timer = backtestLatency.startTimer()
+        val timer = Metrics.startTimer("backtest_ms")
 
         // TODO: Remove the try catch
         try {
@@ -440,7 +439,7 @@ class TradingEngine(engineId: String,
           val (ref, reportEventSrc) = Source
             .actorRef[ReportEvent](Int.MaxValue, OverflowStrategy.fail)
             .alsoTo(Sink.foreach { x =>
-              reportEventCounter.inc()
+              Metrics.inc("report_event_count")
             })
             .preMaterialize()
 
@@ -459,7 +458,7 @@ class TradingEngine(engineId: String,
 
               deltas.foreach { delta =>
                 jsonDeltas :+= delta.asJson
-                backtestReportDeltaCounter.inc()
+                Metrics.inc("backtest_report_delta_counter")
               }
               (deltas.foldLeft(r._1)(_.update(_)), jsonDeltas)
             })
@@ -705,16 +704,4 @@ object TradingEngine {
   def props(name: String, config: FlashbotConfig, dataServer: ActorRef): Props =
     Props(new TradingEngine(name, config.strategies, config.exchanges,
       config.bots, Left(dataServer), config.grafana))
-
-  /**
-    * Metrics
-    */
-  object Metrics {
-    lazy val backtestLatency = Summary.build("backtest_ms", "Backtest latency in millis").register()
-    lazy val dataQueryLatency = Summary.build("data_query_ms", "Data stream request latency in millis").register()
-    lazy val reportEventCounter = Counter.build("report_event_count",
-      "Counter of report events emitted by backtests").register()
-    lazy val backtestReportDeltaCounter = Counter.build("backtest_report_delta_counter",
-      "Counter of report deltas").register()
-  }
 }

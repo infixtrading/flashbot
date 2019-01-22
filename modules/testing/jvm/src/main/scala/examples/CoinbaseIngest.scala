@@ -9,7 +9,6 @@ import com.infixtrading.flashbot.util.time._
 import com.infixtrading.flashbot.core.FlashbotConfig.IngestConfig
 import com.infixtrading.flashbot.engine.{DataServer, TradingEngine}
 import com.infixtrading.flashbot.models.core.TimeRange
-import io.prometheus.client.Summary
 import io.prometheus.client.exporter.HTTPServer
 
 import scala.concurrent.{Await, ExecutionContext, Future}

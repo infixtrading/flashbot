@@ -27,7 +27,6 @@ import com.infixtrading.flashbot.models.core.{Account, DataPath, Market, Portfol
 import com.infixtrading.flashbot.report.Report.ReportError
 import com.infixtrading.flashbot.report.ReportEvent._
 import com.infixtrading.flashbot.report._
-import io.prometheus.client.{Counter, Summary}
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
@@ -177,7 +176,7 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
           sessionMicros, initialPortfolio) =>
       implicit val conversions = GraphConversions
 
-      streamsPerSession.observe(streams.size)
+      Metrics.observe("streams_per_trading_session", streams.size)
 
       killSwitch = Some(KillSwitches.shared(sessionId))
 
@@ -383,12 +382,12 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
           // Call handleData and catch user errors.
           data match {
             case Some(md) =>
-              val timer = handleDataLatency.startTimer()
+              val timer = Metrics.startTimer("handle_data_ms")
               try {
                 strategy.handleData(md)(session)
               } catch {
                 case e: Throwable =>
-                  handleDataError.inc()
+                  Metrics.inc("handle_data_error")
                   e.printStackTrace()
               } finally {
                 timer.observeDuration()
@@ -520,13 +519,4 @@ object TradingSessionActor {
   case object StartSession
   case object SessionPing
   case object SessionPong
-
-  lazy val streamsPerSession = Summary.build("streams_per_trading_session",
-    "The amount of data streams in the data session").register()
-
-  lazy val handleDataLatency = Summary.build("handle_data_ms",
-    "Latency of the handleData strategy method").register()
-
-  lazy val handleDataError = Counter.build("handle_data_error",
-    "Counter of errors in handleData").register()
 }
