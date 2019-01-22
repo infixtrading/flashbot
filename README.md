@@ -24,14 +24,15 @@ The other main actor is the `TradingEngine`. It handles things such as:
 * Fault tolerance for strategy exceptions (bots are restored if they crash)
 * Backtests simulate fees and network latency
 * Currency conversions
+* Dashboards, JSON API, CSV exports
 
 ## Docs
 
 * Read the [Getting Started](https://github.com/infixtrading/flashbot/wiki/Getting-Started) page
 * Follow along to some tutorials and examples:
-  1. Built-in strategy: MACD Crossover backtest & bot (with [Scala](http://google.com) or [Java](http://google.com))
-  2. Custom strategy: Building a simple market maker (with [Scala](http://google.com))
-  3. Building a currency conversion service (with [Scala](http://google.com))
+  1. Built-in strategy: MACD Crossover backtest & bot (with [Scala](https://github.com/infixtrading/flashbot/wiki/Getting-Started) or [Java](https://github.com/infixtrading/flashbot/wiki/Getting-Started))
+  2. Custom strategy: Building a simple market maker (with [Scala](https://github.com/infixtrading/flashbot/wiki/Getting-Started))
+  3. Building a currency conversion service (with [Scala](https://github.com/infixtrading/flashbot/wiki/Getting-Started))
 * [Flashbot Terminology](https://github.com/infixtrading/flashbot/wiki/Terminology)
 
 ## Status
@@ -42,6 +43,6 @@ The client library and actor APIs support both Java and Scala, however extension
 ## Configuration
 Check out the default [configuration file](https://github.com/infixtrading/flashbot/blob/master/modules/server/src/main/resources/reference.conf) to see a list of available options. You can override any of the settings in your own `application.conf` file.
 
-## Components
+## Requirements
 Flashbot fully embraces Akka for persistence, streaming, clustering, fault-tolerance, and concurrency control. [Akka Cluster 2.5.x](https://doc.akka.io/docs/akka/2.5/index-cluster.html) is a dependency, but running a cluster is not required. You may use Flashbot in standalone mode on a non-cluster actor system.
 
