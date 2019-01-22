@@ -3,7 +3,7 @@
 
 Flashbot is a Java and Scala framework for building, simulating, and running robust, low-latency Cryptocurrency trading strategies as a cluster of trading engines and market data servers.
 
-Crypto markets are unique in the world of finance because the "playing field is level". I.e. If you have an idea for a high-frequency trading strategy, you don't need to pay millions for infastructure, data, and co-location to get started. But you do still have to write the low-latency software. Flashbot helps with that by providing a simple interface for building complex strategies and a common infrastructure to run them on.
+Crypto markets are unique in the world of finance because the "playing field is level". I.e. If you have an idea for a high-frequency trading strategy, you don't need to pay millions for infastructure, data, and co-location to get started. But you do still have to write performant software. Flashbot helps with that by providing a simple interface for building complex strategies and a common infrastructure to run them on.
 
 ## Features
 The main component of Flashbot is the `TradingEngine` actor. It handles things such as:
