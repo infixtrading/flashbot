@@ -5,6 +5,10 @@ Flashbot is a Java and Scala framework for building, simulating, and running rob
 
 Crypto markets are unique in the world of finance because the "playing field is level". I.e. If you have an idea for a high-frequency trading strategy, you don't need to pay millions for infastructure, data, and co-location to get started. But you do still have to write performant software. Flashbot helps with that by providing a simple interface for building complex strategies and a common infrastructure to run them on.
 
+
+## Docs
+Check out the [Getting Started](https://github.com/infixtrading/flashbot/wiki/Getting-Started) page.
+
 ## Features
 ### Trading Engine
 The main component of Flashbot is the `TradingEngine` actor. It handles things such as:
@@ -26,9 +30,6 @@ Market data servers (the `DataServer` actor) connect to outside data sources suc
 * Data retention policies
 * Automatic backfilling of historical data
 * Tolerant to network and websocket failures (i.e. it manages the retries)
-
-## Docs
-Check out the [Getting Started](https://github.com/infixtrading/flashbot/wiki/Getting-Started) page for documentation.
 
 ## Installation
 Flashbot is published to Bintray, so you'll have to add our repository as a resolver in your build tool and then list Flashbot as a dependency.
