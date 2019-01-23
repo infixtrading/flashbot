@@ -466,13 +466,14 @@ lazy val publishSettings = Seq(
   pomIncludeRepository := { _ =>
     false
   },
-  publishTo := {
-    val nexus = "https://oss.sonatype.org/"
-    if (isSnapshot.value)
-      Some("snapshots" at nexus + "content/repositories/snapshots")
-    else
-      Some("releases" at nexus + "service/local/staging/deploy/maven2")
-  },
+//  publishTo := {
+////    val nexus = "https://oss.sonatype.org/"
+//    val bintray = "https://api.bintray.com/"
+//    if (isSnapshot.value)
+//      Some("snapshots" at bintray + "content/repositories/snapshots")
+//    else
+//      Some("releases" at bintray + "service/local/staging/deploy/maven2")
+//  },
   bintrayOrganization := Some("infixtrading"),
   bintrayRepository := "flashbot",
   autoAPIMappings := true,
