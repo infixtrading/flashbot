@@ -65,11 +65,11 @@ class FlashbotClient(engine: ActorRef, skipTouch: Boolean = false)(implicit ec: 
                                    to: Option[Instant] = None) = {
     def singleStream(path: DataPath) = {
       assert(!path.isPattern)
-      req[Option[StreamResponse[MarketData[T]]]](DataStreamReq(
+      req[StreamResponse[MarketData[T]]](DataStreamReq(
         DataSelection(path,
           from.map(_.toEpochMilli * 1000).orElse[Long](Some(0)),
           to.map(_.toEpochMilli * 1000).orElse[Long](Some(Long.MaxValue)))))
-        .map(_.map(_.toSource))
+        .map(_.toSource)
     }
 
     // If the path is not a pattern, request it.
@@ -80,9 +80,8 @@ class FlashbotClient(engine: ActorRef, skipTouch: Boolean = false)(implicit ec: 
     else for {
       idx <- indexAsync
       paths = idx.values.toSet.toIterator.filter(_.matches(path))
-      allStreamRsps <- Future.sequence(paths.map(path =>
-        singleStream(path).flatMap(_.toFut(new RuntimeException(s"Data not found for $path.")))))
-    } yield Some(allStreamRsps.reduce(_.mergeSorted(_)(Ordering.by(_.micros))))
+      allStreamRsps <- Future.sequence(paths.map(singleStream))
+    } yield allStreamRsps.reduce(_.mergeSorted(_)(Ordering.by(_.micros)))
   }
 
   /**
@@ -90,9 +89,9 @@ class FlashbotClient(engine: ActorRef, skipTouch: Boolean = false)(implicit ec: 
     * `lookback` specifies the time duration of historical data to prepend to the live data.
     */
   def pollingMarketDataAsync[T](path: DataPath, lookback: Duration = 0.seconds) =
-    req[Option[StreamResponse[MarketData[T]]]](DataStreamReq(
+    req[StreamResponse[MarketData[T]]](DataStreamReq(
       DataSelection(path, Some(Instant.now.minusMillis(lookback.toMillis).toEpochMilli * 1000))))
-    .map(_.map(_.toSource))
+    .map(_.toSource)
 
   def pricesAsync(path: DataPath, timeRange: TimeRange, interval: FiniteDuration) =
     req[Map[String, Vector[Candle]]](PriceQuery(path, timeRange, interval))

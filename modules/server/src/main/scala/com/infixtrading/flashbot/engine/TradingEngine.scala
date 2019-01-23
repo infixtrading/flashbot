@@ -49,8 +49,6 @@ class TradingEngine(engineId: String,
                     grafana: GrafanaConfig)
     extends PersistentActor with ActorLogging {
 
-  import TradingEngine.Metrics._
-
   val blockingEc: ExecutionContext =
     ExecutionContext.fromExecutor(Executors.newFixedThreadPool(32))
 
@@ -400,11 +398,8 @@ class TradingEngine(engineId: String,
       case req: DataStreamReq[_] =>
         val timer = Metrics.startTimer("data_query_ms")
         (dataServer ? req)
-          .mapTo[Option[StreamResponse[MarketData[_]]]]
-          .flatMap[Option[StreamResponse[MarketData[_]]]] {
-            case None => Future.successful(None)
-            case Some(x) => x.rebuild.map(Some(_))
-          }
+          .mapTo[StreamResponse[MarketData[_]]]
+          .map(_.rebuild)
           .andThen { case _ => timer.observeDuration() } pipeTo sender
 
       /**

@@ -126,19 +126,17 @@ object GrafanaServer {
 
             case "trades" =>
               for {
-                streamSrcOpt <- client.historicalMarketDataAsync[Trade](
+                streamSrc <- client.historicalMarketDataAsync[Trade](
                   pathFromFilters(body.adhocFilters).copy(datatype = "trades"),
                   Some(Instant.ofEpochMilli(fromMillis)),
                   Some(Instant.ofEpochMilli(toMillis)))
-                streamSrc <- streamSrcOpt.toFut("Data not found")
                 tradeMDs <- streamSrc.runWith(Sink.seq)
               } yield buildTable(tradeMDs.reverse.take(body.maxDataPoints.toInt).map(_.asJsonObject), TradeCols)
 
             case "ladder" =>
               for {
-                streamSrcOpt <- client.pollingMarketDataAsync[Ladder](
+                streamSrc <- client.pollingMarketDataAsync[Ladder](
                   pathFromFilters(body.adhocFilters).copy(datatype = "ladder"))
-                streamSrc <- streamSrcOpt.toFut("Data not found")
                 ladder <- streamSrc.runWith(Sink.head)
               } yield buildTable(
                 ladder.data.asks.map(_.asJsonObject(askEncoder)).toSeq ++

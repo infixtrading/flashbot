@@ -53,7 +53,7 @@ class DataServerSpec extends WordSpecLike with Matchers with Eventually {
 
       // Then subscribe to a path and series a data stream.
       val fut = dataserver ? DataStreamReq(DataSelection("bitfinex/btc_usd/trades", Some(0)))
-      val rsp = Await.result(fut.mapTo[Option[StreamResponse[MarketData[Trade]]]], timeout.duration).get
+      val rsp = Await.result(fut.mapTo[StreamResponse[MarketData[Trade]]], timeout.duration)
       val rspStream = rsp.toSource
 
       val mds = Await.result(rspStream.toMat(Sink.seq)(Keep.right).run, timeout.duration)

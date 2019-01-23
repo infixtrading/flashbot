@@ -23,7 +23,7 @@ object Metrics {
 
   def inc(metricName: String): Unit = {
     val counter = allMetrics
-      .getOrElseUpdate(metricName, Summary.build(metricName, metricName).register())
+      .getOrElseUpdate(metricName, Counter.build(metricName, metricName).register())
       .asInstanceOf[Counter]
     counter.inc()
   }

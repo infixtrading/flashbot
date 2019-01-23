@@ -161,7 +161,6 @@ class DataServer(dbConfig: Config,
     /**
       * A data stream is constructed out of two parts: A historical stream, and a live component.
       * These two streams are concatenated, deduped, and returned.
-      * Returns `None` if there is no data for this path.
       */
     case DataStreamReq(DataSelection(path, from, to)) =>
       val nowMicros = time.currentTimeMicros
@@ -186,7 +185,7 @@ class DataServer(dbConfig: Config,
             case (_, None) =>
               log.debug("Searching for live stream")
               searchForLiveStream[T](path, self :: remoteDataServers.values.toList)
-                .flatMap(_.toFut(new RuntimeException(s"No live data streams for $path.")))
+                .flatMap(_.toFut(LiveDataNotFound(path)))
                 .map(_.toSource)
 
             // If it's not a polling request, we use an empty stream instead.
@@ -198,21 +197,13 @@ class DataServer(dbConfig: Config,
           // Build the historical stream.
           historical <- from
             .map(buildHistoricalStream[T](path, _, to.getOrElse(Long.MaxValue))
-              .flatMap(_.toFut(new RuntimeException(s"No historical data for $path."))))
+              .flatMap(_.toFut(HistoricalDataNotFound(path))))
             // If `from` is none, the historical part of the stream is empty.
             .getOrElse[Future[Source[MarketData[T], NotUsed]]](Future.successful(Source.empty))
 
           _ = { log.debug("Built historical stream") }
 
-        } yield
-          // If is live, concat historical with live. Drop unordered to account for any overlap
-          // in the two streams.
-          // TODO: We may actually only need to do this, and not do the if statement.
-          if (isLive)
-            historical.concat(live).via(dropUnordered(MarketData.orderBySequence[T]))
-
-          // Historical queries do not have a live component.
-          else historical
+        } yield historical.concat(live).via(dropUnordered(MarketData.orderBySequence[T]))
 
         src.flatMap(StreamResponse.build[MarketData[T]](_, sender))
       }
@@ -288,19 +279,21 @@ class DataServer(dbConfig: Config,
       // Bundle ids will never be Some(empty list).
       bundleIdsOpt = Some(bundles.map(_.id).toSet ++ backfills.map(_.bundle).toSet).filterNot(_.isEmpty)
     } yield for {
-        snapshots: Source[Wrap, NotUsed] <- bundleIdsOpt.map(bundleIds => Slick
-          .source(Snapshots
+        snapshots <- bundleIdsOpt.map(bundleIds => Slick.source(
+          Snapshots
             .filter(x => (x.micros >= lookbackFromMicros) && (x.micros < toMicros))
             .filter(x => x.bundle.inSet(bundleIds))
             .sortBy(x => (x.bundle, x.seqid))
-            .result))
+            .result)
+          .map(_.asInstanceOf[Wrap]))
 
-        deltas: Source[Wrap, NotUsed] <- bundleIdsOpt.map(bundleIds => Slick
-          .source(Deltas
+        deltas <- bundleIdsOpt.map(bundleIds => Slick.source(
+          Deltas
             .filter(x => (x.micros >= lookbackFromMicros) && (x.micros < toMicros))
             .filter(x => x.bundle.inSet(bundleIds))
             .sortBy(x => (x.bundle, x.seqid))
-            .result))
+            .result)
+          .map(_.asInstanceOf[Wrap]))
       } yield snapshots.mergeSorted[Wrap, NotUsed](deltas)(Wrap.ordering)
           .scan[Option[MarketData[T]]](None) {
             /**
