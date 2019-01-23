@@ -6,13 +6,16 @@ import com.infixtrading.flashbot.models.core.Order.{Buy, Sell, Side}
 
 import scala.collection.immutable.{Queue, TreeMap}
 import OrderBook._
+import io.circe.{Decoder, Encoder, KeyDecoder, KeyEncoder}
 import io.circe.generic.JsonCodec
 import io.circe.generic.semiauto._
+import io.circe.syntax._
+import io.circe.parser._
 
 @JsonCodec
 case class OrderBook(orders: Map[String, Order] = Map.empty,
-                     asks: TreeMap[Double, Queue[Order]] = TreeMap.empty,
-                     bids: TreeMap[Double, Queue[Order]] = TreeMap.empty(Ordering.by(-_)),
+                     asks: Asks = Asks.empty,
+                     bids: Bids = Bids.empty,
                      lastUpdate: Option[Delta] = None)
       extends HasUpdateEvent[OrderBook, Delta] {
 
@@ -129,6 +132,33 @@ object OrderBook {
                                  price: Double,
                                  size: Double)
 
+
+  implicit val doubleKeyEncoder: KeyEncoder[Double] = KeyEncoder.instance(_.toString)
+  implicit val doubleKeyDecoder: KeyDecoder[Double] = KeyDecoder.instance(x => Some(x.toDouble))
+
+  type Asks = TreeMap[Double, Queue[Order]]
+  object Asks {
+    def empty: Asks = TreeMap.empty
+
+    implicit val asksEn: Encoder[Asks] = Encoder.encodeJsonObject.contramapObject(
+      (map: Map[Double, Queue[Order]]) => map.asJsonObject)
+    implicit val asksDe: Decoder[Asks] = Decoder.decodeJsonObject.map(obj =>
+      obj.keys.foldLeft(Asks.empty)((memo, key) =>
+        memo + (key.toDouble -> obj(key).get.as[Queue[Order]].right.get)))
+  }
+
+  type Bids = TreeMap[Double, Queue[Order]]
+  object Bids {
+    def empty: Bids = TreeMap.empty(Ordering.by(-_))
+
+    implicit val bidsEn: Encoder[Bids] = Encoder.encodeJsonObject.contramapObject(
+      (map: Map[Double, Queue[Order]]) => map.asJsonObject)
+    implicit val bidsDe: Decoder[Bids] = Decoder.decodeJsonObject.map(obj =>
+      obj.keys.foldLeft(Bids.empty)((memo, key) =>
+        memo + (key.toDouble -> obj(key).get.as[Queue[Order]].right.get)))
+  }
+
+
   @JsonCodec sealed trait Delta
   case class Open(orderId: String, price: Double, size: Double, side: Side) extends Delta
   case class Done(orderId: String) extends Delta
@@ -159,4 +189,5 @@ object OrderBook {
   implicit val orderBookFmt: DeltaFmtJson[OrderBook] =
     DeltaFmt.updateEventFmtJsonWithFold[OrderBook, Delta]("book",
       foldOrderBook, unfoldOrderBook)
+
 }
