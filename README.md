@@ -46,6 +46,44 @@ libraryDependencies ++= Seq(
 )
 ```
 
+### Maven
+First add the repository to your pom.xml file:
+```xml
+...
+ <repositories>
+   ...
+     <repository>
+         <id>bintray-<username>-maven</id>
+         <name>flashboot</name>
+         <url>https://dl.bintray.com/infixtrading/flashbot</url>
+     </repository>
+   ...
+ </repositories>
+...
+```
+Add the following dependencies to your pom.xml:
+```xml
+...
+  <dependencies>
+    ...
+    <dependency>
+      <groupId>com.infixtrading</groupId>
+      <artifactId>flashbot-server_2.12</artifactId>
+      <version>0.0.1</version>
+      <type>pom</type>
+    </dependency>
+
+    <dependency>
+      <groupId>com.infixtrading</groupId>
+      <artifactId>flashbot-client_2.12</artifactId>
+      <version>0.0.1</version>
+      <type>pom</type>
+    </dependency>
+    ...
+  </dependencies>
+...
+```
+
 ## Configuration
 The default [configuration file](https://github.com/infixtrading/flashbot/blob/master/modules/server/src/main/resources/reference.conf) contains a list of available options. You can override any of the settings in your own `application.conf` file.
 
