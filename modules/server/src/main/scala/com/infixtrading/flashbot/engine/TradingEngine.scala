@@ -399,8 +399,8 @@ class TradingEngine(engineId: String,
         val timer = Metrics.startTimer("data_query_ms")
         (dataServer ? req)
           .mapTo[StreamResponse[MarketData[_]]]
-          .map(_.rebuild)
-          .andThen { case _ => timer.observeDuration() } pipeTo sender
+          .flatMap(_.rebuild)
+          .andThen { case x => timer.observeDuration() } pipeTo sender
 
       /**
         * A TimeSeriesQuery is a thin wrapper around a backtest of the TimeSeriesStrategy.

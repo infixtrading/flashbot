@@ -16,7 +16,7 @@ case class DataPath[+T](source: String, topic: String, datatype: DataType[T]) {
     def matchItem(value: String, pattern: String) = pattern == "*" || value == pattern
     val srcMatches = matchItem(source, matcher.source)
     val topicMatches = matchItem(topic, matcher.topic)
-    val typeMatches = matcher.datatype == AnyType || datatype == datatype
+    val typeMatches = matcher.datatype == AnyType || matcher.datatype == datatype
     srcMatches && topicMatches && typeMatches
   }
 
@@ -43,8 +43,9 @@ case class DataPath[+T](source: String, topic: String, datatype: DataType[T]) {
 }
 
 object DataPath {
-  implicit def parse(path: String): DataPath[_] = path.split("/").toList match {
-    case srcKey :: topic :: dataTypeStr :: Nil => DataPath(srcKey, topic, DataType.parse(dataTypeStr).get)
+  implicit def parse[T](path: String): DataPath[T] = path.split("/").toList match {
+    case srcKey :: topic :: dataTypeStr :: Nil =>
+      DataPath(srcKey, topic, DataType.parse(dataTypeStr).get.asInstanceOf[DataType[T]])
   }
 
   def wildcard: DataPath[Any] = DataPath("*", "*", AnyType)

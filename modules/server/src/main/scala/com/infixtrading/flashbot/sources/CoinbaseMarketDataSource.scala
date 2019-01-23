@@ -45,6 +45,8 @@ class CoinbaseMarketDataSource extends DataSource {
     IngestGroup(topics, 0 seconds)
   }
 
+  override def types = Seq(TradesType, OrderBookType)
+
   override def ingestGroup[T](topics: Set[String], datatype: DataType[T])
                              (implicit ctx: ActorContext, mat: ActorMaterializer) = {
 

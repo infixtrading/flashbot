@@ -125,9 +125,8 @@ abstract class Strategy {
       : Future[Source[MarketData[T], NotUsed]] = {
     implicit val timeout: Timeout = Timeout(10 seconds)
     (dataServer ? DataStreamReq(selection))
-      .mapTo[Option[StreamResponse[MarketData[T]]]]
-      .map(_.toFut(s"No data found for $selection."))
-      .map { case se: StreamResponse[MarketData[T]] => se.toSource }
+      .mapTo[StreamResponse[MarketData[T]]]
+      .map { _.toSource }
   }
 
   /**

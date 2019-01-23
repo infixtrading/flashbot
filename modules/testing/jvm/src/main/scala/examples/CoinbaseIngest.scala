@@ -17,7 +17,8 @@ object CoinbaseIngest extends App {
 
   implicit val config = FlashbotConfig.load.copy(
     ingest = IngestConfig(
-      enabled = Seq("coinbase/btc_usd/trades", "coinbase/btc_usd/ladder"),
+//      enabled = Seq("coinbase/btc_usd/trades"),
+      enabled = Seq("coinbase/btc_usd/trades", "coinbase/btc_usd/book"),
 //      enabled = Seq(),
       backfill = Seq("coinbase/btc_usd/trades"),
 //      backfill = Seq(),
