@@ -16,11 +16,12 @@ import com.infixtrading.flashbot.util._
 import com.infixtrading.flashbot.models.core._
 import com.infixtrading.flashbot.report.Report
 
-import scala.concurrent.{Await, ExecutionContext, Future}
+import scala.concurrent.{Await, Future}
+import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 import scala.reflect.ClassTag
 
-class FlashbotClient(engine: ActorRef, skipTouch: Boolean = false)(implicit ec: ExecutionContext) {
+class FlashbotClient(engine: ActorRef, skipTouch: Boolean = false) {
 
   implicit val timeout: Timeout = Timeout(10.seconds)
 

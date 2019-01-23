@@ -44,7 +44,7 @@ object CoinbaseIngest extends App {
 
   implicit val ec: ExecutionContext = system.dispatcher
   implicit val mat = ActorMaterializer()
-  val client = new FlashbotClient(engine)(ec)
+  val client = new FlashbotClient(engine)
 
 //  val marketDataLatency = Summary.build("client_marketdata_ms",
 //    "Client market data request latency in millis").register()

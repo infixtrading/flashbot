@@ -9,5 +9,4 @@ object Boilerplate {
       trimmedLines.mkString("\n")
     }
   }
-
 }

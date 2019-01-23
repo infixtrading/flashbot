@@ -138,7 +138,6 @@ class DataServerSpec extends WordSpecLike with Matchers with Eventually {
         PatienceConfig(timeout = scaled(Span(8, Seconds)), interval = scaled(Span(500, Millis)))
       eventually {
         val fetched = fetchTrades()
-        fetched.foreach(println)
         fetched.map(_.data) shouldEqual TestBackfillDataSource.allTrades
       }
 

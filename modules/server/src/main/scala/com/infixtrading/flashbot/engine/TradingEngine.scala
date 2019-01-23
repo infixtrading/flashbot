@@ -49,9 +49,6 @@ class TradingEngine(engineId: String,
                     grafana: GrafanaConfig)
     extends PersistentActor with ActorLogging {
 
-  val blockingEc: ExecutionContext =
-    ExecutionContext.fromExecutor(Executors.newFixedThreadPool(32))
-
   private implicit val system: ActorSystem = context.system
   private implicit val mat: Materializer = buildMaterializer()
   private implicit val ec: ExecutionContext = system.dispatcher
@@ -99,7 +96,7 @@ class TradingEngine(engineId: String,
   bootEvents.foreach(log.debug("Boot event: {}", _))
 
   // Start the Grafana data source server
-  Http().bindAndHandle(GrafanaServer.routes(new FlashbotClient(self, skipTouch = true)(blockingEc)),
+  Http().bindAndHandle(GrafanaServer.routes(new FlashbotClient(self, skipTouch = true)),
     "localhost", grafana.port)
 
   self ! BootEvents(bootEvents)
