@@ -16,7 +16,6 @@ import scala.xml.transform.{ RewriteRule, RuleTransformer }
 
 organization in ThisBuild := "com.infixtrading"
 parallelExecution in ThisBuild := false
-//concurrentRestrictions in Global += Tags.limit(Tags.Test, 1)
 
 lazy val akkaVersion = "2.5.18"
 lazy val akkaHttpVersion = "10.1.5"
@@ -425,6 +424,7 @@ lazy val client = flashbotModule("client", previousFBVersion).dependsOn(core)
 lazy val scalajs = flashbotModule("scalajs", None).enablePlugins(ScalaJSPlugin).dependsOn(coreJS)
 
 lazy val testingBase = crossModule("testing", previousFBVersion)
+  .settings(noPublishSettings: _*)
   .settings(
     scalacOptions ~= {
       _.filterNot(Set("-Yno-predef"))
@@ -458,9 +458,9 @@ lazy val testsJS = testsBase.js.dependsOn(scalajs)
 
 lazy val publishSettings = Seq(
   releaseCrossBuild := true,
-  releasePublishArtifactsAction := PgpKeys.publishSigned.value,
+//  releasePublishArtifactsAction := PgpKeys.publishSigned.value,
   homepage := Some(url("https://github.com/infixtrading/flashbot")),
-//  licenses := Seq("Apache 2.0" -> url("http://www.apache.org/licenses/LICENSE-2.0")),
+  licenses := Seq("Apache-2.0" -> url("http://www.apache.org/licenses/LICENSE-2.0")),
   publishMavenStyle := true,
   publishArtifact in Test := false,
   pomIncludeRepository := { _ =>
@@ -473,6 +473,8 @@ lazy val publishSettings = Seq(
     else
       Some("releases" at nexus + "service/local/staging/deploy/maven2")
   },
+  bintrayOrganization := Some("infixtrading"),
+  bintrayRepository := "flashbot",
   autoAPIMappings := true,
   apiURL := Some(url("https://infixtrading.com/flashbot/api")),
   scmInfo := Some(
@@ -506,18 +508,18 @@ lazy val noPublishSettings = Seq(
   publishArtifact := false
 )
 
-credentials ++= (
-  for {
-    username <- Option(System.getenv().get("SONATYPE_USERNAME"))
-    password <- Option(System.getenv().get("SONATYPE_PASSWORD"))
-  } yield
-    Credentials(
-      "Sonatype Nexus Repository Manager",
-      "oss.sonatype.org",
-      username,
-      password
-    )
-).toSeq
+//credentials ++= (
+//  for {
+//    username <- Option(System.getenv().get("SONATYPE_USERNAME"))
+//    password <- Option(System.getenv().get("SONATYPE_PASSWORD"))
+//  } yield
+//    Credentials(
+//      "Sonatype Nexus Repository Manager",
+//      "oss.sonatype.org",
+//      username,
+//      password
+//    )
+//).toSeq
 
 lazy val CompileTime = config("compile-time")
 
