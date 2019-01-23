@@ -11,15 +11,13 @@ import com.infixtrading.flashbot.engine.{DataServer, TradingEngine}
 import com.infixtrading.flashbot.models.core.TimeRange
 import io.prometheus.client.exporter.HTTPServer
 
-import scala.concurrent.{Await, ExecutionContext, Future}
-import scala.concurrent.duration._
 import scala.language.postfixOps
 
 object CoinbaseIngest extends App {
 
   implicit val config = FlashbotConfig.load.copy(
     ingest = IngestConfig(
-      enabled = Seq("coinbase/btc_usd/trades"),
+      enabled = Seq("coinbase/btc_usd/trades", "coinbase/btc_usd/ladder"),
 //      enabled = Seq(),
       backfill = Seq("coinbase/btc_usd/trades"),
 //      backfill = Seq(),
