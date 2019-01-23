@@ -1,24 +1,41 @@
 package com.infixtrading.flashbot.models.core
 
-import com.infixtrading.flashbot.core.{OrderChange, OrderDone, OrderEvent, OrderOpen}
+import com.infixtrading.flashbot.core.DeltaFmt.HasUpdateEvent
+import com.infixtrading.flashbot.core._
 import com.infixtrading.flashbot.models.core.Order.{Buy, Sell, Side}
 
 import scala.collection.immutable.{Queue, TreeMap}
+import OrderBook._
+import io.circe.generic.JsonCodec
+import io.circe.generic.semiauto._
 
+@JsonCodec
 case class OrderBook(orders: Map[String, Order] = Map.empty,
                      asks: TreeMap[Double, Queue[Order]] = TreeMap.empty,
-                     bids: TreeMap[Double, Queue[Order]] = TreeMap.empty(Ordering.by(-_))) {
+                     bids: TreeMap[Double, Queue[Order]] = TreeMap.empty(Ordering.by(-_)),
+                     lastUpdate: Option[Delta] = None)
+      extends HasUpdateEvent[OrderBook, Delta] {
 
   def isInitialized: Boolean = orders.nonEmpty
 
-  def processOrderEvent(event: OrderEvent): OrderBook = event match {
-    case OrderOpen(orderId, p, price, size, side) => open(orderId, price, size, side)
-    case OrderDone(orderId, _, _, _, _, _) => done(orderId)
-    case OrderChange(orderId, _, _, newSize) => change(orderId, newSize)
-    case _ => this
+  override protected def withLastUpdate(d: Delta): OrderBook =
+    copy(lastUpdate = Some(d))
+
+  override protected def step(event: Delta): OrderBook = event match {
+    case Open(orderId, price, size, side) =>
+      _open(orderId, price, size, side)
+    case Done(orderId) =>
+      _done(orderId)
+    case Change(orderId, newSize) =>
+      _change(orderId, newSize)
   }
 
-  def open(id: String, price: Double, size: Double, side: Side): OrderBook = {
+  def open(order: Order): OrderBook = open(order.id, order.price.get, order.amount, order.side)
+  def open(id: String, price: Double, size: Double, side: Side): OrderBook = update(Open(id, price, size, side))
+  def done(id: String): OrderBook = update(Done(id))
+  def change(id: String, newSize: Double): OrderBook = update(Change(id, newSize))
+
+  private def _open(id: String, price: Double, size: Double, side: Side): OrderBook = {
     val o = Order(id, side, size, Some(price))
     val newOrders = orders + (id -> o)
     side match {
@@ -31,7 +48,7 @@ case class OrderBook(orders: Map[String, Order] = Map.empty,
     }
   }
 
-  def done(id: String): OrderBook =
+  private def _done(id: String): OrderBook =
     orders get id match {
       case Some(o@Order(_, Sell, _, _)) => copy(
         orders = orders - id,
@@ -42,7 +59,7 @@ case class OrderBook(orders: Map[String, Order] = Map.empty,
       case None => this // Ignore "done" messages for orders not in the book
     }
 
-  def change(id: String, newSize: Double): OrderBook = {
+  private def _change(id: String, newSize: Double): OrderBook = {
     orders(id) match {
       case o@Order(_, Sell, _, Some(price)) => copy(
         orders = orders + (id -> o.copy(amount = newSize)),
@@ -111,4 +128,24 @@ object OrderBook {
                                  id: String,
                                  price: Double,
                                  size: Double)
+
+  @JsonCodec sealed trait Delta
+  case class Open(orderId: String, price: Double, size: Double, side: Side) extends Delta
+  case class Done(orderId: String) extends Delta
+  case class Change(orderId: String, newSize: Double) extends Delta
+
+  def foldOrderBook(a: OrderBook, b: OrderBook): OrderBook =
+    b.orders.values.foldLeft(a)((memo, order) =>
+        memo.open(order.id, order.price.get, order.amount, order.side))
+
+  def unfoldOrderBook(book: OrderBook): (OrderBook, Option[OrderBook]) = {
+    if (book.orders.values.size > 1) {
+      val order = book.orders.values.head
+      (book.done(order.id), Some(OrderBook().open(order)))
+    } else (book, None)
+  }
+
+  implicit val orderBookFmt: DeltaFmtJson[OrderBook] =
+    DeltaFmt.updateEventFmtJsonWithFold[OrderBook, Delta]("book",
+      foldOrderBook, unfoldOrderBook)
 }

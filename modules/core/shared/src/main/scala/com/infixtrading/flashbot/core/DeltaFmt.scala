@@ -101,6 +101,12 @@ object DeltaFmt {
   def updateEventFmtJson[T <: HasUpdateEvent[T, E], E](name: String)
                                                       (implicit mEn: Encoder[T], mDe: Decoder[T],
                                                        dEn: Encoder[E], dDe: Decoder[E]): DeltaFmtJson[T] =
+    updateEventFmtJsonWithFold[T, E](name, (a: T, b: T) => b, (a: T) => (a, None))
+
+  def updateEventFmtJsonWithFold[T <: HasUpdateEvent[T, E], E]
+        (name: String, foldFn: (T, T) => T, unfoldFn: T => (T, Option[T]))
+        (implicit mEn: Encoder[T], mDe: Decoder[T],
+         dEn: Encoder[E], dDe: Decoder[E]): DeltaFmtJson[T] =
     new DeltaFmtJson[T] {
       override type D = E
 
@@ -114,8 +120,8 @@ object DeltaFmt {
       override def update(model: T, delta: D) = model.update(delta)
       override def diff(prev: T, current: T) = current.lastUpdate.get
 
-      override def fold(x: T, y: T) = y
-      override def unfold(x: T) = (x, None)
+      override def fold(x: T, y: T) = foldFn(x, y)
+      override def unfold(x: T) = unfoldFn(x)
     }
 }
 

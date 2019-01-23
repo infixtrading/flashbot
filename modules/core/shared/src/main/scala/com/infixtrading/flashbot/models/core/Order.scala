@@ -1,5 +1,7 @@
 package com.infixtrading.flashbot.models.core
 import com.infixtrading.flashbot.models.core.Order.Side
+import io.circe.generic.JsonCodec
+import io.circe.generic.semiauto._
 import io.circe.{Decoder, Encoder, HCursor, Json}
 import io.circe.syntax._
 
@@ -17,6 +19,9 @@ object Order {
       case "sell" => Sell
       case "buy" => Buy
     }
+
+    implicit val sideEn: Encoder[Side] = Encoder.instance(_.toString.asJson)
+    implicit val sideDe: Decoder[Side] = Decoder.decodeString.map(Side(_))
   }
 
   sealed trait TickDirection {
@@ -84,6 +89,7 @@ object Order {
                   side: Side)
 }
 
+@JsonCodec
 case class Order(id: String,
                  side: Side,
                  amount: Double,
