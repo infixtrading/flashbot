@@ -400,8 +400,11 @@ class TradingEngine(engineId: String,
       case req: DataStreamReq[_] =>
         val timer = Metrics.startTimer("data_query_ms")
         (dataServer ? req)
-          .mapTo[StreamResponse[MarketData[_]]]
-          .flatMap[StreamResponse[MarketData[_]]](_.rebuild)
+          .mapTo[Option[StreamResponse[MarketData[_]]]]
+          .flatMap[Option[StreamResponse[MarketData[_]]]] {
+            case None => Future.successful(None)
+            case Some(x) => x.rebuild.map(Some(_))
+          }
           .andThen { case _ => timer.observeDuration() } pipeTo sender
 
       /**

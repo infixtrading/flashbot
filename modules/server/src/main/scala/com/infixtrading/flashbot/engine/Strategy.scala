@@ -13,6 +13,7 @@ import json.Schema
 import com.github.andyglow.jsonschema.AsCirce._
 import io.circe._
 import com.infixtrading.flashbot.core._
+import com.infixtrading.flashbot.util._
 import com.infixtrading.flashbot.models.api.{DataSelection, DataStreamReq, OrderTarget}
 import com.infixtrading.flashbot.models.core.FixedSize.FixedSizeD
 import com.infixtrading.flashbot.models.core._
@@ -124,6 +125,8 @@ abstract class Strategy {
       : Future[Source[MarketData[_], NotUsed]] = {
     implicit val timeout: Timeout = Timeout(10 seconds)
     (dataServer ? DataStreamReq(selection))
+      .mapTo[Option[StreamResponse[MarketData[_]]]]
+      .map(_.toFut(s"No data found for $selection."))
       .map { case se: StreamResponse[MarketData[_]] => se.toSource }
   }
 

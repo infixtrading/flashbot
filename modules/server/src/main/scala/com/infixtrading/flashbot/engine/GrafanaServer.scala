@@ -13,6 +13,7 @@ import com.infixtrading.flashbot.client.FlashbotClient
 import com.infixtrading.flashbot.core.{MarketData, Trade}
 import com.infixtrading.flashbot.models.core.{Candle, DataPath, Ladder, TimeRange}
 import com.infixtrading.flashbot.util.time._
+import com.infixtrading.flashbot.util._
 import io.circe._
 import io.circe.syntax._
 import io.circe.generic.auto._
@@ -125,17 +126,19 @@ object GrafanaServer {
 
             case "trades" =>
               for {
-                streamSrc <- client.historicalMarketDataAsync[Trade](
+                streamSrcOpt <- client.historicalMarketDataAsync[Trade](
                   pathFromFilters(body.adhocFilters).copy(datatype = "trades"),
                   Some(Instant.ofEpochMilli(fromMillis)),
                   Some(Instant.ofEpochMilli(toMillis)))
+                streamSrc <- streamSrcOpt.toFut("Data not found")
                 tradeMDs <- streamSrc.runWith(Sink.seq)
               } yield buildTable(tradeMDs.reverse.take(body.maxDataPoints.toInt).map(_.asJsonObject), TradeCols)
 
             case "ladder" =>
               for {
-                streamSrc <- client.pollingMarketDataAsync[Ladder](
+                streamSrcOpt <- client.pollingMarketDataAsync[Ladder](
                   pathFromFilters(body.adhocFilters).copy(datatype = "ladder"))
+                streamSrc <- streamSrcOpt.toFut("Data not found")
                 ladder <- streamSrc.runWith(Sink.head)
               } yield buildTable(
                 ladder.data.asks.map(_.asJsonObject(askEncoder)).toSeq ++
