@@ -46,17 +46,32 @@ libraryDependencies ++= Seq(
 )
 ```
 
+### Gradle
+First add the repo to your gradle.build file:
+```
+repositories {
+    maven {
+        url "https://dl.bintray.com/infixtrading/flashbot"
+    }
+}
+```
+Then add the dependencies to the file:
+```
+compile 'com.infixtrading:flashbot-client_2.12:0.0.1'
+compile 'com.infixtrading:flashbot-server_2.12:0.0.1'
+```
+
 ### Maven
 First add the repository to your pom.xml file:
 ```xml
 ...
  <repositories>
    ...
-     <repository>
-         <id>bintray-<username>-maven</id>
-         <name>flashboot</name>
-         <url>https://dl.bintray.com/infixtrading/flashbot</url>
-     </repository>
+   <repository>
+       <id>bintray-<username>-maven</id>
+       <name>flashboot</name>
+       <url>https://dl.bintray.com/infixtrading/flashbot</url>
+   </repository>
    ...
  </repositories>
 ...
