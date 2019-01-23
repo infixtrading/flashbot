@@ -71,7 +71,7 @@ abstract class DataSource {
     *
     * Warning: Do not use this yet. Custom data types are not fully supported at this time.
     */
-  def types: Map[String, DeltaFmtJson[_]] = Map.empty
+  def types: Seq[DataType[_]] = Seq.empty
 }
 
 object DataSource {

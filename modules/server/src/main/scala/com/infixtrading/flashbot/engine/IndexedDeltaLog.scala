@@ -154,8 +154,8 @@ class IndexedDeltaLog[T](path: File,
     * Builds a SliceIndex where the bundle key of each slice is set, but the slice key is a
     * wildcard. This is due to us not traversing each slice on disk during indexing.
     */
-  def index: SliceIndex = {
-    var idx = SliceIndex.empty
+  def index: SliceIndex[T] = {
+    var idx = SliceIndex.empty[T]
     var currentSliceHead = timeLog.first
 
     if (currentSliceHead.isDefined) {

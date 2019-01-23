@@ -11,12 +11,12 @@ case object RegisterDataServer extends DataServerMessage
 
 sealed trait DataServerException extends Exception
 
-sealed trait DataNotFound extends DataServerException {
-  def path: DataPath
+sealed trait DataNotFound[T] extends DataServerException {
+  def path: DataPath[T]
 }
-case class LiveDataNotFound(path: DataPath)
+case class LiveDataNotFound[T](path: DataPath[T])
   extends Exception(s"Live data not found at $path.")
-    with DataNotFound
-case class HistoricalDataNotFound(path: DataPath)
+    with DataNotFound[T]
+case class HistoricalDataNotFound[T](path: DataPath[T])
   extends Exception(s"Historical data not found at $path.")
-    with DataNotFound
+    with DataNotFound[T]

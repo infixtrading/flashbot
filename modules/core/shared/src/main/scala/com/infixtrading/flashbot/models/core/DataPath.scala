@@ -1,45 +1,57 @@
 package com.infixtrading.flashbot.models.core
 
+import com.infixtrading.flashbot.core.DataType.AnyType
 import com.infixtrading.flashbot.core.{DataType, DeltaFmtJson}
+import io.circe.{Decoder, Encoder}
 import io.circe.generic.JsonCodec
 
-@JsonCodec case class DataPath(source: String, topic: String, datatype: String) {
-  override def toString: String = List(source, topic, datatype).mkString("/")
+case class DataPath[+T](source: String, topic: String, datatype: DataType[T]) {
+  override def toString: String = List(source, topic, datatype.toString).mkString("/")
 
-  def matches(matcher: DataPath): Boolean = {
+  def matches(matcher: DataPath[_]): Boolean = {
     this._matches(matcher) || matcher._matches(this)
   }
 
-  def _matches(matcher: DataPath): Boolean = {
+  def _matches(matcher: DataPath[_]): Boolean = {
     def matchItem(value: String, pattern: String) = pattern == "*" || value == pattern
     val srcMatches = matchItem(source, matcher.source)
     val topicMatches = matchItem(topic, matcher.topic)
-    val typeMatches = matchItem(datatype, matcher.datatype)
+    val typeMatches = matcher.datatype == AnyType || datatype == datatype
     srcMatches && topicMatches && typeMatches
   }
 
   def topicValue: Option[String] = if (topic == "*") None else Some(topic)
   def sourceValue: Option[String] = if (source == "*") None else Some(source)
-  def typeValue: Option[String] = if (datatype == "*") None else Some(datatype)
+  def typeValue[S >: T]: Option[DataType[S]] = if (datatype == AnyType) None else Some(datatype)
 
-  def value: Option[DataPath] = (topicValue, sourceValue, typeValue) match {
+  def value: Option[DataPath[T]] = (topicValue, sourceValue, typeValue) match {
     case (Some(_), Some(_), Some(_)) => Some(this)
     case _ => None
   }
 
   def isPattern: Boolean = value.isEmpty
 
-  def dataTypeInstance[T]: DataType[T] = DataType(datatype)
+  def fmt[S >: T]: DeltaFmtJson[S] = datatype.fmtJson
 
-  def fmt[T]: DeltaFmtJson[T] = dataTypeInstance[T].fmtJson
+  def withType[D](dt: DataType[D]): DataPath[D] = copy(datatype = dt)
 
-  def withType(dt: DataType[_]): DataPath = copy(datatype = dt.name)
+  // Returns this path as the type of the pattern path if it matches.
+  def filter[F](pattern: DataPath[F]): Option[DataPath[F]] =
+    if (_matches(pattern)) Some(this.asInstanceOf[DataPath[F]])
+    else None
+
 }
 
 object DataPath {
-  implicit def parse(path: String): DataPath = path.split("/").toList match {
-    case srcKey :: topic :: dataType :: Nil => DataPath(srcKey, topic, dataType)
+  implicit def parse(path: String): DataPath[_] = path.split("/").toList match {
+    case srcKey :: topic :: dataTypeStr :: Nil => DataPath(srcKey, topic, DataType.parse(dataTypeStr).get)
   }
 
-  def wildcard: DataPath = "*/*/*"
+  def wildcard: DataPath[Any] = DataPath("*", "*", AnyType)
+
+  implicit def dataPathToString[T](path: DataPath[T]): String =
+    List(path.source, path.topic, path.datatype).mkString("/")
+
+  implicit def pathEncoder[T]: Encoder[DataPath[T]] = Encoder.encodeString.contramap(_.toString)
+  implicit def pathDecoder[T]: Decoder[DataPath[T]] = Decoder.decodeString.map(parse(_).asInstanceOf[DataPath[T]])
 }

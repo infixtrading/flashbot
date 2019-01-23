@@ -86,7 +86,7 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
     def defaultInstruments(exchange: String): Set[Instrument] =
       exchangeConfigs(exchange).pairs.getOrElse(Seq.empty).map(CurrencyPair(_)).toSet
 
-    def dataSelection(path: DataPath): DataSelection = mode match {
+    def dataSelection[T](path: DataPath[T]): DataSelection[T] = mode match {
       case Backtest(range) => DataSelection(path, Some(range.start), Some(range.end))
       case liveOrPaper =>
         DataSelection(path, Some(sessionMicros - liveOrPaper.lookback.toMicros), None)
@@ -134,7 +134,7 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
       paths <- strategy.initialize(initialPortfolio, sessionLoader)
 
       // Load the exchanges
-      exchangeNames: Set[String] = paths.toSet[DataPath].map(_.source)
+      exchangeNames: Set[String] = paths.toSet[DataPath[_]].map(_.source)
         .intersect(exchangeConfigs.keySet)
       _ = { log.debug("Loading exchanges: {}.", exchangeNames) }
 

@@ -2,6 +2,7 @@ package com.infixtrading.flashbot.db
 
 import java.sql.Timestamp
 
+import com.infixtrading.flashbot.core.DataType
 import com.infixtrading.flashbot.models.core.DataPath
 import slick.lifted.Tag
 import slick.jdbc.PostgresProfile.api._
@@ -9,7 +10,7 @@ import slick.jdbc.PostgresProfile.api._
 case class BackfillRow(id: Long, source: String, topic: String, datatype: String,
                        cursor: Option[String], nextPageAt: Option[Timestamp],
                        claimedBy: Option[String], claimedAt: Option[Timestamp]) {
-  def path: DataPath = DataPath(source, topic, datatype)
+  def path: DataPath[_] = DataPath(source, topic, DataType(datatype))
   def bundle: Long = -id
 }
 

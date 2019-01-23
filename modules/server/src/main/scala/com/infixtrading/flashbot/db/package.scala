@@ -48,9 +48,9 @@ package object db {
 
   val Tables = List(Bundles, Snapshots, Deltas, Backfills)
 
-  def createBundle(path: DataPath)(implicit session: SlickSession): Future[Long] = {
+  def createBundle(path: DataPath[_])(implicit session: SlickSession): Future[Long] = {
     import session.profile.api._
-    val item = BundleRow(0l, path.source, path.topic, path.datatype)
+    val item = BundleRow(0l, path.source, path.topic, path.datatype.toString)
     session.db.run((Bundles returning Bundles.map(_.id)) += item)
   }
 

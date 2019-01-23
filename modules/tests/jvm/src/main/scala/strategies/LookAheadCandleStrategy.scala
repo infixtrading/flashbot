@@ -4,6 +4,7 @@ import akka.NotUsed
 import akka.actor.ActorRef
 import akka.stream.Materializer
 import akka.stream.scaladsl.{Keep, Sink, Source}
+import com.infixtrading.flashbot.core.DataType.CandlesType
 import com.infixtrading.flashbot.core.Instrument.CurrencyPair
 import com.infixtrading.flashbot.core.MarketData.BaseMarketData
 import com.infixtrading.flashbot.core.{MarketData, TimeSeriesMixin, TimeSeriesTap}
@@ -54,8 +55,8 @@ class LookAheadCandleStrategy extends Strategy
   override def paramsDecoder = deriveDecoder
 
   // Source the data from the strategy itself.
-  val path1 = DataPath("bitfinex", "eth_usd", "candles_5s")
-  def dataSeqs(tr: TimeRange)(implicit mat: Materializer): Map[DataPath, Seq[MarketData[Candle]]] = Map(
+  val path1 = DataPath("bitfinex", "eth_usd", CandlesType(5 seconds))
+  def dataSeqs(tr: TimeRange)(implicit mat: Materializer): Map[DataPath[Candle], Seq[MarketData[Candle]]] = Map(
     path1 -> Await.result(
       TimeSeriesTap.prices(100.0, .2, .6, tr, timeStep = 1 minute).zipWithIndex.map {
         case ((instant, price), i) =>
@@ -66,7 +67,7 @@ class LookAheadCandleStrategy extends Strategy
       })(Keep.right).run(), 15 seconds)
   )
 
-  var staticData = Map.empty[DataPath, Seq[MarketData[Candle]]]
+  var staticData = Map.empty[DataPath[Candle], Seq[MarketData[Candle]]]
 
   /**
    * Human readable title for display purposes.
@@ -139,9 +140,9 @@ class LookAheadCandleStrategy extends Strategy
     * Make the resolved market data lag by one item. This way we can lookahead to the next
     * item being streamed and base our test strategy off of it.
     */
-  override def resolveMarketData(selection: DataSelection, dataServer: ActorRef)
+  override def resolveMarketData[T](selection: DataSelection[T], dataServer: ActorRef)
                        (implicit mat: Materializer, ec: ExecutionContext)
-      : Future[Source[MarketData[_], NotUsed]] = {
+      : Future[Source[MarketData[T], NotUsed]] = {
 
     // Build static data if not yet built.
     if (staticData.isEmpty) {
@@ -149,6 +150,7 @@ class LookAheadCandleStrategy extends Strategy
     }
 
     // Return it.
-    Future.successful(Source(staticData(selection.path).toIndexedSeq))
+    Future.successful(Source(staticData(selection.path.asInstanceOf[DataPath[Candle]])
+      .asInstanceOf[Seq[MarketData[T]]].toIndexedSeq))
   }
 }

@@ -4,7 +4,7 @@ import com.infixtrading.flashbot.models.core.DataPath
 /**
   * Any kind of data that can be streamed into strategies.
   */
-trait MarketData[+T] extends Timestamped {
+trait MarketData[T] extends Timestamped {
   /**
     * The underlying data instance.
     */
@@ -15,7 +15,7 @@ trait MarketData[+T] extends Timestamped {
     * There is no setter for this because, unlike the other fields, it will never change during
     * the processing of a MarketData[T] stream.
     */
-  def path: DataPath
+  def path: DataPath[T]
 
   /**
     * Identifies a unique stream of data from the same continuous ingest session.
@@ -62,7 +62,7 @@ object MarketData {
       override def fmtName = "md." + fmt.fmtName
 
       override def update(model: MarketData[T], delta: D) = model
-        .withData(fmt.update(model.data, delta.delta), model.path.dataTypeInstance[T])
+        .withData(fmt.update(model.data, delta.delta), model.path.datatype)
         .withBundle(delta.bundle)
         .withMicros(delta.micros)
 
@@ -70,12 +70,12 @@ object MarketData {
         MarketDelta(fmt.diff(prev.data, current.data), current.micros, current.bundle)
 
       override def fold(x: MarketData[T], y: MarketData[T]) =
-        y.withData(fmt.fold(x.data, y.data), y.path.dataTypeInstance[T])
+        y.withData(fmt.fold(x.data, y.data), y.path.datatype)
 
 
       override def unfold(x: MarketData[T]) = fmt.unfold(x.data) match {
         case (first, secondOpt) =>
-          val dt = x.path.dataTypeInstance[T]
+          val dt = x.path.datatype
           (x.withData(first, dt), secondOpt.map(second => x.withData(second, dt)))
       }
     }
@@ -83,7 +83,7 @@ object MarketData {
   /**
     * The generic default implementation of MarketData.
     */
-  case class BaseMarketData[T](data: T, path: DataPath, micros: Long, bundle: Long, seqid: Long)
+  case class BaseMarketData[T](data: T, path: DataPath[T], micros: Long, bundle: Long, seqid: Long)
       extends MarketData[T] {
 
     override def withMicros(newMicros: Long) = copy(micros = newMicros)

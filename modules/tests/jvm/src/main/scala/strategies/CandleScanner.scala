@@ -7,7 +7,7 @@ import com.infixtrading.flashbot.core.MarketData.BaseMarketData
 import com.infixtrading.flashbot.core.{DataSource, MarketData, TimeSeriesTap}
 import com.infixtrading.flashbot.engine.{SessionLoader, Strategy, TradingSession}
 import com.infixtrading.flashbot.models.api.DataSelection
-import com.infixtrading.flashbot.models.core.Portfolio
+import com.infixtrading.flashbot.models.core.{Candle, Portfolio}
 import io.circe.generic.semiauto._
 
 import scala.concurrent.{ExecutionContext, Future}
@@ -29,16 +29,16 @@ class CandleScanner extends Strategy {
     println(data)
   }
 
-  override def resolveMarketData(selection: DataSelection, dataServer: ActorRef)
+  override def resolveMarketData[T](selection: DataSelection[T], dataServer: ActorRef)
                        (implicit mat: Materializer, ec: ExecutionContext)
-      : Future[Source[MarketData[_], NotUsed]] = {
+      : Future[Source[MarketData[T], NotUsed]] = {
     Future.successful(TimeSeriesTap
       .prices(1 day)
       .via(TimeSeriesTap.aggregateCandles(1 day))
       .throttle(1, 200 millis)
       .zipWithIndex
       .map {
-        case (candle, i) => BaseMarketData(candle, selection.path, candle.micros, 1, i.toLong)
+        case (candle, i) => BaseMarketData(candle.asInstanceOf[T], selection.path, candle.micros, 1, i.toLong)
       }
     )
   }

@@ -27,8 +27,8 @@ case class FlashbotConfig(`engine-root`: String,
 object FlashbotConfig {
 
   case class IngestConfig(enabled: Seq[String], backfill: Seq[String], retention: Seq[Seq[String]]) {
-    def ingestMatchers: Set[DataPath] = enabled.toSet.map(DataPath.parse)
-    def backfillMatchers: Set[DataPath] = backfill.toSet.map(DataPath.parse)
+    def ingestMatchers: Set[DataPath[Any]] = enabled.toSet.map(DataPath.parse)
+    def backfillMatchers: Set[DataPath[Any]] = backfill.toSet.map(DataPath.parse)
 
     def filterIngestSources(sources: Set[String]) = sources.filter(src =>
       ingestMatchers.exists(_.matches(s"$src/*/*")))

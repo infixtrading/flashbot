@@ -38,11 +38,11 @@ case class SubscribeToReport(botId: String) extends TradingEngineQuery
 case object MarketDataIndexQuery extends TradingEngineQuery
 
 sealed trait TimeSeriesQuery extends TradingEngineQuery {
-  def path: DataPath
+  def path: DataPath[_]
   def range: TimeRange
   def interval: FiniteDuration
 }
-case class PriceQuery(path: DataPath, range: TimeRange, interval: FiniteDuration) extends TimeSeriesQuery
+case class PriceQuery(path: DataPath[_], range: TimeRange, interval: FiniteDuration) extends TimeSeriesQuery
 
 
 sealed trait StreamRequest[T]
@@ -51,9 +51,9 @@ sealed trait StreamRequest[T]
   * Request a data stream source from the cluster. Returns a [[com.infixtrading.flashbot.engine.CompressedSourceRef]]
   * if the sender is remote and just a Source[ MarketData[_] ] if the sender is local.
   */
-case class DataStreamReq[T](selection: DataSelection) extends StreamRequest[T] with TradingEngineQuery
+case class DataStreamReq[T](selection: DataSelection[T]) extends StreamRequest[T] with TradingEngineQuery
 
 /**
   * Used to request data from a DataSourceActor.
   */
-case class StreamLiveData[T](path: DataPath) extends StreamRequest[T]
+case class StreamLiveData[T](path: DataPath[T]) extends StreamRequest[T]

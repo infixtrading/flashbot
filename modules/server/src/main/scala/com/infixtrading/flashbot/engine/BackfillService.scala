@@ -8,7 +8,7 @@ import java.util.concurrent.Executors
 import akka.actor.{Actor, ActorLogging}
 import akka.stream.ActorMaterializer
 import akka.stream.alpakka.slick.javadsl.SlickSession
-import com.infixtrading.flashbot.core.{DataSource, DataType}
+import com.infixtrading.flashbot.core.{DataSource, DataType, DeltaFmtJson}
 import com.infixtrading.flashbot.util.stream._
 import com.infixtrading.flashbot.db._
 import com.infixtrading.flashbot.engine.BackfillService.BackfillTick
@@ -36,13 +36,15 @@ import scala.util.{Failure, Random, Success}
   *   3. Release the lock.
   *   4. Schedule the next backfill page by updating the cursor and next_backfill_at columns.
   */
-class BackfillService(session: SlickSession, path: DataPath,
-                      dataSource: DataSource) extends Actor with ActorLogging {
+class BackfillService[T](session: SlickSession, path: DataPath[T],
+                         dataSource: DataSource) extends Actor with ActorLogging {
   import session.profile.api._
 
   implicit val system = context.system
   implicit val mat = buildMaterializer()
   val random = new Random()
+
+  implicit val fmt: DeltaFmtJson[T] = path.fmt[T]
 
   val blockingEc: ExecutionContext =
     ExecutionContext.fromExecutor(Executors.newFixedThreadPool(2))
@@ -59,7 +61,7 @@ class BackfillService(session: SlickSession, path: DataPath,
   }) (blockingEc)
 
   def selectBackfill = Backfills.filter(row => row.source === path.source &&
-    row.topic === path.topic && row.datatype === path.datatype)
+    row.topic === path.topic && row.datatype === path.datatype.toString)
 
   def selectClaimed = selectBackfill.filter(_.claimedBy === instanceId)
 
@@ -141,14 +143,11 @@ class BackfillService(session: SlickSession, path: DataPath,
     * historical market data, and updating the backfill record accordingly. We are guaranteed
     * that we have the claim at this point.
     */
-  def runPage[T](now: Instant) = {
-    val fmt = path.fmt[T]
+  def runPage(now: Instant) = {
     implicit val itemEn = fmt.modelEn
     implicit val deltaEn = fmt.deltaEn
 
     log.debug("Running backfill page for {}", path)
-
-    val dataType = path.dataTypeInstance[T]
 
     session.db.run((for {
       // Fetch the selected claim. The negative of the claim id will be the bundle id.
@@ -156,14 +155,14 @@ class BackfillService(session: SlickSession, path: DataPath,
 
       // Request the data seq, next cursor, and delay
       (rspData, nextCursorOpt) <- DBIO.from(
-        dataSource.backfillPage(claim.topic, path.dataTypeInstance[T], claim.cursor))
+        dataSource.backfillPage(claim.topic, path.datatype, claim.cursor))
 
       // Ensure the data isn't backwards. It can be easy to mess this up.
       // The first element should be the most recent!
       data <-
-        if (rspData.size >= 2 && dataType.ordering.compare(rspData.head._2, rspData.last._2) < 0)
+        if (rspData.size >= 2 && path.datatype.ordering.compare(rspData.head._2, rspData.last._2) < 0)
           DBIO.failed(new IllegalStateException(
-            s"Backfill data out of order. It must be in reverse chronological order. ${rspData}"))
+            s"Backfill data out of order. It must be in reverse chronological order. $rspData"))
         else DBIO.successful(rspData.reverse)
 
       _ = log.debug(s"Fetched backfill page ({} items) for path {}", data.size, path)

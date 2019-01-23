@@ -15,7 +15,7 @@ import scala.util.{Failure, Success, Try}
   * @param from the start time of data. If none, use the current time.
   * @param to the end time of data. If none, stream indefinitely.
   */
-case class DataSelection(path: DataPath, from: Option[Long] = None, to: Option[Long] = None) {
+case class DataSelection[T](path: DataPath[T], from: Option[Long] = None, to: Option[Long] = None) {
   def isPolling: Boolean = to.isEmpty
   def timeRange: Try[TimeRange] =
     if (to.isEmpty) Failure(new RuntimeException(s"Cannot create a time range from a polling data selection"))
@@ -23,9 +23,9 @@ case class DataSelection(path: DataPath, from: Option[Long] = None, to: Option[L
 }
 
 object DataSelection {
-  def poll(path: DataPath): DataSelection = DataSelection(path)
-  def pollFrom(path: DataPath, from: Instant): DataSelection =
+  def poll[T](path: DataPath[T]): DataSelection[T] = DataSelection(path)
+  def pollFrom[T](path: DataPath[T], from: Instant): DataSelection[T] =
     DataSelection(path, Some(from.toEpochMilli * 1000))
-  def until(path: DataPath, to: Instant): DataSelection =
+  def until[T](path: DataPath[T], to: Instant): DataSelection[T] =
     DataSelection(path, None, Some(to.toEpochMilli * 1000))
 }

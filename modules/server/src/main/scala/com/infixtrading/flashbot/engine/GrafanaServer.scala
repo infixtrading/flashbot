@@ -10,7 +10,8 @@ import akka.http.scaladsl.model.StatusCodes._
 import akka.stream.Materializer
 import akka.stream.scaladsl.Sink
 import com.infixtrading.flashbot.client.FlashbotClient
-import com.infixtrading.flashbot.core.{MarketData, Trade}
+import com.infixtrading.flashbot.core.DataType.{LadderType, TradesType}
+import com.infixtrading.flashbot.core.{DataType, MarketData, Trade}
 import com.infixtrading.flashbot.models.core.{Candle, DataPath, Ladder, TimeRange}
 import com.infixtrading.flashbot.util.time._
 import com.infixtrading.flashbot.util._
@@ -96,12 +97,12 @@ object GrafanaServer {
 
   @JsonCodec case class TagValReq(key: String)
 
-  def pathFromFilters(filters: Seq[Filter]): DataPath = {
+  def pathFromFilters(filters: Seq[Filter]): DataPath[_] = {
     val filterMap = filters.filter(_.operator == "=").map(f => f.key -> f.value).toMap
     DataPath(
       filterMap.getOrElse("source", "*"),
       filterMap.getOrElse("topic", "*"),
-      filterMap.getOrElse("datatype", "*")
+      DataType(filterMap.getOrElse("datatype", "*"))
     )
   }
 
@@ -127,7 +128,7 @@ object GrafanaServer {
             case "trades" =>
               for {
                 streamSrc <- client.historicalMarketDataAsync[Trade](
-                  pathFromFilters(body.adhocFilters).copy(datatype = "trades"),
+                  pathFromFilters(body.adhocFilters).withType(TradesType),
                   Some(Instant.ofEpochMilli(fromMillis)),
                   Some(Instant.ofEpochMilli(toMillis)))
                 tradeMDs <- streamSrc.runWith(Sink.seq)
@@ -136,7 +137,7 @@ object GrafanaServer {
             case "ladder" =>
               for {
                 streamSrc <- client.pollingMarketDataAsync[Ladder](
-                  pathFromFilters(body.adhocFilters).copy(datatype = "ladder"))
+                  pathFromFilters(body.adhocFilters).withType(LadderType(Some(10))))
                 ladder <- streamSrc.runWith(Sink.head)
               } yield buildTable(
                 ladder.data.asks.map(_.asJsonObject(askEncoder)).toSeq ++
@@ -144,7 +145,7 @@ object GrafanaServer {
                 LadderCols)
 
             case "price" =>
-              val path = pathFromFilters(body.adhocFilters).copy(datatype = "trades")
+              val path = pathFromFilters(body.adhocFilters).withType(TradesType)
               client.pricesAsync(path, body.range, body.intervalMs millis)
                 .map(buildSeries("price", s"local.${path.source}.${path.topic}", _))
           }

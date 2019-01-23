@@ -6,6 +6,7 @@ import com.infixtrading.flashbot.models.core.{DataPath, Portfolio}
 import io.circe.Decoder
 import io.circe.generic.JsonCodec
 import io.circe.generic.semiauto._
+import io.circe.syntax._
 
 import scala.concurrent.Future
 
@@ -17,7 +18,7 @@ class TimeSeriesStrategy extends Strategy with TimeSeriesMixin {
 
   override def title = "Time Series Strategy"
 
-  override def initialize(portfolio: Portfolio, loader: SessionLoader) =
+  override def initialize(portfolio: Portfolio, loader: SessionLoader): Future[Seq[DataPath[_]]] =
     Future.successful(Seq(params.path))
 
   override def handleData(marketData: MarketData[_])(implicit ctx: TradingSession) = marketData.data match {
@@ -35,5 +36,5 @@ class TimeSeriesStrategy extends Strategy with TimeSeriesMixin {
 }
 
 object TimeSeriesStrategy {
-  @JsonCodec case class Params(path: DataPath)
+  @JsonCodec case class Params(path: String)
 }

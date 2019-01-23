@@ -54,14 +54,14 @@ class DataSourceActor(session: SlickSession,
     .newInstance().asInstanceOf[DataSource]
 
   // Load all datatypes.
-  val types: Map[String, DeltaFmtJson[_]] =
-    config.datatypes.getOrElse(Seq.empty).foldLeft(dataSource.types)((memo, dt) =>
-      memo + (dt -> DataType.parse(dt).get.fmtJson))
+  val types: Seq[DataType[_]] =
+    config.datatypes.getOrElse(Seq.empty)
+      .foldLeft(dataSource.types)((memo, str) => memo :+ DataType.parse(str).get)
 
   // Load topics and paths
   val topicsFut = dataSource.discoverTopics(exchangeConfig)
-  val pathsFut: Future[Set[DataPath]] = topicsFut.map(topics =>
-    topics.flatMap(topic => types.keySet.map(dt => DataPath(srcKey, topic, dt))))
+  val pathsFut: Future[Set[DataPath[_]]] = topicsFut.map(topics =>
+    topics.flatMap(topic => types.map(dt => DataPath(srcKey, topic, DataType.parse(dt).get))))
 
   // Initialize ingest when data is loaded.
   pathsFut andThen {
@@ -69,16 +69,16 @@ class DataSourceActor(session: SlickSession,
     case Failure(err) => self ! Init(Some(err))
   }
 
-  def ingestMsgOpt(queue: Seq[(String, Set[String])]): Option[Ingest] = {
+  def ingestMsgOpt(queue: Seq[(DataType[_], Set[String])]): Option[Ingest] = {
     val filteredQueue = queue.filter(_._2.nonEmpty)
     if (filteredQueue.nonEmpty) Some(Ingest(filteredQueue)) else None
   }
 
   var itemBuffers = Map.empty[Long, Vector[MarketData[_]]]
 
-  var subscriptions = Map.empty[DataPath, Set[ActorRef]]
+  var subscriptions: Map[String, Set[ActorRef]] = Map.empty
 
-  var bundleIndex = Map.empty[DataPath, Seq[Long]]
+  var bundleIndex = Map.empty[String, Seq[Long]]
 
   override def postStop() = {
     // Close all subscriptions on stop.
@@ -110,11 +110,10 @@ class DataSourceActor(session: SlickSession,
         // Build initial queue
         val ingestQueue = for {
           topics <- topicsFut
-          full = types.toSeq.map { case (dataType, _) => (dataType, topics) }
-          queue = full.map {
+          queue = types.map((_, topics)).map {
             case (dt, ts) =>
               (dt, ts.filter(topic =>
-                ingestConfig.ingestMatchers.exists(_.matches(DataPath(srcKey, topic, dt)))))
+                ingestConfig.ingestMatchers.exists(_.matches(DataPath(srcKey, topic, DataType.parse(dt).get)))))
           }
         } yield queue
 
@@ -149,13 +148,12 @@ class DataSourceActor(session: SlickSession,
           log.debug("Scheduling ingest for {}/{} with topics: {}",
             srcKey, dataType, topicSet.mkString(", "))
 
-          runScheduledIngest(types(dataType))
+          runScheduledIngest(dataType)
 
           // We got a data type and some topics to ingest. Get the data streams from the data source
           // instance, drop all data that doesn't match the ingest config, and return the streams.
           def getStreams[T](topics: Either[String, Set[String]],
-                            delay: Duration, matchers: Set[DataPath])
-                           (implicit fmt: DeltaFmtJson[T]) = for {
+                            delay: Duration, matchers: Set[DataPath[Any]]) = for {
             _ <- Future { Thread.sleep(delay.toMillis) } (blockingEc)
 
             streams <- topics match {
@@ -166,15 +164,16 @@ class DataSourceActor(session: SlickSession,
           } yield streams.filterKeys(topic =>
             matchers.exists(_.matches(DataPath(srcKey, topic, dataType))))
 
-          def runScheduledIngest[T](implicit fmt: DeltaFmtJson[T]) = {
+          def runScheduledIngest[T](dt: DataType[T]) = {
             var scheduledTopics = Set.empty[String]
+            val fmt = dt.fmtJson
             val fut = dataSource.scheduleIngest(topicSet, dataType) match {
               case IngestOne(topic, delay) =>
                 scheduledTopics = Set(topic)
-                getStreams(Left(topic), delay, ingestConfig.ingestMatchers)
+                getStreams[T](Left(topic), delay, ingestConfig.ingestMatchers)
               case IngestGroup(topics, delay) =>
                 scheduledTopics = topics
-                getStreams(Right(topics), delay, ingestConfig.ingestMatchers)
+                getStreams[T](Right(topics), delay, ingestConfig.ingestMatchers)
             }
             val remainingTopics = topicSet -- scheduledTopics
             val newQueue =
@@ -205,10 +204,10 @@ class DataSourceActor(session: SlickSession,
                         }
 
                         // Save bundle id for this path.
-                        bundleIndex += (path ->
+                        bundleIndex += (path.toString ->
                           (bundleIndex.getOrElse(path, Seq.empty[Long]) :+ bundleId))
 
-                        subscriptions += (path -> Set.empty[ActorRef])
+                        subscriptions += (path.toString -> Set.empty[ActorRef])
 
                         case class ScanState(lastSnapshotAt: Long, seqId: Long,
                                              micros: Long, item: T, delta: Option[fmt.D],
@@ -312,7 +311,7 @@ class DataSourceActor(session: SlickSession,
         if (subscriptions.isDefinedAt(path)) {
           val (ref, src) =
             Source.actorRef[MarketData[T]](Int.MaxValue, OverflowStrategy.fail).preMaterialize()
-          subscriptions += (path -> (subscriptions(path) + ref))
+          subscriptions += (path.toString -> (subscriptions(path) + ref))
           val initialItems: Vector[MarketData[T]] = lookupBundleId(path)
             .flatMap(itemBuffers.get(_).map(_.asInstanceOf[Vector[MarketData[T]]]) )
             .getOrElse(Vector.empty[MarketData[T]])
@@ -321,18 +320,18 @@ class DataSourceActor(session: SlickSession,
       sender ! buildOptSrc(DeltaFmt.formats(path.datatype))
   }
 
-  def lookupBundleId(path: DataPath): Option[Long] = bundleIndex.get(path).map(_.last)
+  def lookupBundleId(path: DataPath[_]): Option[Long] = bundleIndex.get(path).map(_.last)
 }
 
 
 object DataSourceActor {
   case class Init(err: Option[Throwable])
   case class Err(err: Throwable)
-  case class Ingest(queue: Seq[(String, Set[String])])
+  case class Ingest(queue: Seq[(DataType[_], Set[String])])
   case class DataIngested(bundleId: Long, seqId: Long)
   case object Index
 
-  case class DataBundle(path: DataPath, bundleId: Long, begin: Long, end: Option[Long])
+//  case class DataBundle(path: DataPath, bundleId: Long, begin: Long, end: Option[Long])
 
   // How often to save a snapshot to the db.
   val SnapshotInterval = 4 hours

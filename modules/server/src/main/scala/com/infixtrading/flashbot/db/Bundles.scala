@@ -1,11 +1,12 @@
 package com.infixtrading.flashbot.db
 
+import com.infixtrading.flashbot.core.DataType
 import com.infixtrading.flashbot.models.core.DataPath
 import slick.lifted.Tag
 import slick.jdbc.PostgresProfile.api._
 
 case class BundleRow(id: Long, source: String, topic: String, datatype: String) {
-  def path: DataPath = DataPath(source, topic, datatype)
+  def path: DataPath[_] = DataPath(source, topic, DataType(datatype))
 }
 
 class Bundles(tag: Tag) extends Table[BundleRow](tag, "flashbot_bundles") {

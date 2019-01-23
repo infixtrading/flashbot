@@ -56,7 +56,7 @@ abstract class Strategy {
     * the `handleData` method. Each stream should complete when there is no more data, which auto
     * shuts down the strategy when all data streams complete.
     */
-  def initialize(portfolio: Portfolio, loader: SessionLoader): Future[Seq[DataPath]]
+  def initialize(portfolio: Portfolio, loader: SessionLoader): Future[Seq[DataPath[Any]]]
 
   /**
     * Receives streaming market data from the sources declared during initialization.
@@ -120,14 +120,14 @@ abstract class Strategy {
     target.id
   }
 
-  def resolveMarketData(selection: DataSelection, dataServer: ActorRef)
+  def resolveMarketData[T](selection: DataSelection[T], dataServer: ActorRef)
                        (implicit mat: Materializer, ec: ExecutionContext)
-      : Future[Source[MarketData[_], NotUsed]] = {
+      : Future[Source[MarketData[T], NotUsed]] = {
     implicit val timeout: Timeout = Timeout(10 seconds)
     (dataServer ? DataStreamReq(selection))
-      .mapTo[Option[StreamResponse[MarketData[_]]]]
+      .mapTo[Option[StreamResponse[MarketData[T]]]]
       .map(_.toFut(s"No data found for $selection."))
-      .map { case se: StreamResponse[MarketData[_]] => se.toSource }
+      .map { case se: StreamResponse[MarketData[T]] => se.toSource }
   }
 
   /**

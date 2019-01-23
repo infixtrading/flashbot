@@ -43,7 +43,7 @@ object DataServer {
     */
   case class RemoteServerTimeout(ref: ActorRef)
 
-  case class LiveStream(path: DataPath)
+  case class LiveStream[T](path: DataPath[T])
 
   case class DataSourceSupervisorTerminated(key: String)
 
@@ -162,13 +162,14 @@ class DataServer(dbConfig: Config,
       * A data stream is constructed out of two parts: A historical stream, and a live component.
       * These two streams are concatenated, deduped, and returned.
       */
-    case DataStreamReq(DataSelection(path, from, to)) =>
+    case DataStreamReq(DataSelection(anyPath, from, to)) =>
       val nowMicros = time.currentTimeMicros
       val isLive = to.isEmpty
-      log.debug("Received data stream request for path {} ({} to {})", path,
+      log.debug("Received data stream request for path {} ({} to {})", anyPath,
         from.map(x => Instant.ofEpochMilli(x / 1000)),
         to.map(x => Instant.ofEpochMilli(x / 1000)))
-      def buildRsp[T](implicit fmt: DeltaFmtJson[T]): Future[StreamResponse[MarketData[T]]] = {
+      def buildRsp[T](path: DataPath[T]): Future[StreamResponse[MarketData[T]]] = {
+        implicit val fmt: DeltaFmtJson[T] = path.fmt
         val src: Future[Source[MarketData[T], NotUsed]] = for {
           // Validate selection and build the live stream response.
           live <- (from, to) match {
@@ -208,14 +209,14 @@ class DataServer(dbConfig: Config,
         src.flatMap(StreamResponse.build[MarketData[T]](_, sender))
       }
 
-      buildRsp(DeltaFmt.formats(path.datatype)) pipeTo sender
+      buildRsp(anyPath) pipeTo sender
 
 
     /**
       * Asks the relevant data source actor for a live stream of the path.
       * Returns None if not found. Do not use search here. Search uses this.
       */
-    case LiveStream(path: DataPath) =>
+    case LiveStream(path: DataPath[_]) =>
       if (!localDataSourceActors.isDefinedAt(path.source)) {
         sender ! None
       } else {
@@ -260,20 +261,20 @@ class DataServer(dbConfig: Config,
     * @param fromMicros inclusive start time in epoch micros.
     * @param toMicros exclusive end time in epoch micros.
     */
-  def buildHistoricalStream[T](path: DataPath, fromMicros: Long, toMicros: Long)
-                              (implicit fmt: DeltaFmtJson[T])
+  def buildHistoricalStream[T](path: DataPath[T], fromMicros: Long, toMicros: Long)
       : Future[Option[Source[MarketData[T], NotUsed]]] = {
+    implicit val fmt: DeltaFmtJson[T] = path.fmt
     val lookbackFromMicros = fromMicros - DataSourceActor.SnapshotInterval.toMicros
     log.debug("Building historical stream")
     for {
       bundles <- Slick.source(Bundles
         .filter(b => b.source === path.source &&
-          b.topic === path.topic && b.datatype === path.datatype)
+          b.topic === path.topic && b.datatype === path.datatype.toString)
         .result).runWith(Sink.seq)
 
       backfills <- Slick.source(Backfills
         .filter(b => b.source === path.source &&
-          b.topic === path.topic && b.datatype === path.datatype)
+          b.topic === path.topic && b.datatype === path.datatype.toString)
         .result).runWith(Sink.seq)
 
       // Bundle ids will never be Some(empty list).
@@ -345,7 +346,7 @@ class DataServer(dbConfig: Config,
   /**
     * Asynchronous linear search over all servers for a live data stream for the given path.
     */
-  def searchForLiveStream[T](path: DataPath, servers: List[ActorRef])
+  def searchForLiveStream[T](path: DataPath[T], servers: List[ActorRef])
       : Future[Option[StreamResponse[MarketData[T]]]] = servers match {
 
     // When no servers left to query, return None.

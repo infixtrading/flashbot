@@ -23,14 +23,14 @@ import io.circe.{Decoder, Encoder}
   *
   * The Scala.js app will use this to recreate state on the React side for vars.
   */
-trait DeltaFmt[M] <: FoldFmt[M] {
+trait DeltaFmt[M] extends FoldFmt[M] {
   type D
   def fmtName: String
   def update(model: M, delta: D): M
   def diff(prev: M, current: M): D
 }
 
-trait DeltaFmtJson[M] <: DeltaFmt[M] {
+trait DeltaFmtJson[M] extends DeltaFmt[M] {
   def modelEn: Encoder[M]
   def modelDe: Decoder[M]
   def deltaEn: Encoder[D]

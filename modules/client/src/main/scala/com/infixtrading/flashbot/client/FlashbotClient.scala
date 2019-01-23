@@ -9,7 +9,7 @@ import akka.stream.scaladsl.{Flow, Source}
 import akka.util.Timeout
 import com.infixtrading.flashbot.core.DataType.{LadderType, OrderBookType}
 import com.infixtrading.flashbot.core.FlashbotConfig.BotConfig
-import com.infixtrading.flashbot.core.{DataType, MarketData}
+import com.infixtrading.flashbot.core.{DataType, MarketData, Priced}
 import com.infixtrading.flashbot.engine.{NetworkSource, StreamResponse}
 import com.infixtrading.flashbot.models.api._
 import com.infixtrading.flashbot.util._
@@ -53,20 +53,33 @@ class FlashbotClient(engine: ActorRef, skipTouch: Boolean = false)(implicit ec: 
     req[NetworkSource[Report]](SubscribeToReport(id)).map(_.toSource)
   def subscribeToReport(id: String) = await(subscribeToReportAsync(id))
 
-  def indexAsync = req[Map[String, DataPath]](MarketDataIndexQuery)
+  def indexAsync = req[Map[String, DataPath[Any]]](MarketDataIndexQuery)
   def index = await(indexAsync)
+
+  /**
+    * Returns a polling stream of live market data.
+    * `lookback` specifies the time duration of historical data to prepend to the live data.
+    */
+  def pollingMarketDataAsync[T](path: DataPath[T], lookback: Duration = 0.seconds)
+      : Future[Source[MarketData[T], NotUsed]] =
+    req[StreamResponse[MarketData[T]]](DataStreamReq(
+      DataSelection(path, Some(Instant.now.minusMillis(lookback.toMillis).toEpochMilli * 1000))))
+    .map(_.toSource)
+    .recoverLadder(path,
+      pollingMarketDataAsync[OrderBook](path.withType(OrderBookType), lookback))
+
 
   /**
     * Returns a non-polling market data stream.
     * If `from` is empty, use the beginning of time.
     * if `to` is empty, sends up to the most recent data available.
     */
-  def historicalMarketDataAsync[T](path: DataPath,
+  def historicalMarketDataAsync[T](path: DataPath[T],
                                    from: Option[Instant] = None,
                                    to: Option[Instant] = None)
       : Future[Source[MarketData[T], NotUsed]] = {
 
-    def singleStream[D](p: DataPath): Future[Source[MarketData[D], NotUsed]] = {
+    def singleStream[D](p: DataPath[D]): Future[Source[MarketData[D], NotUsed]] = {
       assert(!p.isPattern)
       req[StreamResponse[MarketData[D]]](DataStreamReq(
         DataSelection(p,
@@ -82,44 +95,32 @@ class FlashbotClient(engine: ActorRef, skipTouch: Boolean = false)(implicit ec: 
     // But if the path is a pattern, we have to resolve it to concrete paths from the index
     // and then request them individually and merge.
     else for {
-      idx <- indexAsync
-      paths = idx.values.toSet.toIterator.filter(_.matches(path))
-      allStreamRsps <- Future.sequence(paths.map(singleStream))
+      idx: Map[String, DataPath[Any]] <- indexAsync
+      paths = idx.values.toSet.toIterator.map((x: DataPath[Any]) => x.filter(path)).collect { case Some(x) => x }
+      allStreamRsps <- Future.sequence(paths.map(singleStream(_: DataPath[T])))
     } yield allStreamRsps.reduce(_.mergeSorted(_)(Ordering.by(_.micros)))
   }
 
-  /**
-    * Returns a polling stream of live market data.
-    * `lookback` specifies the time duration of historical data to prepend to the live data.
-    */
-  def pollingMarketDataAsync[T](path: DataPath, lookback: Duration = 0.seconds)
-      : Future[Source[MarketData[T], NotUsed]] =
-    req[StreamResponse[MarketData[T]]](DataStreamReq(
-      DataSelection(path, Some(Instant.now.minusMillis(lookback.toMillis).toEpochMilli * 1000))))
-    .map(_.toSource)
-    .recoverLadder(path,
-      pollingMarketDataAsync[OrderBook](path.withType(OrderBookType), lookback))
-
-  def pricesAsync(path: DataPath, timeRange: TimeRange, interval: FiniteDuration) =
+  def pricesAsync(path: DataPath[Priced], timeRange: TimeRange, interval: FiniteDuration) =
     req[Map[String, Vector[Candle]]](PriceQuery(path, timeRange, interval))
 
-  def prices(path: DataPath, timeRange: TimeRange, interval: FiniteDuration) =
+  def prices(path: DataPath[Priced], timeRange: TimeRange, interval: FiniteDuration) =
     await(pricesAsync(path, timeRange, interval))
 
   private def req[T](query: Any)(implicit tag: ClassTag[T]): Future[T] = (engine ? query).mapTo[T]
   private def await[T](fut: Future[T]): T = Await.result[T](fut, timeout.duration)
 
-  implicit class RecoverOps[T](future: Future[Source[T, NotUsed]]) {
+  implicit class RecoverOps[T](future: Future[Source[MarketData[T], NotUsed]]) {
 
-    def recoverNotFound(fut: =>Future[Source[T, NotUsed]]) =
-      future.recoverWith { case err: DataNotFound => fut }
+    def recoverNotFound(fut: =>Future[Source[MarketData[T], NotUsed]]) =
+      future.recoverWith { case err: DataNotFound[T] => fut }
 
-    def recoverLadder[D](path: DataPath, fut: => Future[Source[MarketData[OrderBook], NotUsed]]) =
-      path.dataTypeInstance[D] match {
-        case dataType: LadderType => future.recoverNotFound(
+    def recoverLadder(path: DataPath[T], fut: => Future[Source[MarketData[OrderBook], NotUsed]]) =
+      path.datatype match {
+        case ladderType: LadderType => future.recoverNotFound(
           fut.map(_.map(md =>
-            md.withData(Ladder.fromOrderBook(
-              dataType.depth.getOrElse(10))(md.data), dataType).asInstanceOf[T])))
+            md.withData(Ladder.fromOrderBook(ladderType.depth.getOrElse(10))(md.data).asInstanceOf[T],
+              ladderType))))
         case _ => future
       }
   }

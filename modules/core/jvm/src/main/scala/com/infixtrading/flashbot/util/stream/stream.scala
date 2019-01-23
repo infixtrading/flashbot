@@ -85,7 +85,7 @@ package object stream {
 
   def senderIsLocal(implicit context: ActorContext): Boolean = actorIsLocal(context.sender)
 
-  implicit def toActorPath(dataAddress: DataAddress): ActorPath =
+  implicit def toActorPath[T](dataAddress: DataAddress[T]): ActorPath =
     ActorPath.fromString(dataAddress.host.get)
 
   implicit class StreamRequester(ref: ActorRef) {
