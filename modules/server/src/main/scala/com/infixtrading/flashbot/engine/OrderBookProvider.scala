@@ -1,20 +1,21 @@
 package com.infixtrading.flashbot.engine
 
+import com.infixtrading.flashbot.core.OrderOpen
+import com.infixtrading.flashbot.models.core.OrderBook.SnapshotOrder
+
 //import akka.actor.Actor
 //import akka.event.Logging
-//import io.flashbook.flashbot.core.OrderBook.SnapshotOrder
-//import io.flashbook.flashbot.core.RawOrderEvent
 //
 //import scala.collection.immutable.Queue
 //import scala.concurrent.{ExecutionContext, Future}
 //import scala.util.{Failure, Success}
 //
-//object OrderBookProvider {
-//  sealed trait BookActorCmd
-//  final case class Snapshot(product: String,
-//                            snap: (Long, Seq[SnapshotOrder])) extends BookActorCmd
-//  final case class Subscribe(products: Set[String]) extends BookActorCmd
-//}
+object OrderBookProvider {
+  sealed trait BookActorCmd
+  final case class Snapshot(product: String,
+                            snap: (Long, Seq[OrderOpen])) extends BookActorCmd
+  final case class Subscribe(products: Set[String]) extends BookActorCmd
+}
 //
 //abstract class OrderBookProvider[E <: RawOrderEvent]
 //    (source: String, updateFn: OrderBookMD[E] => Unit) extends Actor {

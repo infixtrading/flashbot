@@ -1,6 +1,6 @@
 package com.infixtrading.flashbot
 
-import com.infixtrading.flashbot.models.core.Order.Side
+import com.infixtrading.flashbot.models.core.Order.{Side, TickDirection}
 import com.infixtrading.flashbot.util.time.parseDuration
 import java.time.Instant
 
@@ -25,7 +25,7 @@ package object core {
   case object Base extends PairRole
   case object Quote extends PairRole
 
-  case class Trade(id: String, micros: Long, price: Double, size: Double, side: Side)
+  case class Trade(id: String, micros: Long, price: Double, size: Double, direction: TickDirection)
     extends Timestamped with Priced
 
   object Trade {

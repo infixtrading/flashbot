@@ -7,14 +7,14 @@ import io.circe.{Decoder, Encoder, Json}
 import io.circe.generic.semiauto._
 import io.circe.syntax._
 import io.circe.parser._
-import com.infixtrading.flashbot.core.DataSource.{Bundle, SliceIndex}
+import com.infixtrading.flashbot.core.DataSource.Bundle
 import com.infixtrading.flashbot.models.core.Slice.SliceId
 import com.infixtrading.flashbot.core._
 import com.infixtrading.flashbot.engine.IndexedDeltaLog._
+import com.infixtrading.flashbot.engine.Slices.SliceIndex
 import com.infixtrading.flashbot.engine.TimeLog.ScanDuration
 import com.infixtrading.flashbot.models.core.Slice
 
-import scala.collection.immutable.{Queue, SortedSet}
 import scala.concurrent.duration._
 
 /**
@@ -37,7 +37,7 @@ class IndexedDeltaLog[T](path: File,
   val timeLog = TimeLog[BundleWrapper](path, retention)
   val prevBundleLastItem = timeLog.last
   val currentBundle = prevBundleLastItem.map(_.bundle).getOrElse(-1L) + 1
-  var currentSlice = -1
+  var currentSlice = -1L
   var lastSeenTime = prevBundleLastItem.map(_.micros).getOrElse(-1L)
   var lastSliceTime = -1L
   var lastData: Option[T] = None
@@ -47,7 +47,7 @@ class IndexedDeltaLog[T](path: File,
       throw new RuntimeException("IndexedDeltaLog does not support outdated data.")
     }
 
-    var wrappers = Seq.empty[BundleWrapper]
+    var wrappers: Seq[BundleWrapper] = Seq.empty
 
     // If it's time for a new slice, unfold the data and save snapshot.
     // Also increment the current slice.
@@ -63,9 +63,8 @@ class IndexedDeltaLog[T](path: File,
 
     // And now we generate and save a delta against the previous item in this bundle.
     if (lastData.isDefined) {
-      val deltas = fmt.diff(lastData.get, data)
-      wrappers ++= deltas.map(delta =>
-        BundleDelta(currentBundle, currentSlice, micros, delta.asJson))
+      val delta = fmt.diff(lastData.get, data)
+      wrappers :+= BundleDelta(currentBundle, currentSlice, micros, delta.asJson)
     }
 
     // Persist to time log
@@ -155,8 +154,8 @@ class IndexedDeltaLog[T](path: File,
     * Builds a SliceIndex where the bundle key of each slice is set, but the slice key is a
     * wildcard. This is due to us not traversing each slice on disk during indexing.
     */
-  def index: SliceIndex = {
-    var idx = SliceIndex.empty
+  def index: SliceIndex[T] = {
+    var idx = SliceIndex.empty[T]
     var currentSliceHead = timeLog.first
 
     if (currentSliceHead.isDefined) {

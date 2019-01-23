@@ -142,12 +142,12 @@ class Simulator(base: Exchange, latencyMicros: Long = 0) extends Exchange {
         // First simulate fills on the aggregate book. Remove the associated liquidity from
         // the depths.
         val simulatedFills =
-          ladderFillOrder(depths(topic), trade.side, Some(trade.size), None)
+          ladderFillOrder(depths(topic), trade.direction.takerSide, Some(trade.size), None)
         simulatedFills.foreach { case (fillPrice, fillAmount) =>
             depths = depths + (topic -> depths(topic).updateLevel(
-              trade.side match {
-                case Buy => Ask
-                case Sell => Bid
+              trade.direction match {
+                case Up => Ask
+                case Down => Bid
               }, fillPrice, depths(topic).quantityAtPrice(fillPrice).get - fillAmount
             ))
         }
@@ -155,11 +155,11 @@ class Simulator(base: Exchange, latencyMicros: Long = 0) extends Exchange {
         // Then use the fills to determine if any of our orders would have executed.
         if (myOrders.isDefinedAt(topic)) {
           val lastFillPrice = simulatedFills.last._1
-          val filledOrders = trade.side match {
-            case Buy =>
-              myOrders(topic).asks.filter(_._1 < lastFillPrice).values.toSet.flatten
-            case Sell =>
-              myOrders(topic).bids.filter(_._1 > lastFillPrice).values.toSet.flatten
+          val filledOrders = trade.direction match {
+            case Up =>
+              myOrders(topic).asks.index.filter(_._1 < lastFillPrice).values.toSet.flatten
+            case Down =>
+              myOrders(topic).bids.index.filter(_._1 > lastFillPrice).values.toSet.flatten
           }
           filledOrders.foreach { order =>
             // Remove order from private book

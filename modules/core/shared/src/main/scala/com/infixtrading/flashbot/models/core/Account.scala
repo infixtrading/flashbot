@@ -19,12 +19,8 @@ object Account {
   implicit def en: Encoder[Account] = deriveEncoder[Account]
   implicit def de: Decoder[Account] = deriveDecoder[Account]
 
-  implicit val accountKeyEncoder: KeyEncoder[Account] = new KeyEncoder[Account] {
-    override def apply(key: Account) = key.toString
-  }
+  implicit val accountKeyEncoder: KeyEncoder[Account] = KeyEncoder.instance(_.toString)
 
-  implicit val accountKeyDecoder: KeyDecoder[Account] = new KeyDecoder[Account] {
-    override def apply(key: String) = Some(parse(key))
-  }
+  implicit val accountKeyDecoder: KeyDecoder[Account] = KeyDecoder.instance(x => Some(parse(x)))
 }
 

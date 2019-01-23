@@ -56,13 +56,8 @@ case class Ladder(depth: Int,
 
 object Ladder {
 
-  implicit val doubleKeyEncoder: KeyEncoder[Double] = new KeyEncoder[Double] {
-    override def apply(key: Double): String = key.toString
-  }
-
-  implicit val doubleKeyDecoder: KeyDecoder[Double] = new KeyDecoder[Double] {
-    override def apply(key: String): Option[Double] = Some(key.toDouble)
-  }
+  implicit def doubleKeyEncoder: KeyEncoder[Double] = KeyEncoder.encodeKeyString.contramap(_.toString)
+  implicit def doubleKeyDecoder: KeyDecoder[Double] = KeyDecoder.decodeKeyString.map(_.toDouble)
 
   case class LadderDelta(side: QuoteSide, priceLevel: Double, quantity: Double)
   object LadderDelta {
@@ -74,13 +69,15 @@ object Ladder {
   implicit val ladderEncoder: Encoder[Ladder] = deriveEncoder[Ladder]
 
   implicit def ladderFmt: DeltaFmtJson[Ladder] = new DeltaFmtJson[Ladder] {
-    override type D = LadderDelta
+    override type D = Seq[LadderDelta]
 
     override def fmtName = "ladder"
 
-    override def update(model: Ladder, delta: D) = delta match {
-      case LadderDelta(side, priceLevel, quantity) =>
-        model.updateLevel(side, priceLevel, quantity)
+    override def update(model: Ladder, deltas: D) = {
+      deltas.foldLeft(model) {
+        case (memo, LadderDelta(side, priceLevel, quantity)) =>
+          memo.updateLevel(side, priceLevel, quantity)
+      }
     }
 
     // This probably isn't great in terms of CPU usage. But it's probably fine.
@@ -177,8 +174,8 @@ object Ladder {
 
   def fromOrderBook(depth: Int)(book: OrderBook): Ladder = {
     Ladder(depth,
-      asks = book.asks.take(depth).mapValues(_.map(_.amount).sum),
-      bids = book.bids.take(depth).mapValues(_.map(_.amount).sum))
+      asks = book.asks.index.take(depth).mapValues(_.map(_.amount).sum),
+      bids = book.bids.index.take(depth).mapValues(_.map(_.amount).sum))
   }
 
   private def updateMap(map: SortedMap[Double, Double],

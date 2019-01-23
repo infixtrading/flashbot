@@ -38,7 +38,7 @@ object OrderBookTap {
     }
 
     def selectRandomOrder(book: OrderBook, price: Double): Option[Order] =
-      book.asks.get(price).orElse(book.bids.get(price))
+      book.asks.index.get(price).orElse(book.bids.index.get(price))
         .map(orders => orders(random.nextInt(orders.size)))
 
     (0 to length.toInt).scanLeft(initialBook) {

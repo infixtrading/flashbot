@@ -1,30 +1,36 @@
 package com.infixtrading.flashbot.engine
 
 import java.time.Instant
+import java.util.concurrent.Executors
 
 import akka.Done
 import akka.actor.{ActorLogging, ActorRef, ActorSystem, PoisonPill, Props, Status}
+import akka.http.scaladsl.Http
 import akka.pattern.{ask, pipe}
 import akka.persistence._
 import akka.stream.scaladsl.{Keep, Sink, Source}
-import akka.stream.{ActorMaterializer, OverflowStrategy}
+import akka.stream.{ActorMaterializer, ActorMaterializerSettings, Materializer, OverflowStrategy}
 import akka.util.Timeout
 import com.infixtrading.flashbot
+import com.infixtrading.flashbot.client.FlashbotClient
 import io.circe.Json
 import io.circe.syntax._
 import io.circe.literal._
 import io.circe.parser.parse
-import com.infixtrading.flashbot.core.FlashbotConfig.{BotConfig, ExchangeConfig, StaticBotsConfig}
+import com.infixtrading.flashbot.core.FlashbotConfig.{BotConfig, ExchangeConfig, GrafanaConfig, StaticBotsConfig}
 import com.infixtrading.flashbot.core._
 import com.infixtrading.flashbot.engine.TradingSessionActor.{SessionPing, SessionPong, StartSession, StopSession}
 import com.infixtrading.flashbot.util.time.currentTimeMicros
-import com.infixtrading.flashbot.util.stream.buildMaterializer
 import com.infixtrading.flashbot.util.json._
+import com.infixtrading.flashbot.util.stream._
 import com.infixtrading.flashbot.util._
 import com.infixtrading.flashbot.models.api._
 import com.infixtrading.flashbot.models.core._
 import com.infixtrading.flashbot.report.ReportEvent.{BalanceEvent, PositionEvent, SessionComplete}
 import com.infixtrading.flashbot.report._
+import com.infixtrading.flashbot.strategies.TimeSeriesStrategy
+import io.prometheus.client.Gauge.Timer
+import io.prometheus.client.exporter.HTTPServer
 
 import scala.concurrent.duration._
 import scala.concurrent._
@@ -39,13 +45,17 @@ class TradingEngine(engineId: String,
                     strategyClassNames: Map[String, String],
                     exchangeConfigs: Map[String, ExchangeConfig],
                     staticBotsConfig: StaticBotsConfig,
-                    dataServerInfo: Either[ActorRef, Props])
-  extends PersistentActor with ActorLogging {
+                    dataServerInfo: Either[ActorRef, Props],
+                    grafana: GrafanaConfig)
+    extends PersistentActor with ActorLogging {
+
+  val blockingEc: ExecutionContext =
+    ExecutionContext.fromExecutor(Executors.newFixedThreadPool(32))
 
   private implicit val system: ActorSystem = context.system
-  private implicit val mat: ActorMaterializer = buildMaterializer
+  private implicit val mat: Materializer = buildMaterializer()
   private implicit val ec: ExecutionContext = system.dispatcher
-  private implicit val timeout: Timeout = Timeout(5 seconds)
+  private implicit val timeout: Timeout = Timeout(15 seconds)
 
   override def persistenceId: String = engineId
   private val snapshotInterval = 100000
@@ -56,9 +66,9 @@ class TradingEngine(engineId: String,
     * The portfolio instance which represents your actual balances on all configured exchanges.
     * This isn't persisted in [[TradingEngineState]] for two reasons: One is that this is the only
     * case of shared state between trading sessions, and it would be great if sessions don't have
-    * to block on disk IO in order to safely update it. The other reason is that we can get away
+    * to block on disk IO in order to safely update it. The other reason is that we can series away
     * with it because the global portfolio must be synced from the exchanges on engine startup
-    * anyway, which means we wouldn't get value out of Akka persistence in the first place.
+    * anyway, which means we wouldn't series value out of Akka persistence in the first place.
     */
   val globalPortfolio = new SyncVar[Portfolio]
   private def isInitialized = globalPortfolio.isSet
@@ -87,6 +97,10 @@ class TradingEngine(engineId: String,
 
   log.info("TradingEngine '{}' started at {}", engineId, bootRsp.micros)
   bootEvents.foreach(log.debug("Boot event: {}", _))
+
+  // Start the Grafana data source server
+  Http().bindAndHandle(GrafanaServer.routes(new FlashbotClient(self, skipTouch = true)(blockingEc)),
+    "localhost", grafana.port)
 
   self ! BootEvents(bootEvents)
 
@@ -375,11 +389,41 @@ class TradingEngine(engineId: String,
           // Create and send response
           .map(PortfolioResponse) pipeTo sender
 
+      case query @ MarketDataIndexQuery =>
+        (dataServer ? query) pipeTo sender
+
+      /**
+        * Proxy market data requests to the data server.
+        */
+      case req: DataStreamReq[_] =>
+        val timer = Metrics.startTimer("data_query_ms")
+        log.debug("PROXY REQUEST {}", req)
+        (dataServer ? req)
+          .mapTo[StreamResponse[MarketData[_]]]
+          .flatMap(_.rebuild)
+          .andThen { case x => timer.observeDuration() } pipeTo sender
+
+      /**
+        * A TimeSeriesQuery is a thin wrapper around a backtest of the TimeSeriesStrategy.
+        */
+      case query: TimeSeriesQuery =>
+        (if (query.path.isPattern) Future.failed(
+          new IllegalArgumentException("Patterns are not currently supported in time series queries."))
+        else {
+          val params = TimeSeriesStrategy.Params(query.path)
+          (self ? BacktestQuery("time_series", params.asJson.noSpaces, query.range,
+              Portfolio.empty.asJson.noSpaces, Some(query.interval)))
+            .mapTo[ReportResponse]
+            .map(_.report.timeSeries)
+        }) pipeTo sender()
+
       /**
         * To resolve a backtest query, we start a trading session in Backtest mode and collect
         * all session events into a stream that we fold over to create a report.
         */
       case BacktestQuery(strategyName, params, timeRange, portfolioStr, barSize, eventsOut) =>
+
+        val timer = Metrics.startTimer("backtest_ms")
 
         // TODO: Remove the try catch
         try {
@@ -393,12 +437,14 @@ class TradingEngine(engineId: String,
 
           val (ref, reportEventSrc) = Source
             .actorRef[ReportEvent](Int.MaxValue, OverflowStrategy.fail)
+            .alsoTo(Sink.foreach { x =>
+              Metrics.inc("report_event_count")
+            })
             .preMaterialize()
 
           // Fold the empty report over the ReportEvents emitted from the session.
           val fut: Future[Report] = reportEventSrc
             .scan[(Report, scala.Seq[Json])]((report, Seq.empty))((r, ev) => {
-              implicit var newReport = r._1
               // Complete this stream once a SessionComplete event comes in.
               ev match {
                 case SessionComplete(None) => ref ! Status.Success(Done)
@@ -408,13 +454,15 @@ class TradingEngine(engineId: String,
 
               val deltas = r._1.genDeltas(ev)
               var jsonDeltas = Seq.empty[Json]
+
               deltas.foreach { delta =>
                 jsonDeltas :+= delta.asJson
+                Metrics.inc("backtest_report_delta_counter")
               }
               (deltas.foldLeft(r._1)(_.update(_)), jsonDeltas)
             })
             // Send the report deltas to the client if requested.
-            .alsoTo(Sink.foreach(rd => {
+            .alsoTo(Sink.foreach((rd: (Report, Seq[Json])) => {
               eventsOut.foreach(ref => rd._2.foreach(ref ! _))
             }))
             .map(_._1)
@@ -437,7 +485,7 @@ class TradingEngine(engineId: String,
 
           fut.andThen {
             case x =>
-//              log.info("Fut: {}", x)
+              timer.observeDuration()
           }.map(ReportResponse) pipeTo sender
         } catch {
           case err: Throwable =>
@@ -650,6 +698,9 @@ object TradingEngine {
 
   def props(name: String, config: FlashbotConfig): Props =
     Props(new TradingEngine(name, config.strategies, config.exchanges,
-      config.bots, Right(DataServer.props(config))))
+      config.bots, Right(DataServer.props(config.noIngest)), config.grafana))
 
+  def props(name: String, config: FlashbotConfig, dataServer: ActorRef): Props =
+    Props(new TradingEngine(name, config.strategies, config.exchanges,
+      config.bots, Left(dataServer), config.grafana))
 }

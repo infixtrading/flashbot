@@ -1,123 +1,80 @@
 package com.infixtrading.flashbot.core
 
 import akka.NotUsed
-import akka.actor.{ActorContext, ActorPath, ActorRef, ActorSystem}
-import akka.stream.{ActorMaterializer, OverflowStrategy}
-import akka.stream.scaladsl.{Flow, Sink, Source}
-import com.typesafe.config.Config
-import de.sciss.fingertree.{FingerTree, RangedSeq}
-import io.circe.Json
-import io.circe.generic.auto._
+import akka.actor.ActorContext
+import akka.stream.ActorMaterializer
+import akka.stream.scaladsl.Source
 import com.infixtrading.flashbot.core.DataSource._
 import com.infixtrading.flashbot.core.FlashbotConfig.ExchangeConfig
-import com.infixtrading.flashbot.models.core.Slice.SliceId
-import com.infixtrading.flashbot.models.core.{DataAddress, DataPath, Slice, TimeRange}
-import com.infixtrading.flashbot.util.time.parseDuration
-import com.infixtrading.flashbot.util.stream._
 
-import scala.collection.JavaConverters._
-import scala.collection.immutable
 import scala.concurrent.Future
 import scala.concurrent.duration._
+import scala.language.postfixOps
 
 abstract class DataSource {
 
+  /**
+    * This exists so that we don't have to hard-code all of the topics that exists for a
+    * data source. Exchanges add/remove markets all the time, so this method requests the
+    * current topics and merges them with the hard-coded configured ones.
+    */
   def discoverTopics(exchangeConfig: Option[ExchangeConfig])
                     (implicit ctx: ActorContext, mat: ActorMaterializer): Future[Set[String]] =
     Future.successful(exchangeConfig.flatMap(_.pairs)
       .map(_.map(_.toString).toSet).getOrElse(Set.empty))
 
-  def types: Map[String, DeltaFmtJson[_]] = Map.empty
-
+  /**
+    * This informs the DataSourceActor which manages this DataSource instance about how to work
+    * through the queue of topics that need to be ingested. It exists to allow data sources with
+    * large amounts of topics to batch and throttle ingest. For example, Binance has hundreds of
+    * markets (topics). It's not practical to open 200 WebSocket connections to their servers all
+    * at once. To address this, the Binance DataSource will schedule batches of topics to be
+    * ingested together, with a delay between each batch. Additionally, because of how the Binance
+    * API works, all topics of each batch can be multiplexed over a single WebSocket, greatly
+    * reducing resource usage.
+    *
+    * By default there is no grouping and no throttle. All topics are ingested immediately and
+    * individually.
+    */
   def scheduleIngest(topics: Set[String], dataType: String): IngestSchedule =
     IngestOne(topics.head, 0 seconds)
 
+  /**
+    * Ingests a batch of topics in one go. Returns a map of (topic -> data stream).
+    */
   def ingestGroup[T](topics: Set[String], datatype: DataType[T])
                     (implicit ctx: ActorContext, mat: ActorMaterializer)
       : Future[Map[String, Source[(Long, T), NotUsed]]] =
     Future.failed(new NotImplementedError("ingestGroup is not implemented by this data source."))
 
+  /**
+    * Ingests a single topic. Returns the corresponding data stream source.
+    */
   def ingest[T](topic: String, datatype: DataType[T])
                (implicit ctx: ActorContext, mat: ActorMaterializer)
       : Future[Source[(Long, T), NotUsed]] =
     Future.failed(new NotImplementedError("ingest is not implemented by this data source."))
+
+  /**
+    * Given a cursor and a topic/type, returns a page of results for the path and a cursor to the
+    * next reverse chronological page (i.e. with older data). The return type also includes a delay
+    * to wait until the next page will be requested, in case throttling is necessary.
+    */
+  def backfillPage[T](topic: String, datatype: DataType[T], cursor: Option[String])
+                     (implicit ctx: ActorContext, mat: ActorMaterializer)
+      : Future[(Seq[(Long, T)], Option[(String, Duration)])] =
+    Future.failed(new NotImplementedError("This data source does not support backfills."))
+
+  /**
+    * If this data source emits a custom, non-built-in data type, the type needs to be declared
+    * here by supplying a DeltaFmtJson.
+    *
+    * Warning: Do not use this yet. Custom data types are not fully supported at this time.
+    */
+  def types: Seq[DataType[_]] = Seq.empty
 }
 
 object DataSource {
-
-//  class DataClusterIndex(val members: Map[ActorPath, DataSourceIndex]) extends AnyVal
-//      with Mergable[DataClusterIndex] {
-//
-//    def merge(other: DataClusterIndex): DataClusterIndex = mergeMap(members, other.members)
-//
-//    def slices: Seq[Slice] = members.flatMap {
-//      case (host, index) => index.slices.map(_.mapAddress(_.withHost(host.toString)))
-//    }.toSeq
-
-//    def filter(pattern: DataPath): DataClusterIndex = members.mapValues(_.filter(pattern))
-
-    /**
-      * Use the index to plan a sequence of scans that, when concatenated together, fulfill
-      * query in an optimal way. Scans from the `self` actor are always preferred due to locality.
-      * This is essentially a transformation from a logical StreamSelection to a sequence of
-      * ClusterStreamSelection.
-      */
-//    def planQuery(self: ActorRef, selection: StreamSelection): Seq[ClusterStreamSelection] = {
-//      assert(selection.path.value.isDefined, "Pattern queries are not yet supported.")
-//      val filteredIndex = filter(selection.path)
-//      val sliceIdx: SliceIndex = filteredIndex.slices
-//      val idx = sliceIdx.filterOverlaps(selection.from, selection.to)
-//
-//      def helper(memo: Seq[ClusterStreamSelection], cursor: Long): Seq[ClusterStreamSelection] = {
-//        val cursorInBounds = cursor >= selection.from && cursor < selection.to
-//        if (cursorInBounds) {
-//          // If the cursor is in bounds, then we still may have some work to do.
-//          // First, try to see what slices intersect with it.
-//          val intersections = idx.rangedSlices.intersect(cursor).toSeq
-//          val localIntersections = intersections.filter(slice =>
-//            actorPathsAreLocal(self.path, ActorPath.fromString(slice.address.get.host.get)))
-//
-//          // Are there any intersections? If so, pick the best one. Slices that have the same
-//          // host as `self` automatically win over all others. Otherwise, the criteria for the
-//          // best slice is how far it extends beyond the current cursor.
-//          if (intersections.nonEmpty) {
-//            val activeIntersections =
-//              if (localIntersections.nonEmpty) localIntersections
-//              else intersections
-//            val best = activeIntersections.maxBy(_.toMicros)
-//            val polling = selection.polling
-//            val end = if (polling) Long.MaxValue else math.min(best.toMicros, selection.to)
-//            val newSelection = ClusterStreamSelection(best.address.get, cursor, end, polling)
-//            helper(memo :+ newSelection, end)
-//
-//          } else {
-//            // If there are no intersections, then this is a gap in the data. Let's seek the
-//            // cursor to the beginning of the next slice.
-//            helper(memo, idx.slices.map(_.fromMicros).filter(_ > cursor).min)
-//          }
-//        } else {
-//          // If cursor not in bounds we're done, return.
-//          memo
-//        }
-//      }
-
-//      helper(Seq.empty, selection.from)
-//    }
-//  }
-
-//  object DataClusterIndex {
-//    def empty: DataClusterIndex = Map.empty[ActorPath, DataSourceIndex]
-//    def apply(self: ActorPath, sourceIndex: DataSourceIndex): DataClusterIndex =
-//      Map(self -> sourceIndex)
-//
-//    implicit def build(members: Map[ActorPath, DataSourceIndex]): DataClusterIndex =
-//      new DataClusterIndex(members.filterNot(_._2.isEmpty))
-//
-//    implicit def build(slices: Seq[Slice]): DataClusterIndex =
-//      slices.groupBy(_.address.get.host.map(ActorPath.fromString).get)
-//        .mapValues(DataSourceIndex.build)
-//  }
-
 
   sealed trait IngestSchedule {
     def delay: Duration
@@ -125,154 +82,6 @@ object DataSource {
   final case class IngestGroup(topics: Set[String], delay: Duration) extends IngestSchedule
   final case class IngestOne(topic: String, delay: Duration) extends IngestSchedule
 
-  final case class DataTypeConfig(retention: Option[String])
-
-  trait Mergable[T] extends Any {
-    def merge(other: T): T
-  }
-
-  implicit class SliceIndex(val rangedSlices: RangedSeq[Slice, Long])
-      extends AnyVal with Mergable[SliceIndex] {
-
-    override def merge(other: SliceIndex) = other.rangedSlices
-
-    def bundleId: Long = rangedSlices.head.id.bundle
-    def filterOverlaps(from: Long, to: Long): SliceIndex = rangedSlices.filterOverlaps((from, to)).toSeq
-    def slices: Seq[Slice] = rangedSlices.filterOverlaps((0, Long.MaxValue)).toSeq
-    def filterId(fn: SliceId => Boolean): SliceIndex = slices.filter(s => fn(s.id))
-    def isEmpty: Boolean = slices.isEmpty
-    def startMicros: Long = rangedSlices.head.fromMicros
-    def endMicros: Long = rangedSlices.last.toMicros
-
-    def +(slice: Slice): SliceIndex = rangedSlices + slice
-
-    def bundles: Map[Long, SliceIndex] =
-      slices.groupBy(_.id.bundleValue.get).mapValues(SliceIndex.build)
-  }
-  object SliceIndex {
-    def empty: SliceIndex = Seq.empty
-
-    implicit def build(seq: Seq[Slice]): SliceIndex = new SliceIndex(
-      RangedSeq[Slice, Long](seq: _*)(
-        slice => (slice.fromMicros, slice.toMicros),
-        Ordering[Long]
-      )
-    )
-  }
-
-  class DataTypeIndex(val bundles: Map[String, SliceIndex]) extends AnyVal
-      with Mergable[DataTypeIndex] {
-    def get(dataType: String): Option[SliceIndex] = bundles.get(dataType)
-    def apply(dataType: String): SliceIndex = get(dataType).get
-    def merge(other: DataTypeIndex): DataTypeIndex = mergeMap(bundles, other.bundles)
-    def isEmpty: Boolean = bundles.isEmpty
-
-    def slices: Seq[Slice] = bundles.flatMap {
-      case (dataType, index) =>
-        index.slices.map(_.mapAddress(_.withType(dataType)))
-    }.toSeq
-  }
-
-  object DataTypeIndex {
-    implicit def build(bundles: Map[String, SliceIndex]): DataTypeIndex =
-      new DataTypeIndex(bundles.filterNot(_._2.isEmpty))
-
-    implicit def build(slices: Seq[Slice]): DataTypeIndex =
-      slices.groupBy(_.typeValue.get).mapValues(SliceIndex.build)
-  }
-
-  class TopicIndex(val topics: Map[String, DataTypeIndex]) extends AnyVal
-      with Mergable[TopicIndex] {
-
-    def get(topic: String): Option[DataTypeIndex] = topics.get(topic)
-    def apply(topic: String): DataTypeIndex = get(topic).get
-    def merge(other: TopicIndex): TopicIndex = mergeMap(topics, other.topics)
-    def filter(fn: ((String, DataTypeIndex)) => Boolean): TopicIndex = topics.filter(fn)
-    def isEmpty: Boolean = topics.isEmpty
-
-    def slices: Seq[Slice] = topics.flatMap {
-      case (topic, index) =>
-        index.slices.map(_.mapAddress(_.withTopic(topic)))
-    }.toSeq
-  }
-
-  object TopicIndex {
-    implicit def build(topics: Map[String, DataTypeIndex]): TopicIndex =
-      new TopicIndex(topics.filterNot(_._2.isEmpty))
-
-    implicit def build(slices: Seq[Slice]): TopicIndex =
-      slices.groupBy(_.topicValue.get).mapValues(DataTypeIndex.build)
-  }
-
-  class DataSourceIndex(val sources: Map[String, TopicIndex]) extends AnyVal
-      with Mergable[DataSourceIndex] {
-    def get(dataSource: String): Option[TopicIndex] = sources.get(dataSource)
-    def apply(dataSource: String): TopicIndex = get(dataSource).get
-    def apply(path: DataPath): SliceIndex = (for {
-      topics <- get(path.source)
-      types <- topics.get(path.topic)
-      bundles <- types.get(path.datatype)
-    } yield bundles).getOrElse(SliceIndex.empty)
-
-    def merge(other: DataSourceIndex): DataSourceIndex = mergeMap(sources, other.sources)
-    def isEmpty: Boolean = sources.isEmpty
-    def slices: Seq[Slice] = sources.flatMap {
-      case (src, topics) => topics.slices.map(_.mapAddress(_.withSource(src)))
-    }.toSeq
-
-    def filter(pattern: DataPath): DataSourceIndex = slices.filter(slice =>
-      slice.address.exists(_.path.matches(pattern)))
-
-    def paths: Seq[DataPath] = slices.map(_.address.get.path)
-  }
-
-  object DataSourceIndex {
-    def empty: DataSourceIndex = new DataSourceIndex(Map.empty)
-    implicit def build(sources: Map[String, TopicIndex]): DataSourceIndex =
-      new DataSourceIndex(sources.filterNot(_._2.isEmpty))
-
-    implicit def build(slices: Seq[Slice]): DataSourceIndex =
-      slices.groupBy(_.sourceValue.get).mapValues(TopicIndex.build)
-  }
-
-  def mergeMap[K, T <: Mergable[T]](a: Map[K, T], b: Map[K, T]): Map[K, T] = {
-    val commonKeys = a.keySet.intersect(b.keySet)
-    val commonMerged = commonKeys.map(key => key -> a(key).merge(b(key)))
-    (a -- commonKeys) ++ (b -- commonKeys) ++ commonMerged
-  }
-
   case class Bundle(id: Long, fromMicros: Long, toMicros: Long)
-
-  /**
-    * A logical description of some data that can be streamed. Intentionally leaves out lower
-    * level details such as data address hosts, slices/bundles, and data locality constraints.
-    */
-//  case class StreamSelection(path: DataPath, from: Long, to: Long, polling: Boolean) {
-//    def timeRange: TimeRange = TimeRange(from, to)
-//  }
-//  object StreamSelection {
-//    def apply(path: DataPath, from: Long, polling: Boolean): StreamSelection =
-//      StreamSelection(path, from, Long.MaxValue, polling)
-//    def apply(path: DataPath, from: Long, to: Long): StreamSelection =
-//      StreamSelection(path, from, to, polling = false)
-//    def apply(path: DataPath, from: Long): StreamSelection =
-//      StreamSelection(path, from, Long.MaxValue, polling = false)
-//
-//    implicit def fromClusterSelection(cs: ClusterStreamSelection): StreamSelection = cs.toLocal
-//  }
-
-  /**
-    * Like StreamSelection but uses a DataAddress instead of a DataPath so that it can reference
-    * remote nodes.
-    */
-//  case class ClusterStreamSelection(address: DataAddress, from: Long, to: Long, polling: Boolean) {
-//    def toLocal: StreamSelection = StreamSelection(address.path, from, to, polling)
-//  }
-
-  def reindex(sources: List[Source[MarketData[_], NotUsed]]) : immutable.Seq[Any] =
-    sources.zipWithIndex.map { case (mds, i) => mds.map(_.withBundle(i))}
-
-//  def reindex(sources: Source[Source[MarketData[_], NotUsed], NotUsed]) =
-//    sources.zipWithIndex.map { case (mds, i) => mds.map(_.withBundle(i.toInt))}
 }
 

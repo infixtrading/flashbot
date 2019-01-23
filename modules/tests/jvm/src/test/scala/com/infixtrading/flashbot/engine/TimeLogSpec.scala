@@ -4,7 +4,7 @@ import java.io.File
 
 import io.circe.generic.auto._
 import com.infixtrading.flashbot.util.files._
-import com.infixtrading.flashbot.models.core.Order.{Buy, Sell}
+import com.infixtrading.flashbot.models.core.Order.{Buy, Down, Sell, Up}
 import com.infixtrading.flashbot.core.Trade
 import com.infixtrading.flashbot.engine.TimeLog
 import com.infixtrading.flashbot.engine.TimeLog.ScanDuration
@@ -21,7 +21,7 @@ class TimeLogSpec extends FlatSpec with Matchers {
   // One trade every minute
   def genTrades(n: Int, nowMillis: Long): Seq[Trade] = Seq.range(0, n).map(i =>
     Trade(i.toString, (nowMillis + (i minutes).toMillis) * 1000, (1000 + i).toDouble, (5 + i).toDouble,
-      if (i % 2 == 0) Buy else Sell))
+      if (i % 2 == 0) Up else Down))
 
   "TimeLog" should "write and read a single item to a new queue" in {
     val file = new File(testFolder.getAbsolutePath + "/trades")

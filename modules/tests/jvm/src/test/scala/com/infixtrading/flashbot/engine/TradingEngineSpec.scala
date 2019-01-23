@@ -11,12 +11,12 @@ import akka.stream.ActorMaterializer
 import akka.stream.scaladsl.Sink
 import akka.testkit.{ImplicitSender, TestKit}
 import akka.util.Timeout
-import com.infixtrading.flashbot.client.scala.client.FlashbotClient
+import com.infixtrading.flashbot.client.FlashbotClient
 import com.infixtrading.flashbot.core.FlashbotConfig.{BotConfig, StaticBotsConfig}
 import com.infixtrading.flashbot.core.{BalancePoint, FlashbotConfig, Paper, Trade}
 import com.infixtrading.flashbot.util.{files, time}
 import com.infixtrading.flashbot.models.api._
-import com.infixtrading.flashbot.models.core.Order.{Buy, Sell}
+import com.infixtrading.flashbot.models.core.Order.{Buy, Down, Sell, Up}
 import com.infixtrading.flashbot.models.core._
 import com.infixtrading.flashbot.report.Report
 import com.infixtrading.flashbot.util.files.rmRf
@@ -55,22 +55,17 @@ class TradingEngineSpec extends WordSpecLike
   "TradingEngine" should {
     "respond to a ping" in {
       val config = FlashbotConfig.load
-      val system = ActorSystem("System1", config.akka)
+      val system = ActorSystem("System1", config.conf)
 
-      val dataServer = system.actorOf(Props(new DataServer(
-        config.db,
-        config.sources,
-        config.exchanges,
-        None,
-        useCluster = false
-      )))
+      val dataServer = system.actorOf(DataServer.props(config))
 
       val engine = system.actorOf(Props(new TradingEngine(
         "test",
         config.strategies,
         config.exchanges,
         config.bots,
-        Left(dataServer)
+        Left(dataServer),
+        config.grafana
       )))
 
       val fb = new FlashbotClient(engine)
@@ -87,7 +82,7 @@ class TradingEngineSpec extends WordSpecLike
 
     "respect bot TTL" in {
       val config = FlashbotConfig.load
-      val system = ActorSystem("System1", config.akka)
+      val system = ActorSystem("System1", config.conf)
 
       val engine = system.actorOf(TradingEngine.props("test-engine"))
       val fb = new FlashbotClient(engine)
@@ -134,7 +129,7 @@ class TradingEngineSpec extends WordSpecLike
     "subscribe to the report of a running bot" in {
 
       val config = FlashbotConfig.load
-      implicit val system = ActorSystem("System1", config.akka)
+      implicit val system = ActorSystem("System1", config.conf)
 
       val engine = system.actorOf(TradingEngine.props("test-engine"))
       val fb = new FlashbotClient(engine)
@@ -142,7 +137,7 @@ class TradingEngineSpec extends WordSpecLike
 
       val nowMicros = time.currentTimeMicros
       val trades = 1 to 20 map { i =>
-        Trade(i.toString, nowMicros + i * 1000000, i, i, if (i % 2 == 0) Buy else Sell)
+        Trade(i.toString, nowMicros + i * 1000000, i, i, if (i % 2 == 0) Up else Down)
       }
 
       // Configure and enable bot that writes a list of trades to the report.
@@ -178,7 +173,7 @@ class TradingEngineSpec extends WordSpecLike
         )
       ))
 
-      implicit val system = ActorSystem("System1", config.akka)
+      implicit val system = ActorSystem("System1", config.conf)
       val engine = system.actorOf(TradingEngine.props("engine", config))
       val fb = new FlashbotClient(engine)
       fb.botStatus("scanner1") shouldBe Running
@@ -190,17 +185,15 @@ class TradingEngineSpec extends WordSpecLike
     "be profitable when using lookahead" in {
 
       val config = FlashbotConfig.load
-      implicit val system = ActorSystem("System1", config.akka)
+      implicit val system = ActorSystem("System1", config.conf)
 
       val now = Instant.now()
 
-      val dataServer = system.actorOf(Props(
-        new DataServer(config.db, config.sources, config.exchanges, None,
-          useCluster = false)), "data-server")
+      val dataServer = system.actorOf(DataServer.props(config), "data-server")
 
       val engine = system.actorOf(Props(
         new TradingEngine("test2", config.strategies, config.exchanges, config.bots,
-          Left(dataServer))), "trading-engine-2")
+          Left(dataServer), config.grafana)), "trading-engine-2")
 
       val params = LookaheadParams(Market("bitfinex/eth_usd"), sabotage = false)
 

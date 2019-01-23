@@ -1,5 +1,6 @@
 package com.infixtrading.flashbot.report
 
+import com.infixtrading.flashbot.core.DeltaFmt.HasUpdateEvent
 import com.infixtrading.flashbot.core._
 import com.infixtrading.flashbot.models.core.Candle
 import com.infixtrading.flashbot.report.Report.{ReportError, ReportValue, ValuesMap}
@@ -21,9 +22,12 @@ case class Report(strategy: String,
                   timeSeries: Map[String, Vector[Candle]],
                   values: ValuesMap,
                   isComplete: Boolean,
-                  error: Option[ReportError]) {
+                  error: Option[ReportError],
+                  lastUpdate: Option[ReportDelta]) extends HasUpdateEvent[Report, ReportDelta] {
 
-  def update(delta: ReportDelta): Report = delta match {
+  override protected def withLastUpdate(d: ReportDelta): Report = copy(lastUpdate = Some(d))
+
+  override protected def step(delta: ReportDelta): Report = delta match {
     case TradeAdd(tradeEvent) => copy(trades = trades :+ tradeEvent)
     case CollectionAdd(CollectionEvent(name, item)) => copy(collections = collections +
       (name -> (collections.getOrElse(name, Vector.empty[Json]) :+ item)))
@@ -154,14 +158,14 @@ object Report {
       }
   }
 
-  implicit val reportEn: Encoder[Report] = Encoder.forProduct9(
+  implicit val reportEn: Encoder[Report] = Encoder.forProduct10(
     "strategy", "params", "barSize", "trades", "collections", "timeSeries", "values",
-        "isComplete", "error")(r =>
+        "isComplete", "error", "lastUpdate")(r =>
       (r.strategy, r.params, r.barSize, r.trades, r.collections, r.timeSeries, r.values,
-        r.isComplete, r.error))
-  implicit val reportDe: Decoder[Report] = Decoder.forProduct9(
+        r.isComplete, r.error, r.lastUpdate))
+  implicit val reportDe: Decoder[Report] = Decoder.forProduct10(
     "strategy", "params", "barSize", "trades", "collections",
-    "timeSeries", "values", "isComplete", "error")(Report.apply)
+    "timeSeries", "values", "isComplete", "error", "lastUpdate")(Report.apply)
 
   def empty(strategyName: String,
             params: Json,
@@ -174,9 +178,11 @@ object Report {
     Map.empty,
     Map.empty,
     isComplete = false,
+    None,
     None
   )
 
-  implicit val reportFmt: DeltaFmtJson[Report] = DeltaFmt.defaultFmtJson("report")
+  implicit val reportFmt: DeltaFmtJson[Report] =
+    DeltaFmt.updateEventFmtJson[Report, ReportDelta]("report")
 }
 

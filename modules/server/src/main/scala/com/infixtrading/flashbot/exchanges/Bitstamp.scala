@@ -1,7 +1,7 @@
 package com.infixtrading.flashbot.exchanges
 
 import akka.actor.ActorSystem
-import akka.stream.ActorMaterializer
+import akka.stream.{ActorMaterializer, Materializer}
 import com.infixtrading.flashbot.core.{Exchange, Instrument, OrderRequest}
 import io.circe.Json
 import com.infixtrading.flashbot.core.Instrument.CurrencyPair
@@ -9,7 +9,7 @@ import com.infixtrading.flashbot.core.Instrument.CurrencyPair
 import scala.concurrent.Future
 
 class Bitstamp(implicit val system: ActorSystem,
-               val mat: ActorMaterializer) extends Exchange {
+               val mat: Materializer) extends Exchange {
   override def makerFee: Double = .0005
 
   override def takerFee: Double = .0005

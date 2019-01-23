@@ -4,7 +4,7 @@ import org.scalatest._
 import java.io.File
 
 import com.infixtrading.flashbot.core.Trade
-import com.infixtrading.flashbot.models.core.Order.{Buy, Sell}
+import com.infixtrading.flashbot.models.core.Order.{Buy, Down, Sell, Up}
 
 import scala.concurrent.{Await, Future}
 import scala.concurrent.duration._
@@ -21,7 +21,7 @@ class IndexedDeltaLogSpec extends FlatSpec with Matchers {
     val file = new File(testFolder.getAbsolutePath + "/trades")
     val nowMicros = nowMillis * 1000
     val trades: Seq[Trade] = (1 to 1440) map { i =>
-      Trade(i.toString, nowMicros + i * MicrosPerMinute, i, i, if (i % 2 == 0) Buy else Sell)
+      Trade(i.toString, nowMicros + i * MicrosPerMinute, i, i, if (i % 2 == 0) Up else Down)
     }
 
     val idLog = new IndexedDeltaLog[Trade](file, Some(1.day), 1.hour)
@@ -38,7 +38,7 @@ class IndexedDeltaLogSpec extends FlatSpec with Matchers {
     val file = new File(testFolder.getAbsolutePath + "/trades")
     val nowMicros = nowMillis * 1000
     val trades: Seq[Trade] = (1 to 1440) map { i =>
-      Trade(i.toString, nowMicros + i * 5 * MicrosPerMinute, i, i, if (i % 2 == 0) Buy else Sell)
+      Trade(i.toString, nowMicros + i * 5 * MicrosPerMinute, i, i, if (i % 2 == 0) Up else Down)
     }
 
     val idLog = new IndexedDeltaLog[Trade](file, Some(1.day), 1.hour)

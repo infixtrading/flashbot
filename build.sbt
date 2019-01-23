@@ -5,9 +5,18 @@ import sbtcrossproject.{ CrossProject, CrossType }
 import scala.xml.{ Elem, Node => XmlNode, NodeSeq => XmlNodeSeq }
 import scala.xml.transform.{ RewriteRule, RuleTransformer }
 
+/**
+  * How to run from the command line with options:
+  * Example assumes there is a MyMainApp object in the classpath.
+  *
+  * $ sbt '; set javaOptions += "-Dflashbot.db=postgresdb" ; runMain MyMainApp'
+  * 
+  * $ sbt '; set javaOptions += "-Dflashbot.db=postgresdb"; set javaOptions += "-Dakka.loglevel=INFO" ; runMain examples.CoinbaseIngest'
+  */
+
 organization in ThisBuild := "com.infixtrading"
 parallelExecution in ThisBuild := false
-concurrentRestrictions in Global += Tags.limit(Tags.Test, 1)
+//concurrentRestrictions in Global += Tags.limit(Tags.Test, 1)
 
 lazy val akkaVersion = "2.5.18"
 lazy val akkaHttpVersion = "10.1.5"
@@ -28,9 +37,11 @@ lazy val networkDeps = List(
   // CORS
   "ch.megard" %% "akka-http-cors" % "0.3.0",
 
-  //  "com.github.andyglow" %% "websocket-scala-client" % "0.2.4" % Compile,
-  "org.java-websocket" % "Java-WebSocket" % "1.3.8",
+  "org.java-websocket" % "Java-WebSocket" % "1.3.9",
+  "com.softwaremill.sttp" %% "core" % "1.5.7",
+  "com.softwaremill.sttp" %% "okhttp-backend" % "1.5.7",
 
+  // Warning! Changing this to a newer version may cause a conflict with the circe version (0.10.0)
   "de.heikoseeberger" %% "akka-http-circe" % "1.20.0",
 
   // Pusher
@@ -42,7 +53,8 @@ lazy val jsonDeps = List(
   "io.circe" %% "circe-generic",
   "io.circe" %% "circe-parser",
   "io.circe" %% "circe-optics",
-  "io.circe" %% "circe-literal"
+  "io.circe" %% "circe-literal",
+  "io.circe" %% "circe-generic-extras"
 ).map(_ % fbCirceVersion)
 
 lazy val dataStores = List(
@@ -116,7 +128,6 @@ def scalaCheckVersionFor(scalaVersion: String): String =
   if (priorTo2_13(scalaVersion)) scalaCheckVersion else "1.14.0"
 
 val previousFBVersion = None
-val scalaFiddleFlashbotVersion = "0.0.1-SNAPSHOT"
 
 lazy val baseSettings = Seq(
   scalacOptions ++= compilerOptions,
@@ -304,6 +315,7 @@ lazy val flashbot = project
         |implicit val mat = ActorMaterializer()
       """.stripMargin
   )
+  .settings(fork in run := true)
   .aggregate(aggregatedProjects: _*)
   .dependsOn(core, server, testing)
 
@@ -400,10 +412,13 @@ lazy val server = flashbotModule("server", previousFBVersion).settings(
       "com.twitter" %% "chill-akka" % "0.9.3",
 
       "com.typesafe.slick" %% "slick" % "3.2.3",
-      "com.lightbend.akka" %% "akka-stream-alpakka-slick" % "1.0-M1",
-      "com.h2database" % "h2" % "1.4.192"
+      "com.typesafe.slick" %% "slick-hikaricp" % "3.2.3",
+//      "com.zaxxer" % "HikariCP" % "3.3.0",
+      "com.lightbend.akka" %% "akka-stream-alpakka-slick" % "1.0-M2",
+      "com.h2database" % "h2" % "1.4.192",
+      "org.postgresql" % "postgresql" % "42.2.5"
     ))
-).dependsOn(core)
+).dependsOn(core, client)
 
 lazy val client = flashbotModule("client", previousFBVersion).dependsOn(core)
 
@@ -415,8 +430,6 @@ lazy val testingBase = crossModule("testing", previousFBVersion)
       _.filterNot(Set("-Yno-predef"))
     },
     libraryDependencies ++= Seq(
-      "org.scalacheck" %%% "scalacheck" % scalaCheckVersionFor(scalaVersion.value),
-      "org.scalatest" %%% "scalatest" % scalaTestVersionFor(scalaVersion.value)
     )
   ).dependsOn(coreBase)
 
@@ -446,7 +459,7 @@ lazy val testsJS = testsBase.js.dependsOn(scalajs)
 lazy val publishSettings = Seq(
   releaseCrossBuild := true,
   releasePublishArtifactsAction := PgpKeys.publishSigned.value,
-  homepage := Some(url("https://github.com/infixtrading/flashbot/wiki")),
+  homepage := Some(url("https://github.com/infixtrading/flashbot")),
 //  licenses := Seq("Apache 2.0" -> url("http://www.apache.org/licenses/LICENSE-2.0")),
   publishMavenStyle := true,
   publishArtifact in Test := false,

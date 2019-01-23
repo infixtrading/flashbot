@@ -19,11 +19,10 @@ import com.infixtrading.flashbot.util.stream._
 import com.infixtrading.flashbot.util._
 import com.infixtrading.flashbot.util.time.currentTimeMicros
 import com.infixtrading.flashbot.core.{DataSource, _}
-import com.infixtrading.flashbot.engine.DataServer.DataSelection
 import com.infixtrading.flashbot.engine.TradingSession._
 import com.infixtrading.flashbot.engine.TradingSessionActor.{SessionPing, SessionPong, StartSession, StopSession}
 import com.infixtrading.flashbot.exchanges.Simulator
-import com.infixtrading.flashbot.models.api.{LogMessage, OrderTarget}
+import com.infixtrading.flashbot.models.api.{DataSelection, LogMessage, OrderTarget}
 import com.infixtrading.flashbot.models.core.{Account, DataPath, Market, Portfolio}
 import com.infixtrading.flashbot.report.Report.ReportError
 import com.infixtrading.flashbot.report.ReportEvent._
@@ -45,9 +44,11 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
                           initialReport: Report,
                           dataServer: ActorRef) extends Actor with ActorLogging {
 
-  implicit val ec: ExecutionContext = ExecutionContext.global
+  import TradingSessionActor._
+
   implicit val system: ActorSystem = context.system
-  implicit val mat: ActorMaterializer = buildMaterializer
+  implicit val mat: ActorMaterializer = buildMaterializer()
+  implicit val ec: ExecutionContext = system.dispatcher
 
   // Setup a thread safe reference to an event buffer which allows the session to process
   // events synchronously when possible.
@@ -85,7 +86,7 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
     def defaultInstruments(exchange: String): Set[Instrument] =
       exchangeConfigs(exchange).pairs.getOrElse(Seq.empty).map(CurrencyPair(_)).toSet
 
-    def dataSelection(path: DataPath): DataSelection = mode match {
+    def dataSelection[T](path: DataPath[T]): DataSelection[T] = mode match {
       case Backtest(range) => DataSelection(path, Some(range.start), Some(range.end))
       case liveOrPaper =>
         DataSelection(path, Some(sessionMicros - liveOrPaper.lookback.toMicros), None)
@@ -133,7 +134,7 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
       paths <- strategy.initialize(initialPortfolio, sessionLoader)
 
       // Load the exchanges
-      exchangeNames: Set[String] = paths.toSet[DataPath].map(_.source)
+      exchangeNames: Set[String] = paths.toSet[DataPath[_]].map(_.source)
         .intersect(exchangeConfigs.keySet)
       _ = { log.debug("Loading exchanges: {}.", exchangeNames) }
 
@@ -174,6 +175,8 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
     case SessionSetup(instruments, exchanges, strategy, sessionId, streams,
           sessionMicros, initialPortfolio) =>
       implicit val conversions = GraphConversions
+
+      Metrics.observe("streams_per_trading_session", streams.size)
 
       killSwitch = Some(KillSwitches.shared(sessionId))
 
@@ -379,11 +382,15 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
           // Call handleData and catch user errors.
           data match {
             case Some(md) =>
+              val timer = Metrics.startTimer("handle_data_ms")
               try {
                 strategy.handleData(md)(session)
               } catch {
                 case e: Throwable =>
+                  Metrics.inc("handle_data_error")
                   e.printStackTrace()
+              } finally {
+                timer.observeDuration()
               }
             case None =>
           }
@@ -469,7 +476,7 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
 
       fut.onComplete {
         case Success(_) =>
-          log.info("session success")
+          log.debug("session success")
           sessionEventsRef ! SessionComplete(error = None)
           context.stop(self)
         case Failure(err) =>

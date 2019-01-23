@@ -162,9 +162,8 @@ class VarBuffer(initialReportVals: Map[String, Any]) {
   def persistVar[T](current: Var[T], prev: Option[T])
                    (implicit ctx: TradingSession, fmt: DeltaFmtJson[T]): Unit = {
     if (prev.isDefined) {
-      val deltas = fmt.diff(prev.get, current.value)
-      sendValEvents(deltas.map(delta =>
-        UpdateValueEvent(current.key, fmt.deltaEn(delta))):_*)
+      val delta = fmt.diff(prev.get, current.value)
+      sendValEvents(UpdateValueEvent(current.key, fmt.deltaEn(delta)))
     } else {
       sendValEvents(PutValueEvent(current.key, fmt.fmtName, fmt.modelEn(current.value)))
     }

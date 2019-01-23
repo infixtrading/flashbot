@@ -6,6 +6,10 @@ import com.infixtrading.flashbot.util.time._
 
 import scala.concurrent.duration.{Duration, FiniteDuration}
 
+/**
+  * Specifies a start and end time in micros. This differs from from/to in DataSelection in that it
+  * has no semantics for polling.
+  */
 case class TimeRange(start: Long, end: Long = Long.MaxValue) {
   def startInstant: Instant = Instant.ofEpochMilli(start / 1000)
   def endInstant: Instant = Instant.ofEpochMilli(end / 1000)

@@ -5,7 +5,7 @@ import akka.stream.{ActorMaterializer, Materializer}
 import akka.pattern.ask
 import akka.util.Timeout
 import io.circe.Json
-import com.infixtrading.flashbot.core.DataSource.{Bundle, DataSourceIndex}
+import com.infixtrading.flashbot.core.DataSource.Bundle
 import com.infixtrading.flashbot.core.Exchange
 import com.infixtrading.flashbot.core.FlashbotConfig.{DataSourceConfig, ExchangeConfig}
 
@@ -21,7 +21,7 @@ class SessionLoader(getExchangeConfigs: () => Map[String, ExchangeConfig], dataS
 
   protected[engine] def loadNewExchange(name: String)
                                        (implicit system: ActorSystem,
-                                        mat: ActorMaterializer): Try[Exchange] = {
+                                        mat: Materializer): Try[Exchange] = {
     val config = getExchangeConfigs().get(name)
     if (config.isEmpty) {
       return Failure(new RuntimeException(s"Exchange $name not found"))
@@ -32,7 +32,7 @@ class SessionLoader(getExchangeConfigs: () => Map[String, ExchangeConfig], dataS
         getClass.getClassLoader
           .loadClass(config.get.`class`)
           .asSubclass(classOf[Exchange])
-          .getConstructor(classOf[ActorSystem], classOf[ActorMaterializer])
+          .getConstructor(classOf[ActorSystem], classOf[Materializer])
           .newInstance(system, mat).withParams(config.get.params))
     } catch {
       case err: ClassNotFoundException =>

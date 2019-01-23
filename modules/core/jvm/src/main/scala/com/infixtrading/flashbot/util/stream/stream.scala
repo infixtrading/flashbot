@@ -3,12 +3,13 @@ package com.infixtrading.flashbot.util
 import java.time.Instant
 
 import akka.NotUsed
-import akka.actor.{ActorContext, ActorPath, ActorRef, ActorSystem, RootActorPath}
+import akka.actor.{ActorContext, ActorPath, ActorRef, ActorRefFactory, ActorSystem, RootActorPath}
 import akka.stream.scaladsl.{Flow, Source}
 import akka.stream.{ActorMaterializer, ActorMaterializerSettings, Supervision}
 import akka.util.Timeout
 import akka.pattern.ask
 import com.infixtrading.flashbot.engine.StreamResponse
+import com.infixtrading.flashbot.models.api.StreamRequest
 import com.infixtrading.flashbot.models.core.{DataAddress, TimeRange}
 
 import scala.concurrent.duration._
@@ -50,12 +51,11 @@ package object stream {
     .drop(1)
     .map(e => (e._1, e._2.get))
 
-  def buildMaterializer(implicit system: ActorSystem): ActorMaterializer =
+  def buildMaterializer()(implicit system: ActorSystem): ActorMaterializer =
     ActorMaterializer(ActorMaterializerSettings(system).withSupervisionStrategy { err =>
       println(s"Exception in stream: $err")
-      throw err
       Supervision.Stop
-    })
+    })(system)
 
   def iteratorToSource[T](it: Iterator[T])(implicit ec: ExecutionContext): Source[T, NotUsed] = {
     Source.unfoldAsync[Iterator[T], T](it) { memo =>
@@ -85,10 +85,8 @@ package object stream {
 
   def senderIsLocal(implicit context: ActorContext): Boolean = actorIsLocal(context.sender)
 
-  implicit def toActorPath(dataAddress: DataAddress): ActorPath =
+  implicit def toActorPath[T](dataAddress: DataAddress[T]): ActorPath =
     ActorPath.fromString(dataAddress.host.get)
-
-  trait StreamRequest[T]
 
   implicit class StreamRequester(ref: ActorRef) {
     def <<?[T](req: StreamRequest[T]): Future[StreamResponse[T]] =
@@ -109,5 +107,34 @@ package object stream {
       Some((next, item))
     }).takeWhile(_.isBefore(endAt))
   }
+
+  implicit class StreamOps[T](stream: Stream[T]) {
+
+    def scanPrev: Stream[(Option[T], T)] = {
+      val init: (Option[T], Option[T]) = (None, None)
+      stream.scanLeft(init) {
+        case ((None, None), item) => (None, Some(item))
+        case ((None, Some(a)), item) => (Some(a), Some(item))
+        case ((Some(_), Some(a)), item) => (Some(a), Some(item))
+      } drop 1 map (x => (x._1, x._2.get))
+    }
+
+    def dropUnordered(implicit ordering: Ordering[T]): Stream[T] =
+      _dropByOrdering(stream, allowDupes = true, allowUnordered = false)
+
+    def dropDuplicates(implicit ordering: Ordering[T]): Stream[T] =
+      _dropByOrdering(stream, allowDupes = false, allowUnordered = true)
+  }
+
+  private def _dropByOrdering[T](stream: Stream[T], allowDupes: Boolean, allowUnordered: Boolean)
+                                (implicit ordering: Ordering[T]): Stream[T] =
+    stream.scanPrev filter {
+      case (Some(prev), item) =>
+        val order = ordering.compare(prev, item)
+        val isDupe = order == 0
+        val isUnordered = order > 0
+        (allowDupes || !isDupe) && (allowUnordered || !isUnordered)
+      case _ => true
+    } map (_._2)
 
 }

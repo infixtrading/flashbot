@@ -13,8 +13,8 @@ import json.Schema
 import com.github.andyglow.jsonschema.AsCirce._
 import io.circe._
 import com.infixtrading.flashbot.core._
-import com.infixtrading.flashbot.engine.DataServer.{DataSelection, DataStreamReq}
-import com.infixtrading.flashbot.models.api.OrderTarget
+import com.infixtrading.flashbot.util._
+import com.infixtrading.flashbot.models.api.{DataSelection, DataStreamReq, OrderTarget}
 import com.infixtrading.flashbot.models.core.FixedSize.FixedSizeD
 import com.infixtrading.flashbot.models.core._
 
@@ -56,7 +56,7 @@ abstract class Strategy {
     * the `handleData` method. Each stream should complete when there is no more data, which auto
     * shuts down the strategy when all data streams complete.
     */
-  def initialize(portfolio: Portfolio, loader: SessionLoader): Future[Seq[DataPath]]
+  def initialize(portfolio: Portfolio, loader: SessionLoader): Future[Seq[DataPath[Any]]]
 
   /**
     * Receives streaming market data from the sources declared during initialization.
@@ -120,12 +120,13 @@ abstract class Strategy {
     target.id
   }
 
-  def resolveMarketData(selection: DataSelection, dataServer: ActorRef)
+  def resolveMarketData[T](selection: DataSelection[T], dataServer: ActorRef)
                        (implicit mat: Materializer, ec: ExecutionContext)
-      : Future[Source[MarketData[_], NotUsed]] = {
+      : Future[Source[MarketData[T], NotUsed]] = {
     implicit val timeout: Timeout = Timeout(10 seconds)
     (dataServer ? DataStreamReq(selection))
-      .map { case se: StreamResponse[MarketData[_]] => se.toSource }
+      .mapTo[StreamResponse[MarketData[T]]]
+      .map { _.toSource }
   }
 
   /**

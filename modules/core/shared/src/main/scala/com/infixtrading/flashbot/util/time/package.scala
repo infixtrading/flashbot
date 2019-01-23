@@ -65,6 +65,7 @@ package object time {
 
   implicit class MicrosOps(micros: Long) {
     def microsToDate: Date = new Date(micros / 1000)
+    def microsToInstant: Instant = Instant.ofEpochMilli(micros / 1000)
   }
 
 }

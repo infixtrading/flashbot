@@ -13,7 +13,7 @@ import scala.concurrent.duration._
 import scala.concurrent.Await
 object ExampleMain extends App {
 
-  val system = ActorSystem("my-system", FlashbotConfig.load.akka)
+  val system = ActorSystem("my-system", FlashbotConfig.load.conf)
 
   val engine = system.actorOf(TradingEngine.props("my-engine"))
 

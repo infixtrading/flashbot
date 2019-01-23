@@ -8,7 +8,7 @@ import io.circe.{Decoder, Encoder}
   * have some data types that are quite large and frequently updating. The data types themselves
   * usually handle this well on their own by providing efficient updater methods. However,
   * streaming them over the network is still not accounted for. We need to formalize the
-  * incremental update model by using event sourcing.
+  * incremental update model by using a delta compression format.
   *
   * Create a data type that represents a single self contained modification to the model. Ensure
   * that it's Json serializable, as well as the model type itself. The Delta data type should be
@@ -23,14 +23,14 @@ import io.circe.{Decoder, Encoder}
   *
   * The Scala.js app will use this to recreate state on the React side for vars.
   */
-trait DeltaFmt[M] <: FoldFmt[M] {
+trait DeltaFmt[M] extends FoldFmt[M] {
   type D
   def fmtName: String
   def update(model: M, delta: D): M
-  def diff(prev: M, current: M): Seq[D]
+  def diff(prev: M, current: M): D
 }
 
-trait DeltaFmtJson[M] <: DeltaFmt[M] {
+trait DeltaFmtJson[M] extends DeltaFmt[M] {
   def modelEn: Encoder[M]
   def modelDe: Decoder[M]
   def deltaEn: Encoder[D]
@@ -49,7 +49,7 @@ object DeltaFmt {
     override type D = M
     override def fmtName: String = name
     override def update(model: M, delta: D): M = delta
-    override def diff(prev: M, current: M): Seq[D] = Seq(current)
+    override def diff(prev: M, current: M): D = current
     override def modelEn: Encoder[M] = en
     override def modelDe: Decoder[M] = de
     override def deltaEn: Encoder[D] = en
@@ -63,7 +63,7 @@ object DeltaFmt {
     override type D = M
     override def fmtName: String = name
     override def update(model: M, delta: D): M = delta
-    override def diff(prev: M, current: M): Seq[D] = Seq(current)
+    override def diff(prev: M, current: M): D = current
     override def fold(x: M, y: M) = y
     override def unfold(x: M) = (x, None)
   }
@@ -88,5 +88,40 @@ object DeltaFmt {
 //      case None => formats(str)
 //    }
   }
+
+
+  trait HasUpdateEvent[T, D] {
+    def lastUpdate: Option[D]
+    protected def withLastUpdate(d: D): T
+    protected def step(delta: D): T
+    final def update(d: D): T =
+      step(d).asInstanceOf[this.type].withLastUpdate(d)
+  }
+
+  def updateEventFmtJson[T <: HasUpdateEvent[T, E], E](name: String)
+                                                      (implicit mEn: Encoder[T], mDe: Decoder[T],
+                                                       dEn: Encoder[E], dDe: Decoder[E]): DeltaFmtJson[T] =
+    updateEventFmtJsonWithFold[T, E](name, (a: T, b: T) => b, (a: T) => (a, None))
+
+  def updateEventFmtJsonWithFold[T <: HasUpdateEvent[T, E], E]
+        (name: String, foldFn: (T, T) => T, unfoldFn: T => (T, Option[T]))
+        (implicit mEn: Encoder[T], mDe: Decoder[T],
+         dEn: Encoder[E], dDe: Decoder[E]): DeltaFmtJson[T] =
+    new DeltaFmtJson[T] {
+      override type D = E
+
+      override def modelEn = mEn
+      override def modelDe = mDe
+      override def deltaEn = dEn.asInstanceOf[Encoder[D]]
+      override def deltaDe = dDe.asInstanceOf[Decoder[D]]
+
+      override def fmtName = name
+
+      override def update(model: T, delta: D) = model.update(delta)
+      override def diff(prev: T, current: T) = current.lastUpdate.get
+
+      override def fold(x: T, y: T) = foldFn(x, y)
+      override def unfold(x: T) = unfoldFn(x)
+    }
 }
 

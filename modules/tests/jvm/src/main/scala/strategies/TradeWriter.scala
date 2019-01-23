@@ -7,7 +7,7 @@ import com.infixtrading.flashbot.core.{DataSource, MarketData, Trade}
 import com.infixtrading.flashbot.engine.{SessionLoader, Strategy, TradingSession}
 import com.infixtrading.flashbot.models.core.Portfolio
 import com.infixtrading.flashbot.core.State.ops._
-import com.infixtrading.flashbot.engine.DataServer.DataSelection
+import com.infixtrading.flashbot.models.api.DataSelection
 import io.circe.generic.semiauto._
 
 import scala.concurrent.duration._
@@ -29,13 +29,13 @@ class TradeWriter extends Strategy {
       "last_trade".set(trade)
   }
 
-  override def resolveMarketData(selection: DataSelection, dataServer: ActorRef)
+  override def resolveMarketData[T](selection: DataSelection[T], dataServer: ActorRef)
                                 (implicit mat: Materializer, ec: ExecutionContext) = {
     Future.successful(Source(params.trades.toList)
       .throttle(1, 200 millis)
       .zipWithIndex
       .map {
-        case (trade, i) => BaseMarketData(trade, selection.path, trade.micros, 1, i)
+        case (trade, i) => BaseMarketData(trade.asInstanceOf[T], selection.path, trade.micros, 1, i)
       })
   }
 }

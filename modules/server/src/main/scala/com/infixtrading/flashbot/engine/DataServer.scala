@@ -1,11 +1,13 @@
 package com.infixtrading.flashbot.engine
 
+import java.time.Instant
+
 import akka.{Done, NotUsed}
 import akka.actor.{Actor, ActorLogging, ActorPath, ActorRef, Props, RootActorPath}
 import akka.cluster.ClusterEvent._
 import akka.cluster.{Cluster, Member}
 import akka.pattern.{Backoff, BackoffSupervisor, ask, pipe}
-import akka.stream.ActorMaterializer
+import akka.stream.{ActorMaterializer, ActorMaterializerSettings}
 import akka.stream.alpakka.slick.scaladsl._
 import akka.stream.scaladsl.{Flow, Sink, Source}
 import akka.util.Timeout
@@ -13,7 +15,7 @@ import com.infixtrading.flashbot.core.FlashbotConfig._
 import com.infixtrading.flashbot.core.MarketData.BaseMarketData
 import com.infixtrading.flashbot.core.{DeltaFmt, DeltaFmtJson, FlashbotConfig, MarketData}
 import com.infixtrading.flashbot.db._
-import com.infixtrading.flashbot.engine.DataSourceActor.StreamLiveData
+import com.infixtrading.flashbot.models.api._
 import com.infixtrading.flashbot.models.core.{DataPath, TimeRange}
 import com.infixtrading.flashbot.util._
 import com.infixtrading.flashbot.util.stream._
@@ -29,120 +31,50 @@ import scala.language.postfixOps
 import scala.util.{Random, Success}
 
 /**
-  * A DataServer runs and manages a set of data sources. Every Flashbot node runs a local data
-  * server but only nodes with the "data-ingest" role will actually ingest data. All DataServers
-  * share the same data store. Currently this is represented as a JDBC URL. While they share
-  * persistence layers, DataServers differ in the types of live data they have access to. A data
-  * server only has access to live data if it manages a DataSourceActor which is ingesting that
-  * data stream.
+  * A DataServer runs and manages a set of data sources. All DataServers share the same data store.
+  * Currently this is represented as a JDBC Config. While they share persistence layers, DataServers
+  * differ in the types of live data they have access to. A data server only has access to live data
+  * if it manages a DataSourceActor which is ingesting that data stream.
   */
 object DataServer {
-
-  /**
-    * DataSelection is a description of a stream of market data.
-    *
-    * @param path the data path (source, topic, datatype).
-    * @param from the start time of data. If none, use the current time.
-    * @param to the end time of data. If none, stream indefinitely.
-    */
-  case class DataSelection(path: DataPath, from: Option[Long] = None, to: Option[Long] = None) {
-    def isPolling: Boolean = to.isEmpty
-    def timeRange: Option[TimeRange] =
-      for {
-        f <- from
-        t <- to
-      } yield TimeRange(f, t)
-
-  }
-
-  /**
-    * The message every data server sends to every other one to register itself across the cluster.
-    */
-  case object RegisterDataServer
-
-  /**
-    * Request a data stream source from the cluster. Returns a [[CompressedSourceRef]] if the sender
-    * is remote and just a Source[ MarketData[_] ] if the sender is local.
-    */
-  case class DataStreamReq[T](selection: DataSelection) extends StreamRequest[T]
 
   /**
     * Used internally to remove data sources that don't respond to queries in time.
     */
   case class RemoteServerTimeout(ref: ActorRef)
 
-  case class LiveStream(path: DataPath)
+  case class LiveStream[T](path: DataPath[T])
 
   case class DataSourceSupervisorTerminated(key: String)
 
   case class RemoteServerTerminated(ref: ActorRef)
 
   def props: Props = props(FlashbotConfig.load)
-  def props(config: FlashbotConfig): Props = {
+  def props(config: FlashbotConfig): Props = props(config, useCluster = false)
+  def props(config: FlashbotConfig, useCluster: Boolean): Props = {
     Props(new DataServer(
       config.db,
       config.sources,
       config.exchanges,
-      ingestConfig = None,
-      useCluster = false))
+      ingestConfig = config.ingest,
+      useCluster = useCluster))
   }
-
-  sealed trait Wrap extends Any {
-    def micros: Long
-    def isSnap: Boolean
-    def data: String
-    def bundle: Long
-    def seqid: Long
-  }
-  class SnapshotWrap(val cols: (Long, Long, Long, String)) extends AnyVal with Wrap {
-    override def micros = cols._3
-    override def isSnap = true
-    override def data = cols._4
-    override def bundle = cols._1
-    override def seqid = cols._2
-  }
-  class DeltaWrap(val cols: (Long, Long, Long, String)) extends AnyVal with Wrap {
-    override def micros = cols._3
-    override def isSnap = false
-    override def data = cols._4
-    override def bundle = cols._1
-    override def seqid = cols._2
-  }
-
-  object Wrap {
-    val ordering: Ordering[Wrap] = new Ordering[Wrap] {
-      override def compare(x: Wrap, y: Wrap) = {
-        if (x.micros < y.micros) -1
-        else if (x.micros > y.micros) 1
-        else if (x.isSnap && !y.isSnap) -1
-        else if (!x.isSnap && y.isSnap) 1
-        else 0
-      }
-    }
-  }
-
-  class BundleRow(val cols: (Long, String, String, String)) extends AnyVal {
-    def id = cols._1
-    def source = cols._2
-    def topic = cols._3
-    def datatype = cols._4
-  }
-
 }
 
 class DataServer(dbConfig: Config,
                  configs: Map[String, DataSourceConfig],
                  exchangeConfigs: Map[String, ExchangeConfig],
-                 ingestConfig: Option[IngestConfig],
+                 ingestConfig: IngestConfig,
                  useCluster: Boolean) extends Actor with ActorLogging {
   import DataServer._
 
-  implicit val mat = ActorMaterializer()(context)
-  implicit val ec: ExecutionContext = context.system.dispatcher
+  implicit val system = context.system
+  implicit val ec: ExecutionContext = system.dispatcher
+  implicit val mat = buildMaterializer()
 
   val random = new Random()
 
-  val slickSession = SlickSession.forConfig(dbConfig)
+  implicit val slickSession = SlickSession.forConfig(dbConfig)
 
   // Subscribe to cluster MemberUp events to register ourselves with all other data servers.
   val cluster: Option[Cluster] = if (useCluster) Some(Cluster(context.system)) else None
@@ -167,7 +99,7 @@ class DataServer(dbConfig: Config,
   }
 
   // Create SQL tables on start.
-  val _tables = List(Bundles, Snapshots, Deltas)
+  val _tables = List(Bundles, Snapshots, Deltas, Backfills)
   Await.result(for {
     existingTables <- slickSession.db.run(MTable.getTables)
     names = existingTables.map(_.name.name)
@@ -182,27 +114,27 @@ class DataServer(dbConfig: Config,
       log.debug("SQL tables ready")
   }
 
+  def activeSources: Set[String] = ingestConfig.filterSources(configs.keySet)
 
   // Map of child DataSourceActors that this DataServer supervises.
-  var localDataSourceActors: Map[String, ActorRef] = configs.map {
-    case (key, config) =>
-      // Create child DataSource actor with custom back-off supervision.
-      val props = BackoffSupervisor.props(Backoff.onFailure(
-        Props(new DataSourceActor(
-          slickSession, key, config, exchangeConfigs.get(key), ingestConfig)),
-        key,
-        minBackoff = 1 second,
-        maxBackoff = 1 minute,
-        randomFactor = 0.2,
-        maxNrOfRetries = 60
-      ).withAutoReset(30 seconds))
+  var localDataSourceActors: Map[String, ActorRef] = activeSources.map { key =>
+    // Create child DataSource actor with custom back-off supervision.
+    val props = BackoffSupervisor.props(Backoff.onFailure(
+      Props(new DataSourceActor(
+        slickSession, key, configs(key), exchangeConfigs.get(key), ingestConfig)),
+      key,
+      minBackoff = 1 second,
+      maxBackoff = 1 minute,
+      randomFactor = 0.2,
+      maxNrOfRetries = 60
+    ).withAutoReset(30 seconds))
 
-      // When/if the supervisor stops, we should alert.
-      val ref = context.actorOf(props, key)
-      context.watchWith(ref, DataSourceSupervisorTerminated(key))
+    // When/if the supervisor stops, we should alert.
+    val ref = context.actorOf(props, key)
+    context.watchWith(ref, DataSourceSupervisorTerminated(key))
 
-      key -> ref
-  }
+    key -> ref
+  }.toMap
 
   var remoteDataServers = Map.empty[ActorPath, ActorRef]
 
@@ -217,14 +149,27 @@ class DataServer(dbConfig: Config,
       */
 
     /**
+      * Returns a set of all known bundles of historical data.
+      */
+    case MarketDataIndexQuery =>
+      slickSession.db.run(for {
+        bundles <- Bundles.result
+        backfills <- Backfills.result
+        index = bundles.map(b => b.id -> b.path) ++ backfills.map(b => b.bundle -> b.path)
+      } yield index.toMap) pipeTo sender
+
+    /**
       * A data stream is constructed out of two parts: A historical stream, and a live component.
       * These two streams are concatenated, deduped, and returned.
       */
-    case DataStreamReq(DataSelection(path, from, to)) =>
+    case DataStreamReq(DataSelection(anyPath, from, to)) =>
       val nowMicros = time.currentTimeMicros
       val isLive = to.isEmpty
-      log.debug("Received data stream request")
-      def buildRsp[T](implicit fmt: DeltaFmtJson[T]): Future[StreamResponse[MarketData[T]]] = {
+      log.debug("Received data stream request for path {} ({} to {})", anyPath,
+        from.map(x => Instant.ofEpochMilli(x / 1000)),
+        to.map(x => Instant.ofEpochMilli(x / 1000)))
+      def buildRsp[T](path: DataPath[T]): Future[StreamResponse[MarketData[T]]] = {
+        implicit val fmt: DeltaFmtJson[T] = path.fmt
         val src: Future[Source[MarketData[T], NotUsed]] = for {
           // Validate selection and build the live stream response.
           live <- (from, to) match {
@@ -241,8 +186,7 @@ class DataServer(dbConfig: Config,
             case (_, None) =>
               log.debug("Searching for live stream")
               searchForLiveStream[T](path, self :: remoteDataServers.values.toList)
-                .flatMap(_.toFut(new RuntimeException(
-                  s"Unable to find live data stream for $path.")))
+                .flatMap(_.toFut(LiveDataNotFound(path)))
                 .map(_.toSource)
 
             // If it's not a polling request, we use an empty stream instead.
@@ -253,31 +197,27 @@ class DataServer(dbConfig: Config,
 
           // Build the historical stream.
           historical <- from
-            .map(buildHistoricalStream[T](path, _, to.getOrElse(Long.MaxValue)))
-            .getOrElse(Future.successful(Source.empty))
+            .map(buildHistoricalStream[T](path, _, to.getOrElse(Long.MaxValue))
+              .flatMap(_.toFut(HistoricalDataNotFound(path))))
+            // If `from` is none, the historical part of the stream is empty.
+            .getOrElse[Future[Source[MarketData[T], NotUsed]]](Future.successful(Source.empty))
 
           _ = { log.debug("Built historical stream") }
 
-        } yield
-          // If is live, concat historical with live. Drop unordered to account for any overlap
-          // in the two streams.
-          if (isLive)
-            historical.concat(live).via(dropUnordered(MarketData.orderBySequence[T]))
-
-          // Historical queries do not have a live component.
-          else historical
+        } yield historical.concat(live).via(dropUnordered(MarketData.orderBySequence[T]))
 
         src.flatMap(StreamResponse.build[MarketData[T]](_, sender))
       }
 
-      buildRsp(DeltaFmt.formats(path.datatype)) pipeTo sender
+      buildRsp(anyPath) pipeTo sender
 
 
     /**
       * Asks the relevant data source actor for a live stream of the path.
       * Returns None if not found. Do not use search here. Search uses this.
       */
-    case LiveStream(path: DataPath) =>
+    case LiveStream(path: DataPath[_]) =>
+      log.debug("Live stream request {}", path)
       if (!localDataSourceActors.isDefinedAt(path.source)) {
         sender ! None
       } else {
@@ -289,6 +229,7 @@ class DataServer(dbConfig: Config,
             srcOpt.map(x => StreamResponse.build(x, sender).map(Some(_)))
           rspOpt <- rspFutOpt.getOrElse(Future.successful(None))
         } yield rspOpt
+        log.debug("Building live stream {}", path)
         buildSrc(DeltaFmt.formats(path.datatype)) pipeTo sender
       }
 
@@ -322,88 +263,98 @@ class DataServer(dbConfig: Config,
     * @param fromMicros inclusive start time in epoch micros.
     * @param toMicros exclusive end time in epoch micros.
     */
-  def buildHistoricalStream[T](path: DataPath, fromMicros: Long, toMicros: Long)
-                              (implicit fmt: DeltaFmtJson[T])
-      : Future[Source[MarketData[T], NotUsed]] = {
-    implicit val session = SlickSession.forConfig(dbConfig)
+  def buildHistoricalStream[T](path: DataPath[T], fromMicros: Long, toMicros: Long)
+      : Future[Option[Source[MarketData[T], NotUsed]]] = {
+    implicit val fmt: DeltaFmtJson[T] = path.fmt
     val lookbackFromMicros = fromMicros - DataSourceActor.SnapshotInterval.toMicros
     log.debug("Building historical stream")
     for {
       bundles <- Slick.source(Bundles
         .filter(b => b.source === path.source &&
-          b.topic === path.topic && b.datatype === path.datatype)
-        .result).map(new BundleRow(_)).runWith(Sink.seq)
+          b.topic === path.topic && b.datatype === path.datatype.toString)
+        .result).runWith(Sink.seq)
 
-      snapshots: Source[Wrap, NotUsed] = Slick
-        .source(Snapshots
-          .filter(x => (x.micros >= lookbackFromMicros) && (x.micros < toMicros))
-          .filter(x => x.bundle.inSet(bundles.map(_.id)))
-          .result)
-        .map(new SnapshotWrap(_))
+      backfills <- Slick.source(Backfills
+        .filter(b => b.source === path.source &&
+          b.topic === path.topic && b.datatype === path.datatype.toString)
+        .result).runWith(Sink.seq)
 
-      deltas: Source[Wrap, NotUsed] = Slick
-        .source(Deltas
-          .filter(x => (x.micros >= lookbackFromMicros) && (x.micros < toMicros))
-          .filter(x => x.bundle.inSet(bundles.map(_.id)))
-          .result)
-        .map(new DeltaWrap(_))
+      // Bundle ids will never be Some(empty list).
+      bundleIdsOpt = Some(bundles.map(_.id).toSet ++ backfills.map(_.bundle).toSet).filterNot(_.isEmpty)
+    } yield for {
+        snapshots <- bundleIdsOpt.map(bundleIds => Slick.source(
+          Snapshots
+            .filter(x => (x.micros >= lookbackFromMicros) && (x.micros < toMicros))
+            .filter(x => x.bundle.inSet(bundleIds))
+            .sortBy(x => (x.bundle, x.seqid))
+            .result)
+          .map(_.asInstanceOf[Wrap]))
 
-    } yield snapshots
-      .mergeSorted[Wrap, NotUsed](deltas)(Wrap.ordering)
-      .scan[Option[MarketData[T]]](None) {
-        /**
-          * Base case.
-          */
-        case (None, wrap) if wrap.isSnap =>
-          Some(BaseMarketData(
-            decode[T](wrap.data)(fmt.modelDe).right.get,
-            path, wrap.micros, wrap.bundle, wrap.seqid))
+        deltas <- bundleIdsOpt.map(bundleIds => Slick.source(
+          Deltas
+            .filter(x => (x.micros >= lookbackFromMicros) && (x.micros < toMicros))
+            .filter(x => x.bundle.inSet(bundleIds))
+            .sortBy(x => (x.bundle, x.seqid))
+            .result)
+          .map(_.asInstanceOf[Wrap]))
+      } yield snapshots.mergeSorted[Wrap, NotUsed](deltas)(Wrap.ordering)
+          .scan[Option[MarketData[T]]](None) {
+            /**
+              * Base case.
+              */
+            case (None, wrap) if wrap.isSnap =>
+              Some(BaseMarketData(
+                decode[T](wrap.data)(fmt.modelDe).right.get,
+                path, wrap.micros, wrap.bundle, wrap.seqid))
 
-        /**
-          * If it's a snapshot from this or a later bundle, use its value.
-          */
-        case (Some(md), wrap) if wrap.isSnap && wrap.bundle >= md.bundle =>
-          Some(BaseMarketData(
-            decode[T](wrap.data)(fmt.modelDe).right.get,
-            path, wrap.micros, wrap.bundle, wrap.seqid))
+            /**
+              * If it's a snapshot from this or a later bundle, use its value.
+              */
+            case (Some(md), wrap) if wrap.isSnap && wrap.bundle >= md.bundle =>
+              Some(BaseMarketData(
+                decode[T](wrap.data)(fmt.modelDe).right.get,
+                path, wrap.micros, wrap.bundle, wrap.seqid))
 
-        /**
-          * If it's a snapshot from an outdated bundle, ignore.
-          */
-        case (Some(md), wrap) if wrap.isSnap => Some(md)
+            /**
+              * If it's a snapshot from an outdated bundle, ignore.
+              */
+            case (Some(md), wrap) if wrap.isSnap => Some(md)
 
-        /**
-          * No data yet. Delta has no effect.
-          */
-        case (None, wrap) if !wrap.isSnap => None
+            /**
+              * No data yet. Delta has no effect.
+              */
+            case (None, wrap) if !wrap.isSnap => None
 
-        /**
-          * Delta has effect if it's the same bundle and next sequence id.
-          */
-        case (Some(md: MarketData[_]), wrap)
-            if !wrap.isSnap && wrap.bundle == md.bundle && wrap.seqid == md.seqid + 1 =>
-          val delta = decode[fmt.D](wrap.data)(fmt.deltaDe).right.get
-          Some(BaseMarketData(fmt.update(md.data, delta),
-            md.path, wrap.micros, wrap.bundle, wrap.seqid))
+            /**
+              * Delta has effect if it's the same bundle and next sequence id.
+              */
+            case (Some(md: MarketData[_]), wrap)
+                if !wrap.isSnap && wrap.bundle == md.bundle && wrap.seqid == md.seqid + 1 =>
+              val delta = decode[fmt.D](wrap.data)(fmt.deltaDe).right.get
+              Some(BaseMarketData(fmt.update(md.data, delta),
+                md.path, wrap.micros, wrap.bundle, wrap.seqid))
 
-        /**
-          * Delta belongs to another bundle or not the next seqnr, ignore.
-          */
-        case (Some(x), wrap) if !wrap.isSnap => Some(x)
-      }
-        .collect { case Some(value) => value }
-        .via(deDupeBy(md => (md.bundle, md.seqid)))
-        .dropWhile(_.micros < fromMicros)
-  }
+            /**
+              * Delta belongs to another bundle or not the next seqnr, ignore.
+              */
+            case (Some(x), wrap) if !wrap.isSnap => Some(x)
+          }
+            .collect { case Some(value) => value }
+            .via(deDupeBy(md => (md.bundle, md.seqid)))
+            .dropWhile(_.micros < fromMicros)
+
+    }
 
   /**
     * Asynchronous linear search over all servers for a live data stream for the given path.
     */
-  def searchForLiveStream[T](path: DataPath, servers: List[ActorRef])
+  def searchForLiveStream[T](path: DataPath[T], servers: List[ActorRef])
       : Future[Option[StreamResponse[MarketData[T]]]] = servers match {
 
     // When no servers left to query, return None.
-    case Nil => Future.successful(None)
+    case Nil =>
+      log.debug("NO SERVER {}", path)
+      Future.successful(None)
 
     // Request a live data stream from the next server in the list, and recurse if not found.
     case server :: rest => for {
