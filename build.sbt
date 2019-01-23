@@ -15,9 +15,8 @@ import scala.xml.transform.{ RewriteRule, RuleTransformer }
   */
 
 organization in ThisBuild := "com.infixtrading"
-version in ThisBuild := "0.1.0"
 parallelExecution in ThisBuild := false
-concurrentRestrictions in Global += Tags.limit(Tags.Test, 1)
+//concurrentRestrictions in Global += Tags.limit(Tags.Test, 1)
 
 lazy val akkaVersion = "2.5.18"
 lazy val akkaHttpVersion = "10.1.5"
@@ -460,7 +459,7 @@ lazy val testsJS = testsBase.js.dependsOn(scalajs)
 lazy val publishSettings = Seq(
   releaseCrossBuild := true,
   releasePublishArtifactsAction := PgpKeys.publishSigned.value,
-  homepage := Some(url("https://github.com/infixtrading/flashbot/wiki")),
+  homepage := Some(url("https://github.com/infixtrading/flashbot")),
 //  licenses := Seq("Apache 2.0" -> url("http://www.apache.org/licenses/LICENSE-2.0")),
   publishMavenStyle := true,
   publishArtifact in Test := false,
