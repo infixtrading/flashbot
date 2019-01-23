@@ -19,7 +19,7 @@ object DataType {
 
   case object OrderBookType extends DataType[OrderBook] {
     override def name = "book"
-    override def fmtJson = ???
+    override def fmtJson = OrderBook.orderBookFmt
   }
   case class LadderType(depth: Option[Int]) extends DataType[Ladder] {
     override def name = "ladder"

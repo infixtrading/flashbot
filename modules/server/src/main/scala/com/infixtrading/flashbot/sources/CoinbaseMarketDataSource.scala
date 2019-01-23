@@ -129,7 +129,8 @@ class CoinbaseMarketDataSource extends DataSource {
                   .scan[Option[StreamItem]](None) {
                     case (None, item) if item.isBook => Some(item)
                     case (Some(memo), item) if !item.isBook => Some(item.copy(data =
-                      Left(memo.book.update(item.event))))
+                      Left(OrderBook.Delta.fromOrderEventOpt(item.event)
+                        .foldLeft(memo.book)(_ update _))))
                   }
                   .collect { case Some(item) => (item.micros, item.book.asInstanceOf[T]) }
                   .watchTermination()(Keep.right).preMaterialize()

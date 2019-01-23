@@ -134,6 +134,17 @@ object OrderBook {
   case class Done(orderId: String) extends Delta
   case class Change(orderId: String, newSize: Double) extends Delta
 
+  object Delta {
+    def fromOrderEventOpt(event: OrderEvent): Option[Delta] = event match {
+      case OrderOpen(orderId, _, price, size, side) =>
+        Some(Open(orderId, price, size, side))
+      case OrderDone(orderId, _, _, _, _, _) =>
+        Some(Done(orderId))
+      case OrderChange(orderId, _, _, newSize) =>
+        Some(Change(orderId, newSize))
+    }
+  }
+
   def foldOrderBook(a: OrderBook, b: OrderBook): OrderBook =
     b.orders.values.foldLeft(a)((memo, order) =>
         memo.open(order.id, order.price.get, order.amount, order.side))
