@@ -30,6 +30,22 @@ Market data servers (the `DataServer` actor) connect to outside data sources suc
 ## Docs
 Check out the [Getting Started](https://github.com/infixtrading/flashbot/wiki/Getting-Started) page for documentation.
 
+## Installation
+Flashbot is published to Bintray, so you'll have to add our repository as a resolver in your build tool and then list Flashbot as a dependency.
+
+### SBT
+Add the following line to your project settings in build.sbt:
+```
+resolvers += Resolver.bintrayRepo("infixtrading", "flashbot")
+```
+And then add the `flashbot-client` and `flashbot-server` dependencies as well:
+```
+libraryDependencies ++= Seq(
+  "com.infixtrading" %% "flashbot-client" % "0.0.1",
+  "com.infixtrading" %% "flashbot-server" % "0.0.1"
+)
+```
+
 ## Configuration
 The default [configuration file](https://github.com/infixtrading/flashbot/blob/master/modules/server/src/main/resources/reference.conf) contains a list of available options. You can override any of the settings in your own `application.conf` file.
 
