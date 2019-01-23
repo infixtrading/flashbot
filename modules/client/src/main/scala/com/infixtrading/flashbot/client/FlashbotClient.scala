@@ -114,12 +114,12 @@ class FlashbotClient(engine: ActorRef, skipTouch: Boolean = false)(implicit ec: 
     def recoverNotFound(fut: =>Future[Source[T, NotUsed]]) =
       future.recoverWith { case err: DataNotFound => fut }
 
-    def recoverLadder(path: DataPath, fut: => Future[Source[MarketData[OrderBook], NotUsed]]) =
-      path.dataTypeInstance match {
+    def recoverLadder[D](path: DataPath, fut: => Future[Source[MarketData[OrderBook], NotUsed]]) =
+      path.dataTypeInstance[D] match {
         case dataType: LadderType => future.recoverNotFound(
           fut.map(_.map(md =>
-            md.withData[Ladder](Ladder.fromOrderBook(
-              dataType.depth.getOrElse(10))(md.data)).asInstanceOf[T])))
+            md.withData(Ladder.fromOrderBook(
+              dataType.depth.getOrElse(10))(md.data), dataType).asInstanceOf[T])))
         case _ => future
       }
   }

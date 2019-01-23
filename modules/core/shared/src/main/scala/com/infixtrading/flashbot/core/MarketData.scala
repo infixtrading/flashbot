@@ -28,9 +28,9 @@ trait MarketData[+T] extends Timestamped {
   def seqid: Long
 
   /**
-    * Returns a new MarketData[T] instance with updated data.
+    * Returns a new MarketData instance with updated data.
     */
-  def withData[B >: T](newData: B): MarketData[B]
+  def withData[B](newData: B, dataType: DataType[B]): MarketData[B]
 
   /**
     * Returns a new MarketData[T] instance with an updated `micros` field.
@@ -62,7 +62,7 @@ object MarketData {
       override def fmtName = "md." + fmt.fmtName
 
       override def update(model: MarketData[T], delta: D) = model
-        .withData(fmt.update(model.data, delta.delta))
+        .withData(fmt.update(model.data, delta.delta), model.path.dataTypeInstance[T])
         .withBundle(delta.bundle)
         .withMicros(delta.micros)
 
@@ -70,12 +70,13 @@ object MarketData {
         MarketDelta(fmt.diff(prev.data, current.data), current.micros, current.bundle)
 
       override def fold(x: MarketData[T], y: MarketData[T]) =
-        y.withData(fmt.fold(x.data, y.data))
+        y.withData(fmt.fold(x.data, y.data), y.path.dataTypeInstance[T])
 
 
       override def unfold(x: MarketData[T]) = fmt.unfold(x.data) match {
         case (first, secondOpt) =>
-          (x.withData(first), secondOpt.map(second => x.withData(second)))
+          val dt = x.path.dataTypeInstance[T]
+          (x.withData(first, dt), secondOpt.map(second => x.withData(second, dt)))
       }
     }
 
@@ -87,7 +88,8 @@ object MarketData {
 
     override def withMicros(newMicros: Long) = copy(micros = newMicros)
     override def withBundle(newBundle: Long) = copy(bundle = bundle)
-    override def withData[B >: T](newData: B) = copy(data = newData)
+    override def withData[B](newData: B, dataType: DataType[B]) =
+      copy(data = newData, path = path.withType(dataType))
     override def withSeqId(newSeqId: Long) = copy(seqid = newSeqId)
 }
 
