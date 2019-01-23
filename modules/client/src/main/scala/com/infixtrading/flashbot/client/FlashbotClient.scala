@@ -5,14 +5,15 @@ import java.time.Instant
 import akka.{Done, NotUsed}
 import akka.actor.ActorRef
 import akka.pattern.ask
-import akka.stream.scaladsl.Source
+import akka.stream.scaladsl.{Flow, Source}
 import akka.util.Timeout
+import com.infixtrading.flashbot.core.DataType.{LadderType, OrderBookType}
 import com.infixtrading.flashbot.core.FlashbotConfig.BotConfig
-import com.infixtrading.flashbot.core.MarketData
+import com.infixtrading.flashbot.core.{DataType, MarketData}
 import com.infixtrading.flashbot.engine.{NetworkSource, StreamResponse}
 import com.infixtrading.flashbot.models.api._
 import com.infixtrading.flashbot.util._
-import com.infixtrading.flashbot.models.core.{Candle, DataPath, TimeRange}
+import com.infixtrading.flashbot.models.core._
 import com.infixtrading.flashbot.report.Report
 
 import scala.concurrent.{Await, ExecutionContext, Future}
@@ -62,14 +63,17 @@ class FlashbotClient(engine: ActorRef, skipTouch: Boolean = false)(implicit ec: 
     */
   def historicalMarketDataAsync[T](path: DataPath,
                                    from: Option[Instant] = None,
-                                   to: Option[Instant] = None) = {
-    def singleStream(path: DataPath) = {
-      assert(!path.isPattern)
-      req[StreamResponse[MarketData[T]]](DataStreamReq(
-        DataSelection(path,
+                                   to: Option[Instant] = None)
+      : Future[Source[MarketData[T], NotUsed]] = {
+
+    def singleStream[D](p: DataPath): Future[Source[MarketData[D], NotUsed]] = {
+      assert(!p.isPattern)
+      req[StreamResponse[MarketData[D]]](DataStreamReq(
+        DataSelection(p,
           from.map(_.toEpochMilli * 1000).orElse[Long](Some(0)),
           to.map(_.toEpochMilli * 1000).orElse[Long](Some(Long.MaxValue)))))
         .map(_.toSource)
+        .recoverLadder(p, singleStream[OrderBook](p.withType(OrderBookType)))
     }
 
     // If the path is not a pattern, request it.
@@ -88,10 +92,13 @@ class FlashbotClient(engine: ActorRef, skipTouch: Boolean = false)(implicit ec: 
     * Returns a polling stream of live market data.
     * `lookback` specifies the time duration of historical data to prepend to the live data.
     */
-  def pollingMarketDataAsync[T](path: DataPath, lookback: Duration = 0.seconds) =
+  def pollingMarketDataAsync[T](path: DataPath, lookback: Duration = 0.seconds)
+      : Future[Source[MarketData[T], NotUsed]] =
     req[StreamResponse[MarketData[T]]](DataStreamReq(
       DataSelection(path, Some(Instant.now.minusMillis(lookback.toMillis).toEpochMilli * 1000))))
     .map(_.toSource)
+    .recoverLadder(path,
+      pollingMarketDataAsync[OrderBook](path.withType(OrderBookType), lookback))
 
   def pricesAsync(path: DataPath, timeRange: TimeRange, interval: FiniteDuration) =
     req[Map[String, Vector[Candle]]](PriceQuery(path, timeRange, interval))
@@ -101,5 +108,20 @@ class FlashbotClient(engine: ActorRef, skipTouch: Boolean = false)(implicit ec: 
 
   private def req[T](query: Any)(implicit tag: ClassTag[T]): Future[T] = (engine ? query).mapTo[T]
   private def await[T](fut: Future[T]): T = Await.result[T](fut, timeout.duration)
+
+  implicit class RecoverOps[T](future: Future[Source[T, NotUsed]]) {
+
+    def recoverNotFound(fut: =>Future[Source[T, NotUsed]]) =
+      future.recoverWith { case err: DataNotFound => fut }
+
+    def recoverLadder(path: DataPath, fut: => Future[Source[MarketData[OrderBook], NotUsed]]) =
+      path.dataTypeInstance match {
+        case dataType: LadderType => future.recoverNotFound(
+          fut.map(_.map(md =>
+            md.withData[Ladder](Ladder.fromOrderBook(
+              dataType.depth.getOrElse(10))(md.data)).asInstanceOf[T])))
+        case _ => future
+      }
+  }
 
 }

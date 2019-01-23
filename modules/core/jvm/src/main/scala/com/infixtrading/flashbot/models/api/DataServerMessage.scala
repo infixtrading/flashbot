@@ -11,7 +11,9 @@ case object RegisterDataServer extends DataServerMessage
 
 sealed trait DataServerException extends Exception
 
-sealed trait DataNotFound extends DataServerException
+sealed trait DataNotFound extends DataServerException {
+  def path: DataPath
+}
 case class LiveDataNotFound(path: DataPath)
   extends Exception(s"Live data not found at $path.")
     with DataNotFound

@@ -32,6 +32,8 @@ import io.circe.generic.JsonCodec
   def dataTypeInstance[T]: DataType[T] = DataType(datatype)
 
   def fmt[T]: DeltaFmtJson[T] = dataTypeInstance[T].fmtJson
+
+  def withType(dt: DataType[_]): DataPath = copy(datatype = dt.name)
 }
 
 object DataPath {
