@@ -70,7 +70,7 @@ class TradingEngineSpec extends WordSpecLike
 
       val fb = new FlashbotClient(engine)
 
-      fb.ping match {
+      fb.ping() match {
         case Pong(micros) =>
           println(Instant.ofEpochMilli(micros/1000))
         case _ =>

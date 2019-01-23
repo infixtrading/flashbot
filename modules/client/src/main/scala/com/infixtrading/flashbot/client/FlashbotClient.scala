@@ -1,6 +1,7 @@
 package com.infixtrading.flashbot.client
 
 import java.time.Instant
+import java.util.concurrent.Executors
 
 import akka.{Done, NotUsed}
 import akka.actor.ActorRef
@@ -16,12 +17,37 @@ import com.infixtrading.flashbot.util._
 import com.infixtrading.flashbot.models.core._
 import com.infixtrading.flashbot.report.Report
 
-import scala.concurrent.{Await, Future}
-import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.concurrent.duration._
 import scala.reflect.ClassTag
 
+/**
+  * FlashbotClient is the primary way of interacting with a Flashbot system. It requires an
+  * ActorRef of a JVM-local TradingEngine as the entry point.
+  *
+  * Every method has both a blocking version (e.g. client.ping()) and a non-blocking async
+  * [[Future]] based version (e.g. client.pingAsync()). Note that the blocking methods are
+  * light wrappers around the non-blocking ones and are implemented with a single, internal,
+  * shared thread. For this reason, when using FlashbotClient in a multi-threaded environment
+  * it's best to either exclusively use the non-blocking `...Async` methods (a good idea in
+  * any case), or to create separate instances per thread, so they don't have to share. Using
+  * the blocking methods on a shared instance from multiple threads will degrade your system's
+  * performance severely due to eventual deadlock.
+  *
+  * @param engine the TradingEngine which serves as the entry point to the FlashbotSystem
+  *               this client is connecting to.
+  * @param skipTouch whether to immediately return from the FlashbotClient constructor, even
+  *                  if the [[engine]] has not yet responded to ping. The default is to block
+  *                  until the engine responds so that it's guaranteed to be initialized by
+  *                  the time the constructor returns.
+  */
 class FlashbotClient(engine: ActorRef, skipTouch: Boolean = false) {
+
+  // A single-thread ExecutionContext for this client instance so that we can provide
+  // synchronous, blocking versions of API methods without requiring an ExecutionContext
+  // instance from the user.
+  implicit val blockingEc: ExecutionContext =
+    ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
 
   implicit val timeout: Timeout = Timeout(10.seconds)
 
@@ -29,11 +55,11 @@ class FlashbotClient(engine: ActorRef, skipTouch: Boolean = false) {
   // after the engine actor is. We will usually want to wait for the engine to initialize before
   // sending any requests to it. Blocking on a ping in the client constructor achieves this.
   if (!skipTouch) {
-    this.ping
+    this.ping()
   }
 
-  def pingAsync = req[Pong](Ping)
-  def ping: Pong = await[Pong](pingAsync)
+  def pingAsync() = req[Pong](Ping)
+  def ping(): Pong = await[Pong](pingAsync())
 
   def configureBotAsync(id: String, config: BotConfig) = req[Done](ConfigureBot(id, config))
   def configureBot(id: String, config: BotConfig): Unit = await(configureBotAsync(id, config))
@@ -54,8 +80,14 @@ class FlashbotClient(engine: ActorRef, skipTouch: Boolean = false) {
     req[NetworkSource[Report]](SubscribeToReport(id)).map(_.toSource)
   def subscribeToReport(id: String) = await(subscribeToReportAsync(id))
 
-  def indexAsync = req[Map[String, DataPath[Any]]](MarketDataIndexQuery)
-  def index = await(indexAsync)
+  def indexAsync() = req[Map[String, DataPath[Any]]](MarketDataIndexQuery)
+  def index() = await(indexAsync())
+
+  def pricesAsync(path: DataPath[Priced], timeRange: TimeRange, interval: FiniteDuration) =
+    req[Map[String, Vector[Candle]]](PriceQuery(path, timeRange, interval))
+
+  def prices(path: DataPath[Priced], timeRange: TimeRange, interval: FiniteDuration) =
+    await(pricesAsync(path, timeRange, interval))
 
   /**
     * Returns a polling stream of live market data.
@@ -96,17 +128,11 @@ class FlashbotClient(engine: ActorRef, skipTouch: Boolean = false) {
     // But if the path is a pattern, we have to resolve it to concrete paths from the index
     // and then request them individually and merge.
     else for {
-      idx: Map[String, DataPath[Any]] <- indexAsync
+      idx: Map[String, DataPath[Any]] <- indexAsync()
       paths = idx.values.toSet.toIterator.map((x: DataPath[Any]) => x.filter(path)).collect { case Some(x) => x }
       allStreamRsps <- Future.sequence(paths.map(singleStream(_: DataPath[T])))
     } yield allStreamRsps.reduce(_.mergeSorted(_)(Ordering.by(_.micros)))
   }
-
-  def pricesAsync(path: DataPath[Priced], timeRange: TimeRange, interval: FiniteDuration) =
-    req[Map[String, Vector[Candle]]](PriceQuery(path, timeRange, interval))
-
-  def prices(path: DataPath[Priced], timeRange: TimeRange, interval: FiniteDuration) =
-    await(pricesAsync(path, timeRange, interval))
 
   private def req[T](query: Any)(implicit tag: ClassTag[T]): Future[T] = (engine ? query).mapTo[T]
   private def await[T](fut: Future[T]): T = Await.result[T](fut, timeout.duration)
