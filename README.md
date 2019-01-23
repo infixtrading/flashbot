@@ -5,6 +5,10 @@ Flashbot is a Java and Scala framework for building, simulating, and running rob
 
 Crypto markets are unique in the world of finance because the "playing field is level". I.e. If you have an idea for a high-frequency trading strategy, you don't need to pay millions for infastructure, data, and co-location to get started. But you do still have to write performant software. Flashbot helps with that by providing a simple interface for building complex strategies and a common infrastructure to run them on.
 
+
+## Docs
+Check out the [Getting Started](https://github.com/infixtrading/flashbot/wiki/Getting-Started) page.
+
 ## Features
 ### Trading Engine
 The main component of Flashbot is the `TradingEngine` actor. It handles things such as:
@@ -27,8 +31,74 @@ Market data servers (the `DataServer` actor) connect to outside data sources suc
 * Automatic backfilling of historical data
 * Tolerant to network and websocket failures (i.e. it manages the retries)
 
-## Docs
-Check out the [Getting Started](https://github.com/infixtrading/flashbot/wiki/Getting-Started) page for documentation.
+## Installation
+Flashbot is published to Bintray, so you'll have to add our repository as a resolver in your build tool and then list Flashbot as a dependency.
+
+### SBT
+Add the following line to your project settings in build.sbt:
+```
+resolvers += Resolver.bintrayRepo("infixtrading", "flashbot")
+```
+And then add the `flashbot-client` and `flashbot-server` dependencies as well:
+```
+libraryDependencies ++= Seq(
+  "com.infixtrading" %% "flashbot-client" % "0.0.1",
+  "com.infixtrading" %% "flashbot-server" % "0.0.1"
+)
+```
+
+### Gradle
+First add the repo to your gradle.build file:
+```
+repositories {
+    maven {
+        url "https://dl.bintray.com/infixtrading/flashbot"
+    }
+}
+```
+Then add the dependencies to the file:
+```
+compile 'com.infixtrading:flashbot-client_2.12:0.0.1'
+compile 'com.infixtrading:flashbot-server_2.12:0.0.1'
+```
+
+### Maven
+First add the repository to your pom.xml file:
+```xml
+...
+ <repositories>
+   ...
+   <repository>
+       <id>bintray-<username>-maven</id>
+       <name>flashboot</name>
+       <url>https://dl.bintray.com/infixtrading/flashbot</url>
+   </repository>
+   ...
+ </repositories>
+...
+```
+Add the following dependencies to your pom.xml:
+```xml
+...
+  <dependencies>
+    ...
+    <dependency>
+      <groupId>com.infixtrading</groupId>
+      <artifactId>flashbot-server_2.12</artifactId>
+      <version>0.0.1</version>
+      <type>pom</type>
+    </dependency>
+
+    <dependency>
+      <groupId>com.infixtrading</groupId>
+      <artifactId>flashbot-client_2.12</artifactId>
+      <version>0.0.1</version>
+      <type>pom</type>
+    </dependency>
+    ...
+  </dependencies>
+...
+```
 
 ## Configuration
 The default [configuration file](https://github.com/infixtrading/flashbot/blob/master/modules/server/src/main/resources/reference.conf) contains a list of available options. You can override any of the settings in your own `application.conf` file.
