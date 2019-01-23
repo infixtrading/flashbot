@@ -157,9 +157,9 @@ class Simulator(base: Exchange, latencyMicros: Long = 0) extends Exchange {
           val lastFillPrice = simulatedFills.last._1
           val filledOrders = trade.direction match {
             case Up =>
-              myOrders(topic).asks.filter(_._1 < lastFillPrice).values.toSet.flatten
+              myOrders(topic).asks.index.filter(_._1 < lastFillPrice).values.toSet.flatten
             case Down =>
-              myOrders(topic).bids.filter(_._1 > lastFillPrice).values.toSet.flatten
+              myOrders(topic).bids.index.filter(_._1 > lastFillPrice).values.toSet.flatten
           }
           filledOrders.foreach { order =>
             // Remove order from private book

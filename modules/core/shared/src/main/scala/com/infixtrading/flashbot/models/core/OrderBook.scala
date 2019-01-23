@@ -44,10 +44,10 @@ case class OrderBook(orders: Map[String, Order] = Map.empty,
     side match {
       case Sell => copy(
         orders = newOrders,
-        asks = addToIndex(asks, o))
+        asks = Asks(addToIndex(asks.index, o)))
       case Buy => copy(
         orders = newOrders,
-        bids = addToIndex(bids, o))
+        bids = Bids(addToIndex(bids.index, o)))
     }
   }
 
@@ -55,10 +55,10 @@ case class OrderBook(orders: Map[String, Order] = Map.empty,
     orders get id match {
       case Some(o@Order(_, Sell, _, _)) => copy(
         orders = orders - id,
-        asks = rmFromIndex(asks, o))
+        asks = Asks(rmFromIndex(asks.index, o)))
       case Some(o@Order(_, Buy, _, _)) => copy(
         orders = orders - id,
-        bids = rmFromIndex(bids, o))
+        bids = Bids(rmFromIndex(bids.index, o)))
       case None => this // Ignore "done" messages for orders not in the book
     }
 
@@ -66,32 +66,32 @@ case class OrderBook(orders: Map[String, Order] = Map.empty,
     orders(id) match {
       case o@Order(_, Sell, _, Some(price)) => copy(
         orders = orders + (id -> o.copy(amount = newSize)),
-        asks = asks + (price -> (asks(price).filterNot(_ == o) :+ o.copy(amount = newSize))))
+        asks = Asks(asks.index + (price -> (asks.index(price).filterNot(_ == o) :+ o.copy(amount = newSize)))))
       case o@Order(_, Buy, _, Some(price)) => copy(
         orders = orders + (id -> o.copy(amount = newSize)),
-        bids = bids + (price -> (bids(price).filterNot(_ == o) :+ o.copy(amount = newSize))))
+        bids = Bids(bids.index + (price -> (bids.index(price).filterNot(_ == o) :+ o.copy(amount = newSize)))))
     }
   }
 
   def spread: Option[Double] = {
-    if (asks.nonEmpty && bids.nonEmpty) {
-      if (asks.firstKey > asks.lastKey) {
+    if (asks.index.nonEmpty && bids.index.nonEmpty) {
+      if (asks.index.firstKey > asks.index.lastKey) {
         throw new RuntimeException("Asks out of order")
       }
-      if (bids.firstKey < bids.lastKey) {
+      if (bids.index.firstKey < bids.index.lastKey) {
         throw new RuntimeException("Bids out of order")
       }
-      Some(asks.firstKey - bids.firstKey)
+      Some(asks.index.firstKey - bids.index.firstKey)
     } else None
   }
 
   def fill(side: Side, quantity: Double, limit: Option[Double] = None): (Seq[(Double, Double)], OrderBook) = {
-    val ladder = if (side == Buy) asks else bids
+    val ladder: OrderIndex = if (side == Buy) asks else bids
     // If there is nothing to match against, return.
-    if (ladder.isEmpty) {
+    if (ladder.index.isEmpty) {
       (Seq.empty, this)
     } else {
-      val (bestPrice, orderQueue) = ladder.head
+      val (bestPrice, orderQueue) = ladder.index.head
       val isMatch = limit.forall(lim => if (side == Buy) lim >= bestPrice else lim <= bestPrice)
       if (isMatch) {
         // If there is a match, generate the fill, and recurse.
@@ -136,26 +136,36 @@ object OrderBook {
   implicit val doubleKeyEncoder: KeyEncoder[Double] = KeyEncoder.instance(_.toString)
   implicit val doubleKeyDecoder: KeyDecoder[Double] = KeyDecoder.instance(x => Some(x.toDouble))
 
-  type Asks = TreeMap[Double, Queue[Order]]
-  object Asks {
-    def empty: Asks = TreeMap.empty
-
-    implicit val asksEn: Encoder[Asks] = Encoder.encodeJsonObject.contramapObject(
-      (map: Map[Double, Queue[Order]]) => map.asJsonObject)
-    implicit val asksDe: Decoder[Asks] = Decoder.decodeJsonObject.map(obj =>
-      obj.keys.foldLeft(Asks.empty)((memo, key) =>
-        memo + (key.toDouble -> obj(key).get.as[Queue[Order]].right.get)))
+  sealed trait OrderIndex {
+    def index: TreeMap[Double, Queue[Order]]
   }
 
-  type Bids = TreeMap[Double, Queue[Order]]
+  case class Asks(index: TreeMap[Double, Queue[Order]]) extends OrderIndex
+
+  object Asks {
+    def empty: Asks = Asks(TreeMap.empty)
+
+    implicit val asksEn: Encoder[Asks] = Encoder.encodeJsonObject.contramapObject(
+      (asks: Asks) => asks.index.asJsonObject)
+    implicit val asksDe: Decoder[Asks] = Decoder.decodeJsonObject.map(obj =>
+      obj.keys.foldLeft(Asks.empty)((memo, key) =>
+        memo.copy(index = memo.index + (key.toDouble ->
+          obj(key).get.as[Queue[Order]].right.get))))
+
+
+  }
+
+  case class Bids(index: TreeMap[Double, Queue[Order]]) extends OrderIndex
   object Bids {
-    def empty: Bids = TreeMap.empty(Ordering.by(-_))
+    def empty: Bids = Bids(TreeMap.empty(Ordering.by(-_)))
 
     implicit val bidsEn: Encoder[Bids] = Encoder.encodeJsonObject.contramapObject(
-      (map: Map[Double, Queue[Order]]) => map.asJsonObject)
+      (bids: Bids) => bids.index.asJsonObject)
     implicit val bidsDe: Decoder[Bids] = Decoder.decodeJsonObject.map(obj =>
       obj.keys.foldLeft(Bids.empty)((memo, key) =>
-        memo + (key.toDouble -> obj(key).get.as[Queue[Order]].right.get)))
+        memo.copy(index = memo.index + (key.toDouble ->
+          obj(key).get.as[Queue[Order]].right.get))))
+
   }
 
 
@@ -172,21 +182,23 @@ object OrderBook {
         Some(Done(orderId))
       case OrderChange(orderId, _, _, newSize) =>
         Some(Change(orderId, newSize))
+      case _ => None
     }
   }
 
-  def foldOrderBook(a: OrderBook, b: OrderBook): OrderBook =
+  val foldOrderBook: (OrderBook, OrderBook) => OrderBook = (a: OrderBook, b: OrderBook) =>
     b.orders.values.foldLeft(a)((memo, order) =>
         memo.open(order.id, order.price.get, order.amount, order.side))
 
-  def unfoldOrderBook(book: OrderBook): (OrderBook, Option[OrderBook]) = {
+  val unfoldOrderBook: OrderBook => (OrderBook, Option[OrderBook]) = (book: OrderBook) => {
     if (book.orders.values.size > 1) {
       val order = book.orders.values.head
       (book.done(order.id), Some(OrderBook().open(order)))
     } else (book, None)
   }
 
-  implicit val orderBookFmt: DeltaFmtJson[OrderBook] =
+  // This has to be a def!
+  implicit def orderBookFmt: DeltaFmtJson[OrderBook] =
     DeltaFmt.updateEventFmtJsonWithFold[OrderBook, Delta]("book",
       foldOrderBook, unfoldOrderBook)
 

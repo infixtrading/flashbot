@@ -113,7 +113,7 @@ object GrafanaServer {
   } ~ post {
     path("search") {
       entity(as[SearchReqBody]) { body =>
-        val rsp = Seq("trades", "price")
+        val rsp = Seq("trades", "price", "orderbook")
         complete(HttpEntity(ContentTypes.`application/json`, rsp.asJson.noSpaces ))
       }
     } ~ path("query") {
@@ -134,7 +134,7 @@ object GrafanaServer {
                 tradeMDs <- streamSrc.runWith(Sink.seq)
               } yield buildTable(tradeMDs.reverse.take(body.maxDataPoints.toInt).map(_.asJsonObject), TradeCols)
 
-            case "ladder" =>
+            case "orderbook" =>
               for {
                 streamSrc <- client.pollingMarketDataAsync[Ladder](
                   pathFromFilters(body.adhocFilters).withType(LadderType(Some(10))))
@@ -196,7 +196,7 @@ object GrafanaServer {
   def sortCols(cols: Seq[Column], colOrder: List[String]): Seq[Column] = {
     val byKey = cols.sortBy(_.text)
     val preferred = colOrder.map(c => byKey.find(_.text == c)) collect { case Some(x) => x }
-    val rest = byKey.filterNot(TradeCols contains _.text)
+    val rest = byKey.filterNot(colOrder contains _.text)
     preferred ++ rest
   }
 

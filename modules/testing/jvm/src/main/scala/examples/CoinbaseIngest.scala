@@ -3,21 +3,26 @@ package examples
 import java.util.concurrent.Executors
 
 import akka.actor.ActorSystem
+import akka.stream.ActorMaterializer
 import com.infixtrading.flashbot.client.FlashbotClient
 import com.infixtrading.flashbot.core.FlashbotConfig
 import com.infixtrading.flashbot.util.time._
 import com.infixtrading.flashbot.core.FlashbotConfig.IngestConfig
 import com.infixtrading.flashbot.engine.{DataServer, TradingEngine}
-import com.infixtrading.flashbot.models.core.TimeRange
+import com.infixtrading.flashbot.models.core.{OrderBook, TimeRange}
 import io.prometheus.client.exporter.HTTPServer
 
+import scala.concurrent.{Await, ExecutionContext, Future}
+import scala.concurrent.duration._
 import scala.language.postfixOps
+import scala.util.{Failure, Success}
 
 object CoinbaseIngest extends App {
 
   implicit val config = FlashbotConfig.load.copy(
     ingest = IngestConfig(
 //      enabled = Seq("coinbase/btc_usd/trades"),
+//      enabled = Seq("coinbase/btc_usd/book"),
       enabled = Seq("coinbase/btc_usd/trades", "coinbase/btc_usd/book"),
 //      enabled = Seq(),
       backfill = Seq("coinbase/btc_usd/trades"),
@@ -34,26 +39,36 @@ object CoinbaseIngest extends App {
 
   val engine = system.actorOf(TradingEngine.props("trading-engine", config, dataServer))
 
-//  val blockingEc: ExecutionContext =
-//    ExecutionContext.fromExecutor(Executors.newFixedThreadPool(5))
+  val blockingEc: ExecutionContext =
+    ExecutionContext.fromExecutor(Executors.newFixedThreadPool(5))
 
-//  implicit val ec: ExecutionContext = system.dispatcher
-//  val client = new FlashbotClient(engine)(ec)
+  implicit val ec: ExecutionContext = system.dispatcher
+  implicit val mat = ActorMaterializer()
+  val client = new FlashbotClient(engine)(ec)
 
 //  val marketDataLatency = Summary.build("client_marketdata_ms",
 //    "Client market data request latency in millis").register()
 //  val backtestLatency = Summary.build("client_price_ms",
 //    "Client price request latency in millis").register()
 
-//  Future {
+//  Await.result(Future {
 //    Thread.sleep(5000)
 //    while (true) {
-//      val timer = marketDataLatency.startTimer()
-//      client.historicalMarketDataAsync("coinbase/btc_usd/trades", Some(0.microsToInstant))
-//          .andThen { case _ => timer.observeDuration() }
-//      Thread.sleep(1000)
+////      val timer = marketDataLatency.startTimer()
+//      client.pollingMarketDataAsync[OrderBook]("coinbase/btc_usd/book")
+//          .onComplete {
+//            case Success(value) =>
+//              println(s"SUCCESS")
+//              value.runForeach(x => println(x))
+//            case Failure(err) =>
+//              println(s"ERROR: $err")
+//              throw err
+//          }
+//
+////          .andThen { case _ => timer.observeDuration() }
+//      Thread.sleep(5000)
 //    }
-//  }(blockingEc)
+//  }(blockingEc), 1 hour)
 //
 //  Future {
 //    Thread.sleep(6500)

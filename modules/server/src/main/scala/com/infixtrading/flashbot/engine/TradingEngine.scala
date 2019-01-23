@@ -397,6 +397,7 @@ class TradingEngine(engineId: String,
         */
       case req: DataStreamReq[_] =>
         val timer = Metrics.startTimer("data_query_ms")
+        log.debug("PROXY REQUEST {}", req)
         (dataServer ? req)
           .mapTo[StreamResponse[MarketData[_]]]
           .flatMap(_.rebuild)

@@ -11,7 +11,7 @@ import com.infixtrading.flashbot.core.DataSource.IngestGroup
 import com.infixtrading.flashbot.core.DataType.{LadderType, OrderBookType, TradesType}
 import com.infixtrading.flashbot.core.Instrument.CurrencyPair
 import com.infixtrading.flashbot.core._
-import com.infixtrading.flashbot.models.core.Order.{OrderType, Side, TickDirection}
+import com.infixtrading.flashbot.models.core.Order.{Buy, OrderType, Sell, Side, TickDirection}
 import com.infixtrading.flashbot.models.core.OrderBook
 import com.infixtrading.flashbot.util.time.TimeFmt
 import com.infixtrading.flashbot.util.stream._
@@ -30,6 +30,7 @@ import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import scala.concurrent.{ExecutionContext, Future, Promise}
 import scala.concurrent.duration._
 import scala.language.postfixOps
+import scala.util.{Failure, Success}
 
 class CoinbaseMarketDataSource extends DataSource {
 
@@ -118,9 +119,9 @@ class CoinbaseMarketDataSource extends DataSource {
 
         val snapshotPromises = topics.map(_ -> Promise[StreamItem]).toMap
 
-        // Complete the promise as soon as we have a "subscriptions" event
         jsonSrc.alsoTo(Sink.foreach { _ =>
           if (!responsePromise.isCompleted) {
+            // Complete the promise as soon as we have a "subscriptions" event
             responsePromise.success(eventRefs.map {
               case (topic, (ref, eventSrc)) =>
                 val snapshotSrc = Source.fromFuture(snapshotPromises(topic).future)
@@ -134,13 +135,31 @@ class CoinbaseMarketDataSource extends DataSource {
                       Left(OrderBook.Delta.fromOrderEventOpt(item.event)
                         .foldLeft(memo.book)(_ update _))))
                   }
-                  .collect { case Some(item) => (item.micros, item.book.asInstanceOf[T]) }
+                  .collect { case Some(item) if item.micros != -1 => (item.micros, item.book.asInstanceOf[T]) }
                   .watchTermination()(Keep.right).preMaterialize()
                 done.onComplete(_ => {
                   ref ! PoisonPill
                 })
                 topic -> src
             })
+
+            // Also kick off the snapshot requests.
+            for (topic <- eventRefs.keySet) {
+              val product = toCBProduct(topic)
+              var uri = uri"https://api.pro.coinbase.com/products/$product/book?level=3"
+              val snapRef = snapshotPromises(topic)
+              sttp.get(uri).send().flatMap { rsp =>
+                rsp.body match {
+                  case Left(err) => Future.failed(new RuntimeException(s"Error in Coinbase snapshot request: $err"))
+                  case Right(bodyStr) => Future.fromTry(decode[BookSnapshot](bodyStr).toTry)
+                }
+              } onComplete {
+                case Success(snapshot) =>
+                  snapRef.success(StreamItem(snapshot.sequence, -1, Left(snapshot.toOrderBook)))
+                case Failure(err) =>
+                  snapRef.failure(err)
+              }
+            }
           }
         })
 
@@ -371,4 +390,18 @@ object CoinbaseMarketDataSource {
   }
 
   @JsonCodec case class BackfillCursor(cbAfter: String, lastItemId: String)
+
+
+  @JsonCodec case class BookSnapshot(sequence: Long,
+                                     asks: Seq[(String, String, String)],
+                                     bids: Seq[(String, String, String)]) {
+    def toOrderBook: OrderBook = {
+      val withAsks = asks.foldLeft(OrderBook()) {
+        case (book, askSeq) => book.open(askSeq._3, askSeq._1.toDouble, askSeq._2.toDouble, Sell)
+      }
+      bids.foldLeft(withAsks) {
+        case (book, askSeq) => book.open(askSeq._3, askSeq._1.toDouble, askSeq._2.toDouble, Buy)
+      }
+    }
+  }
 }

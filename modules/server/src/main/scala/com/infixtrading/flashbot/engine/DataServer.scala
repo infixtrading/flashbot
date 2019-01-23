@@ -217,6 +217,7 @@ class DataServer(dbConfig: Config,
       * Returns None if not found. Do not use search here. Search uses this.
       */
     case LiveStream(path: DataPath[_]) =>
+      log.debug("Live stream request {}", path)
       if (!localDataSourceActors.isDefinedAt(path.source)) {
         sender ! None
       } else {
@@ -228,6 +229,7 @@ class DataServer(dbConfig: Config,
             srcOpt.map(x => StreamResponse.build(x, sender).map(Some(_)))
           rspOpt <- rspFutOpt.getOrElse(Future.successful(None))
         } yield rspOpt
+        log.debug("Building live stream {}", path)
         buildSrc(DeltaFmt.formats(path.datatype)) pipeTo sender
       }
 
@@ -350,7 +352,9 @@ class DataServer(dbConfig: Config,
       : Future[Option[StreamResponse[MarketData[T]]]] = servers match {
 
     // When no servers left to query, return None.
-    case Nil => Future.successful(None)
+    case Nil =>
+      log.debug("NO SERVER {}", path)
+      Future.successful(None)
 
     // Request a live data stream from the next server in the list, and recurse if not found.
     case server :: rest => for {

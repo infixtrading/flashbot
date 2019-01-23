@@ -157,16 +157,22 @@ class DataSourceActor(session: SlickSession,
             _ <- Future { Thread.sleep(delay.toMillis) } (blockingEc)
 
             streams <- topics match {
-              case Left(topic) => dataSource.ingest[T](topic, DataType(dataType))
-                .map(src => Map(topic -> src))
+              case Left(topic) =>
+                log.debug("Requesting ingest stream for {}/{}", topic, DataType(dataType))
+                dataSource.ingest[T](topic, DataType(dataType))
+                  .andThen { case x =>
+                    log.debug("Got ingest stream for {}/{}: {}", topic, DataType(dataType), x)
+                  }
+                  .map(src => Map(topic -> src))
               case Right(ts) => dataSource.ingestGroup[T](ts, DataType(dataType))
             }
+            _ = log.debug("Ingest streams: {}", streams)
           } yield streams.filterKeys(topic =>
             matchers.exists(_.matches(DataPath(srcKey, topic, dataType))))
 
           def runScheduledIngest[T](dt: DataType[T]) = {
             var scheduledTopics = Set.empty[String]
-            val fmt = dt.fmtJson
+            val fmt: DeltaFmtJson[T] = dt.fmtJson
             val fut = dataSource.scheduleIngest(topicSet, dataType) match {
               case IngestOne(topic, delay) =>
                 scheduledTopics = Set(topic)
@@ -180,7 +186,10 @@ class DataSourceActor(session: SlickSession,
               if (remainingTopics.nonEmpty) (dataType, remainingTopics) +: queue.tail
               else queue.tail
 
-            fut onComplete {
+            fut andThen {
+              case x =>
+                log.debug("Received streams: {}", x)
+            } onComplete {
               case Success(sources) =>
                 // Start the next ingest cycle
                 ingestMsgOpt(newQueue).foreach(self ! _)
@@ -200,7 +209,7 @@ class DataSourceActor(session: SlickSession,
                           log.debug(s"Launching BackfillService for {}", path)
                           context.actorOf(Props(new BackfillService(session, path, dataSource)))
                         } else {
-                          log.error("{} does not match any of {}", path, ingestConfig.backfillMatchers)
+                          log.debug("Skipping backfill for {}", path)
                         }
 
                         // Save bundle id for this path.
@@ -246,8 +255,12 @@ class DataSourceActor(session: SlickSession,
                               // Save the snapshots
                               b <- session.db.run(Snapshots ++= states
                                 .filter(_.snapshot.isDefined).map(state =>
-                                  SnapshotRow(bundleId, state.seqId, state.micros,
-                                    fmt.modelEn(state.item).pretty(Printer.noSpaces))))
+                                  {
+                                    println(state.seqId, state.micros)
+                                    SnapshotRow(bundleId, state.seqId, state.micros,
+                                      fmt.modelEn(state.item).pretty(Printer.noSpaces))
+                                  }))
+                              _ = log.debug("Saved {} deltas and {} snapshots for {}", a, b, path)
                             } yield states.last.seqId
                           }
                           // Clear ingested items from buffer.
@@ -307,14 +320,19 @@ class DataSourceActor(session: SlickSession,
      * ===========
      */
     case StreamLiveData(path) =>
+      log.debug("=========================")
+      log.debug("STREAM LIVE DATA: {}", path)
+      log.debug("=========================")
       def buildOptSrc[T](fmt: DeltaFmtJson[T]): Option[Source[MarketData[T], NotUsed]] =
         if (subscriptions.isDefinedAt(path)) {
+          log.debug("SUBSCRIPTION IS DEFINED: {}", path)
           val (ref, src) =
             Source.actorRef[MarketData[T]](Int.MaxValue, OverflowStrategy.fail).preMaterialize()
           subscriptions += (path.toString -> (subscriptions(path) + ref))
           val initialItems: Vector[MarketData[T]] = lookupBundleId(path)
             .flatMap(itemBuffers.get(_).map(_.asInstanceOf[Vector[MarketData[T]]]) )
             .getOrElse(Vector.empty[MarketData[T]])
+          log.debug("INITIAL ITEMS: {}", initialItems)
           Some(Source(initialItems).concat(src))
         } else None
       sender ! buildOptSrc(DeltaFmt.formats(path.datatype))

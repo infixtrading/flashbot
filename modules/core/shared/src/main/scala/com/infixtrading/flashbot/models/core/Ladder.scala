@@ -56,8 +56,8 @@ case class Ladder(depth: Int,
 
 object Ladder {
 
-  implicit val doubleKeyEncoder: KeyEncoder[Double] = KeyEncoder.encodeKeyString.contramap(_.toString)
-  implicit val doubleKeyDecoder: KeyDecoder[Double] = KeyDecoder.decodeKeyString.map(_.toDouble)
+  implicit def doubleKeyEncoder: KeyEncoder[Double] = KeyEncoder.encodeKeyString.contramap(_.toString)
+  implicit def doubleKeyDecoder: KeyDecoder[Double] = KeyDecoder.decodeKeyString.map(_.toDouble)
 
   case class LadderDelta(side: QuoteSide, priceLevel: Double, quantity: Double)
   object LadderDelta {
@@ -174,8 +174,8 @@ object Ladder {
 
   def fromOrderBook(depth: Int)(book: OrderBook): Ladder = {
     Ladder(depth,
-      asks = book.asks.take(depth).mapValues(_.map(_.amount).sum),
-      bids = book.bids.take(depth).mapValues(_.map(_.amount).sum))
+      asks = book.asks.index.take(depth).mapValues(_.map(_.amount).sum),
+      bids = book.bids.index.take(depth).mapValues(_.map(_.amount).sum))
   }
 
   private def updateMap(map: SortedMap[Double, Double],
