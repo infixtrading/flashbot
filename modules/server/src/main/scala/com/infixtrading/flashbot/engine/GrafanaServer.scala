@@ -11,7 +11,7 @@ import akka.stream.Materializer
 import akka.stream.scaladsl.Sink
 import com.infixtrading.flashbot.client.FlashbotClient
 import com.infixtrading.flashbot.core.{MarketData, Trade}
-import com.infixtrading.flashbot.models.core.{Candle, DataPath, TimeRange}
+import com.infixtrading.flashbot.models.core.{Candle, DataPath, Ladder, TimeRange}
 import com.infixtrading.flashbot.util.time._
 import io.circe._
 import io.circe.syntax._
@@ -20,6 +20,7 @@ import io.circe.generic.JsonCodec
 import io.circe.generic.extras._
 import de.heikoseeberger.akkahttpcirce.ErrorAccumulatingCirceSupport._
 
+import scala.collection.SortedMap
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -28,7 +29,13 @@ import scala.language.postfixOps
 object GrafanaServer {
 
   // Preferred ordering of columns. Columns not listed here are added to the end.
-  val ColumnOrder = Seq("path", "time")
+  val TradeCols = List("path", "time")
+
+  val BidQty = "Bid Quantity"
+  val BidPrice = "Bid Price"
+  val AskPrice = "Ask Price"
+  val AskQty = "Ask Quantity"
+  val LadderCols = List(BidQty, BidPrice, AskPrice, AskQty)
 
   implicit val config: Configuration = Configuration.default
   implicit val timeRangeDecoder: Decoder[TimeRange] = Decoder.decodeJsonObject.map { obj =>
@@ -47,6 +54,13 @@ object GrafanaServer {
         .add("time", (md.micros / 1000).asJson)
         .add("path", md.path.toString.asJson)
     }
+
+  val askEncoder: ObjectEncoder[(Double, Double)] = ObjectEncoder.instance {
+    case (price, qty) => JsonObject(AskPrice -> price.asJson, AskQty -> qty.asJson)
+  }
+  val bidEncoder: ObjectEncoder[(Double, Double)] = ObjectEncoder.instance {
+    case (price, qty) => JsonObject(BidPrice -> price.asJson, BidQty -> qty.asJson)
+  }
 
   @ConfiguredJsonCodec case class Target(target: String, refId: String, @JsonKey("type") Type: String, data: Json)
 
@@ -116,7 +130,17 @@ object GrafanaServer {
                   Some(Instant.ofEpochMilli(fromMillis)),
                   Some(Instant.ofEpochMilli(toMillis)))
                 tradeMDs <- streamSrc.runWith(Sink.seq)
-              } yield buildTable(tradeMDs.reverse.take(body.maxDataPoints.toInt).map(_.asJsonObject))
+              } yield buildTable(tradeMDs.reverse.take(body.maxDataPoints.toInt).map(_.asJsonObject), TradeCols)
+
+            case "ladder" =>
+              for {
+                streamSrc <- client.pollingMarketDataAsync[Ladder](
+                  pathFromFilters(body.adhocFilters).copy(datatype = "ladder"))
+                ladder <- streamSrc.runWith(Sink.head)
+              } yield buildTable(
+                ladder.data.asks.map(_.asJsonObject(askEncoder)).toSeq ++
+                  ladder.data.bids.map(_.asJsonObject(bidEncoder)).toSeq,
+                LadderCols)
 
             case "price" =>
               val path = pathFromFilters(body.adhocFilters).copy(datatype = "trades")
@@ -167,15 +191,15 @@ object GrafanaServer {
       }.toMap.values.toSeq
   }
 
-  def sortCols(cols: Seq[Column]): Seq[Column] = {
+  def sortCols(cols: Seq[Column], colOrder: List[String]): Seq[Column] = {
     val byKey = cols.sortBy(_.text)
-    val preferred = ColumnOrder.map(c => byKey.find(_.text == c)) collect { case Some(x) => x }
-    val rest = byKey.filterNot(ColumnOrder contains _.text)
+    val preferred = colOrder.map(c => byKey.find(_.text == c)) collect { case Some(x) => x }
+    val rest = byKey.filterNot(TradeCols contains _.text)
     preferred ++ rest
   }
 
-  def buildTable(objects: Seq[JsonObject]): Table = {
-    var cols = sortCols(buildCols(objects))
+  def buildTable(objects: Seq[JsonObject], colOrder: List[String]): Table = {
+    var cols = sortCols(buildCols(objects), colOrder)
     var rows: Seq[Seq[Json]] = objects.map(o =>
       cols.map(col => o(col.text).asJson ))
     Table(cols, rows, "table")

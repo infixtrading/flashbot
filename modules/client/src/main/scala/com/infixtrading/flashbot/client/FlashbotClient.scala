@@ -89,6 +89,7 @@ class FlashbotClient(engine: ActorRef, skipTouch: Boolean = false)(implicit ec: 
   def pollingMarketDataAsync[T](path: DataPath, lookback: Duration = 0.seconds) =
     req[StreamResponse[MarketData[T]]](DataStreamReq(
       DataSelection(path, Some(Instant.now.minusMillis(lookback.toMillis).toEpochMilli * 1000))))
+    .map(_.toSource)
 
   def pricesAsync(path: DataPath, timeRange: TimeRange, interval: FiniteDuration) =
     req[Map[String, Vector[Candle]]](PriceQuery(path, timeRange, interval))
