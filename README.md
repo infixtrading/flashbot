@@ -7,7 +7,7 @@ Crypto markets are unique in the world of finance because the "playing field is 
 
 
 ## Docs
-Check out the [Getting Started](https://github.com/infixtrading/flashbot/wiki/Getting-Started) page.
+Check out the [wiki](https://github.com/infixtrading/flashbot/wiki) for documentation.
 
 ## Features
 ### Trading Engine
