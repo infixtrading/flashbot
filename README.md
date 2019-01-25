@@ -1,5 +1,8 @@
 # Flashbot
 [![Build Status](https://travis-ci.org/infixtrading/flashbot.svg?branch=master)](https://travis-ci.org/infixtrading/flashbot)
+<a href='https://github.com/infixtrading/flashbot/blob/master/LICENSE'>
+  <img src='https://img.shields.io/github/license/infixtrading/flashbot.svg?longCache=true' alt='License' />
+</a>
 
 Flashbot is a Java and Scala framework for building, simulating, and running robust, low-latency Cryptocurrency trading strategies as a cluster of trading engines and market data servers.
 
