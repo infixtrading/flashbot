@@ -66,6 +66,9 @@ trait TimeSeriesMixin { self: Strategy =>
       bar.getVolume.getDelegate.doubleValue())
   }
 
+  def record(key: String, micros: Long, value: Double)(implicit ctx: TradingSession): Unit =
+    record(key, micros, value, None)
+
   def record(exchange: String,
              product: String,
              micros: Long,
