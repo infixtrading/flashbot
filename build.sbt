@@ -419,7 +419,9 @@ lazy val server = flashbotModule("server", previousFBVersion).settings(
     ))
 ).dependsOn(core, client)
 
-lazy val client = flashbotModule("client", previousFBVersion).dependsOn(core)
+lazy val client = flashbotModule("client", previousFBVersion)
+  .settings(libraryDependencies += "com.appnexus.grafana-client" % "grafana-api-java-client" % "1.0.5")
+  .dependsOn(core)
 
 lazy val scalajs = flashbotModule("scalajs", None).enablePlugins(ScalaJSPlugin).dependsOn(coreJS)
 

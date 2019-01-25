@@ -8,7 +8,7 @@ case class Market(exchange: String, symbol: String) {
 }
 object Market {
 
-  def apply(str: String): Market = parse(str)
+  implicit def apply(str: String): Market = parse(str)
 
   def parse(market: String): Market = {
     val parts = market.split("/")

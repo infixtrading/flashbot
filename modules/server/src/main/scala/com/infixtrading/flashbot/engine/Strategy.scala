@@ -135,7 +135,7 @@ abstract class Strategy {
     */
   implicit var buffer: VarBuffer = _
 
-  var sessionBarSize: Duration = _
+  var sessionBarSize: FiniteDuration = _
 
   protected[engine] def loadParams(jsonParams: Json): Unit = {
     params = paramsDecoder.decodeJson(jsonParams).right.get

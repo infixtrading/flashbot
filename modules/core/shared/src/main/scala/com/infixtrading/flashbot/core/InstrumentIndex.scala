@@ -9,10 +9,10 @@ class InstrumentIndex(val byExchange: Map[String, Set[Instrument]]) {
 
   def apply(exchange: String, symbol: String): Instrument = apply(Market(exchange, symbol))
   def apply(market: Market): Instrument = get(market).get
-  def get(exchange: String, symbol: String): Option[Instrument] =
-    get(Market(exchange, symbol))
   def get(market: Market): Option[Instrument] =
     byExchange(market.exchange).find(_.symbol == market.symbol)
+  def get(exchange: String, symbol: String): Option[Instrument] =
+    get(Market(exchange, symbol))
 
   def findMarket(base: Account, quote: Account): Option[Market] = {
     if (base.exchange == quote.exchange) {

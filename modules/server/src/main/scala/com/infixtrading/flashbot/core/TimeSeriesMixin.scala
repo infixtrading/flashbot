@@ -3,19 +3,42 @@ package com.infixtrading.flashbot.core
 import java.time.{Duration, Instant, ZoneOffset, ZonedDateTime}
 
 import com.infixtrading.flashbot.engine.{Strategy, TradingSession}
-import com.infixtrading.flashbot.models.core.Candle
+import com.infixtrading.flashbot.models.core.FixedSize.FixedSizeD
+import com.infixtrading.flashbot.models.core.{Candle, Market}
 import com.infixtrading.flashbot.report.ReportEvent.{CandleAdd, CandleUpdate}
-import com.infixtrading.flashbot.util
+import com.infixtrading.flashbot.util.time._
+import org.ta4j.core.indicators.helpers.ClosePriceIndicator
 import org.ta4j.core.num.Num
 import org.ta4j.core.{Bar, BaseBar, BaseTimeSeries, TimeSeries}
 
+import scala.concurrent.duration.FiniteDuration
+
 trait TimeSeriesMixin { self: Strategy =>
 
-  def timePeriod = self.sessionBarSize
+  def barSize: FiniteDuration = self.sessionBarSize
+
+  // The number of bars in the duration
+  def barCount(duration: FiniteDuration): Int = (duration.toMicros / barSize.toMicros).toInt
 
   var allSeries: Map[String, TimeSeries] = Map.empty
 
-  def getGlobalIndex(micros: Long): Long = micros / (timePeriod.toMillis * 1000)
+  var closePrices: Map[String, ClosePriceIndicator] = Map.empty
+
+  def getPrice(market: Market): FixedSizeD = {
+    val key = priceKey(market.exchange, market.symbol)
+    val indicator = closePrices.getOrElse(key, new ClosePriceIndicator(allSeries(key)))
+    val price = indicator.getValue(indicator.getTimeSeries.getEndIndex).doubleValue()
+    (price, market.symbol)
+  }
+
+  case class PriceIndicator(market: Market) extends Indicator[Double] {
+    override def minBars = 0
+    override def calculate = getPrice(market).num
+    override def name = ???
+    override def parse(str: String, indicatorIndex: Map[String, Indicator[_]]) = ???
+  }
+
+  private def getGlobalIndex(micros: Long): Long = micros / (barSize.toMillis * 1000)
 
   def hasNonZeroClosePrice(bar: Bar): Boolean = {
     var ret = false
@@ -49,14 +72,21 @@ trait TimeSeriesMixin { self: Strategy =>
              price: Double,
              amount: Option[Double] = None)
             (implicit ctx: TradingSession): Unit = {
-    val key = _key(exchange, product)
+    record(priceKey(exchange, product), micros, price, amount)
+  }
+
+  def record(key: String,
+             micros: Long,
+             price: Double,
+             amount: Option[Double] = None)
+            (implicit ctx: TradingSession): Unit = {
     if (!allSeries.isDefinedAt(key)) {
       allSeries += (key ->
         new BaseTimeSeries.SeriesBuilder().withName(key).withMaxBarCount(1000).build())
     }
     val series = allSeries(key)
 
-    val alignedMillis = getGlobalIndex(micros) * timePeriod.toMillis
+    val alignedMillis = getGlobalIndex(micros) * barSize.toMillis
     val zdt = ZonedDateTime.ofInstant(Instant.ofEpochMilli(alignedMillis), ZoneOffset.UTC)
 
     var addedNewBar = false
@@ -76,7 +106,7 @@ trait TimeSeriesMixin { self: Strategy =>
       }
       // Ok, now we can add the new bar.
       addedNewBar = true
-      series.addBar(timePeriod, startingTime.plus(timePeriod))
+      series.addBar(barSize, startingTime.plus(barSize))
     }
 
     // Now we have the correct last bar, add the price or trade.
@@ -91,25 +121,17 @@ trait TimeSeriesMixin { self: Strategy =>
   }
 
   def record(exchange: String,
-             product: Instrument,
-             micros: Long,
-             price: Double,
-             amount: Option[Double])
-            (implicit ctx: TradingSession): Unit =
-    record(exchange, product.toString, micros, price, amount)
-
-  def record(exchange: String,
              product: String,
              candle: Candle)
             (implicit ctx: TradingSession): Unit = {
-    val key = _key(exchange, product)
+    val key = priceKey(exchange, product)
     if (!allSeries.isDefinedAt(key)) {
       allSeries += (key ->
         new BaseTimeSeries.SeriesBuilder().withName(key).withMaxBarCount(1000).build())
     }
     val series = allSeries(key)
 
-    val alignedMillis = getGlobalIndex(candle.micros) * timePeriod.toMillis
+    val alignedMillis = getGlobalIndex(candle.micros) * barSize.toMillis
     val zdt = ZonedDateTime.ofInstant(Instant.ofEpochMilli(alignedMillis), ZoneOffset.UTC)
 
     // Until the last bar exists and accepts the current time, create a new bar.
@@ -126,7 +148,7 @@ trait TimeSeriesMixin { self: Strategy =>
         ctx.send(CandleUpdate(key, barToCandle(lastBar.get)))
       }
       // Ok, now we can add the new bar.
-      series.addBar(timePeriod, startingTime.plus(timePeriod))
+      series.addBar(barSize, startingTime.plus(barSize))
     }
 
     val curBar = series.getLastBar
@@ -152,10 +174,22 @@ trait TimeSeriesMixin { self: Strategy =>
              candle: Candle)
             (implicit ctx: TradingSession): Unit = record(exchange, product.toString, candle)
 
+  def record(exchange: String,
+             product: Instrument,
+             micros: Long,
+             price: Double,
+             amount: Option[Double])
+            (implicit ctx: TradingSession): Unit =
+    record(exchange, product.toString, micros, price, amount)
+
   def series(exchange: String, product: String): Option[TimeSeries] =
-    allSeries.get(_key(exchange, product))
+    allSeries.get(priceKey(exchange, product))
 
   def series(exchange: String, product: Instrument): Option[TimeSeries] = series(exchange, product.toString)
 
-  def _key(exchange: String, product: String): String = s"$exchange.$product"
+  def priceKey(exchange: String, product: String): String = s"price.$exchange.$product"
+
+  def indicatorKey(name: String): String = s"indicator.$name"
+
+//  def calc[T](expr: String)
 }

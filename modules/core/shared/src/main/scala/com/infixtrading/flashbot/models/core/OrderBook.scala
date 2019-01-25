@@ -6,6 +6,7 @@ import com.infixtrading.flashbot.models.core.Order.{Buy, Sell, Side}
 
 import scala.collection.immutable.{Queue, TreeMap}
 import OrderBook._
+import com.infixtrading.flashbot.models.core.FixedSize.FixedSizeD
 import io.circe.{Decoder, Encoder, KeyDecoder, KeyEncoder}
 import io.circe.generic.JsonCodec
 import io.circe.generic.semiauto._
@@ -122,6 +123,11 @@ case class OrderBook(orders: Map[String, Order] = Map.empty,
     val os = idx(o.price.get).filterNot(_ == o)
     if (os.isEmpty) idx - o.price.get else idx + (o.price.get -> os)
   }
+
+  /**
+    * Infers the tick size of the order book by finding the minimum distance between prices.
+    */
+  def tickSize: Double
 }
 
 object OrderBook {

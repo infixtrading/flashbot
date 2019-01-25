@@ -19,6 +19,7 @@ import com.infixtrading.flashbot.report.Report
 
 import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.concurrent.duration._
+import scala.language.postfixOps
 import scala.reflect.ClassTag
 
 /**
@@ -93,13 +94,17 @@ class FlashbotClient(engine: ActorRef, skipTouch: Boolean = false) {
     * Returns a polling stream of live market data.
     * `lookback` specifies the time duration of historical data to prepend to the live data.
     */
-  def pollingMarketDataAsync[T](path: DataPath[T], lookback: Duration = 0.seconds)
+  def pollingMarketDataAsync[T](path: DataPath[T], lookback: Duration = 0 seconds)
       : Future[Source[MarketData[T], NotUsed]] =
     req[StreamResponse[MarketData[T]]](DataStreamReq(
       DataSelection(path, Some(Instant.now.minusMillis(lookback.toMillis).toEpochMilli * 1000))))
     .map(_.toSource)
     .recoverLadder(path,
       pollingMarketDataAsync[OrderBook](path.withType(OrderBookType), lookback))
+
+  def pollingMarketData[T](path: DataPath[T], lookback: Duration = 0 seconds)
+      : Source[MarketData[T], NotUsed] =
+    await(pollingMarketDataAsync(path, lookback))
 
 
   /**
@@ -133,6 +138,12 @@ class FlashbotClient(engine: ActorRef, skipTouch: Boolean = false) {
       allStreamRsps <- Future.sequence(paths.map(singleStream(_: DataPath[T])))
     } yield allStreamRsps.reduce(_.mergeSorted(_)(Ordering.by(_.micros)))
   }
+
+  def historicalMarketData[T](path: DataPath[T],
+                              from: Option[Instant] = None,
+                              to: Option[Instant] = None)
+      : Source[MarketData[T], NotUsed] =
+    await(historicalMarketDataAsync[T](path, from, to))
 
   private def req[T](query: Any)(implicit tag: ClassTag[T]): Future[T] = (engine ? query).mapTo[T]
   private def await[T](fut: Future[T]): T = Await.result[T](fut, timeout.duration)

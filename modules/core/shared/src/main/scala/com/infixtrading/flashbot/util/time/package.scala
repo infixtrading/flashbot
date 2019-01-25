@@ -68,4 +68,11 @@ package object time {
     def microsToInstant: Instant = Instant.ofEpochMilli(micros / 1000)
   }
 
+  implicit def asFiniteDuration(d: java.time.Duration) =
+    scala.concurrent.duration.Duration.fromNanos(d.toNanos)
+
+  implicit def asJavaDuration(d: FiniteDuration) =
+    java.time.Duration.ofNanos(d.toNanos)
+
+
 }
