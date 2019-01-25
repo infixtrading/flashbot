@@ -17,9 +17,7 @@ The main component of Flashbot is the `TradingEngine` actor. It handles things s
 * Managing bots that run in live or paper mode
 * Fault tolerance for strategy exceptions (bots are restored if they crash)
 * Backtests simulate fees and network latency
-* Currency conversions
-* Dashboards, JSON API, CSV exports
-* Alerting
+* Dashboards & alerting
 
 ### Data Server
 Market data servers (the `DataServer` actor) connect to outside data sources such as exchange websockets or 3rd party signals. They persist and serve that data. Here's a list of features:
