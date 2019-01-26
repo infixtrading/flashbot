@@ -127,7 +127,7 @@ case class OrderBook(orders: Map[String, Order] = Map.empty,
   /**
     * Infers the tick size of the order book by finding the minimum distance between prices.
     */
-  def tickSize: Double
+  def tickSize: Double = ???
 }
 
 object OrderBook {

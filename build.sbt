@@ -301,11 +301,7 @@ lazy val flashbot = project
         |import akka.actor.ActorSystem
         |import akka.stream.ActorMaterializer
         |
-        |import com.infixtrading.flashbot._
         |import console.Console
-        |
-        |implicit val system = ActorSystem("console-system") 
-        |implicit val mat = ActorMaterializer()
       """.stripMargin
   )
   .settings(fork in run := true)

@@ -38,7 +38,7 @@ class DataServerSpec extends WordSpecLike with Matchers with Eventually {
       implicit val ec = system.dispatcher
 
       // Create data server actor.
-      implicit val fbConfig = FlashbotConfig.load
+      implicit val fbConfig = FlashbotConfig.load()
       val dataserver = system.actorOf(Props(new DataServer(fbConfig.db,
         // Ingests from a stream that is configured to send data for about 3 seconds.
         Map("bitfinex" -> DataSourceConfig("sources.TestDataSource",
@@ -77,7 +77,7 @@ class DataServerSpec extends WordSpecLike with Matchers with Eventually {
       implicit val ec = system.dispatcher
 
       // Create data server actor.
-      implicit val fbConfig = FlashbotConfig.load
+      implicit val fbConfig = FlashbotConfig.load()
       val dataserver = system.actorOf(Props(new DataServer(fbConfig.db,
         Map("bitfinex" -> DataSourceConfig("sources.TestLadderDataSource",
           Some(Seq("btc_usd")), Some(Seq("ladder")))),
@@ -107,7 +107,7 @@ class DataServerSpec extends WordSpecLike with Matchers with Eventually {
       */
     "ingest and backfill trades" in {
 
-      implicit val config = FlashbotConfig.load.copy(
+      implicit val config = FlashbotConfig.load().copy(
         ingest = IngestConfig(
           enabled = Seq("bitfinex/btc_usd/trades"),
           backfill = Seq("bitfinex/btc_usd/trades"),

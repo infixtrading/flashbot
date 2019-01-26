@@ -25,11 +25,11 @@ class TimeSeriesStrategy extends Strategy with TimeSeriesMixin {
 
     case trade: Trade =>
       Metrics.inc("time_series_strategy_data_count")
-      record(marketData.source, marketData.topic, marketData.micros, trade.price, Some(trade.size))
+      observePrice(marketData.source, marketData.topic, marketData.micros, trade.price, Some(trade.size))
 
     case data: Priced =>
       Metrics.inc("time_series_strategy_data_count")
-      record(marketData.source, marketData.topic, marketData.micros, data.price)
+      observePrice(marketData.source, marketData.topic, marketData.micros, data.price)
 
     case x => // Ignore non-priced data
   }

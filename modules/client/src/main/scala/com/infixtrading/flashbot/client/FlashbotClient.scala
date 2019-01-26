@@ -51,7 +51,7 @@ class FlashbotClient(engine: ActorRef, skipTouch: Boolean = false) {
     * `true` because the touch already happened.
     */
   def this(path: ActorPath)(implicit system: ActorSystem) = {
-    this(await[ActorRef](tradingEngineRef(path)), skipTouch = true)
+    this(Await.result[ActorRef](tradingEngineRef(path), timeout.duration), skipTouch = true)
   }
 
   // A single-thread ExecutionContext for this client instance so that we can provide

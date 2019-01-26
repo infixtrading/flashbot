@@ -49,12 +49,12 @@ class TradingEngineSpec extends WordSpecLike
 
   override def afterAll() = {
     // Delete the engine root
-    rmRf(new File(FlashbotConfig.load.`engine-root`))
+    rmRf(new File(FlashbotConfig.load().`engine-root`))
   }
 
   "TradingEngine" should {
     "respond to a ping" in {
-      val config = FlashbotConfig.load
+      val config = FlashbotConfig.load()
       val system = ActorSystem("System1", config.conf)
 
       val dataServer = system.actorOf(DataServer.props(config))
@@ -81,7 +81,7 @@ class TradingEngineSpec extends WordSpecLike
     }
 
     "respect bot TTL" in {
-      val config = FlashbotConfig.load
+      val config = FlashbotConfig.load()
       val system = ActorSystem("System1", config.conf)
 
       val engine = system.actorOf(TradingEngine.props("test-engine"))
@@ -128,7 +128,7 @@ class TradingEngineSpec extends WordSpecLike
       */
     "subscribe to the report of a running bot" in {
 
-      val config = FlashbotConfig.load
+      val config = FlashbotConfig.load()
       implicit val system = ActorSystem("System1", config.conf)
 
       val engine = system.actorOf(TradingEngine.props("test-engine"))
@@ -165,7 +165,7 @@ class TradingEngineSpec extends WordSpecLike
     }
 
     "enable static bots" in {
-      val config = FlashbotConfig.load.copy(bots = StaticBotsConfig(
+      val config = FlashbotConfig.load().copy(bots = StaticBotsConfig(
         enabled = Seq("scanner1"),
         configs = Map(
           "scanner1" -> BotConfig("candlescanner", Paper()),
@@ -184,7 +184,7 @@ class TradingEngineSpec extends WordSpecLike
 
     "be profitable when using lookahead" in {
 
-      val config = FlashbotConfig.load
+      val config = FlashbotConfig.load()
       implicit val system = ActorSystem("System1", config.conf)
 
       val now = Instant.now()

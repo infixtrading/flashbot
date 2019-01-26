@@ -1,6 +1,6 @@
 package examples
 
-import akka.actor.ActorSystem
+import akka.actor.{ActorRef, ActorSystem}
 import akka.stream.ActorMaterializer
 import akka.util.Timeout
 import com.infixtrading.flashbot.client.FlashbotClient
@@ -13,7 +13,7 @@ import scala.language.postfixOps
 
 object BacktestExample extends App {
   // Load config
-  val config = FlashbotConfig.load
+  val config = FlashbotConfig.load()
 
   // Create the actor system and trading engine
   implicit val system = ActorSystem("example-system", config.conf)

@@ -13,7 +13,7 @@ import scala.language.postfixOps
 
 object MarketDataDashboard extends App {
   // Load config
-  val config = FlashbotConfig.load
+  val config = FlashbotConfig.load()
 
   // Create the actor system and trading engine
   implicit val system = ActorSystem("example-system", config.conf)

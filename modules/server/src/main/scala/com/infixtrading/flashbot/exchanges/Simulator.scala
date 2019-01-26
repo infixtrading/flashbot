@@ -186,20 +186,22 @@ class Simulator(base: Exchange, latencyMicros: Long = 0) extends Exchange {
         */
       case Some(Candle(micros, open, high, low, close, volume)) =>
         val topic = data.get.topic
-        val matchedAsks: Stream[Order] =
-          myOrders(topic).asks.index.toStream.takeWhile(_._1 < high).flatMap(_._2)
-        val matchedBids: Stream[Order] =
-          myOrders(topic).bids.index.toStream.takeWhile(_._1 > low).flatMap(_._2)
-        (matchedAsks ++ matchedBids).foreach { order =>
-          // Remove order from private book
-          myOrders = myOrders + (topic -> myOrders(topic).done(order.id))
+        if (myOrders.isDefinedAt(topic)) {
+          val matchedAsks: Stream[Order] =
+            myOrders(topic).asks.index.toStream.takeWhile(_._1 < high).flatMap(_._2)
+          val matchedBids: Stream[Order] =
+            myOrders(topic).bids.index.toStream.takeWhile(_._1 > low).flatMap(_._2)
+          (matchedAsks ++ matchedBids).foreach { order =>
+            // Remove order from private book
+            myOrders = myOrders + (topic -> myOrders(topic).done(order.id))
 
-          // Emit OrderDone event
-          events :+= OrderDone(order.id, topic, order.side, Filled, order.price, Some(0))
+            // Emit OrderDone event
+            events :+= OrderDone(order.id, topic, order.side, Filled, order.price, Some(0))
 
-          // Emit the fill
-          fills :+= Fill(order.id, Some("t_" + order.id), makerFee, topic, order.price.get,
-            order.amount, micros, Maker, order.side)
+            // Emit the fill
+            fills :+= Fill(order.id, Some("t_" + order.id), makerFee, topic, order.price.get,
+              order.amount, micros, Maker, order.side)
+          }
         }
 
       case _ =>

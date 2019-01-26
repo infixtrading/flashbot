@@ -706,7 +706,7 @@ class TradingEngine(engineId: String,
 
 object TradingEngine {
 
-  def props(name: String): Props = props(name, FlashbotConfig.load)
+  def props(name: String): Props = props(name, FlashbotConfig.load())
 
   def props(name: String, config: FlashbotConfig): Props =
     Props(new TradingEngine(name, config.strategies, config.exchanges,

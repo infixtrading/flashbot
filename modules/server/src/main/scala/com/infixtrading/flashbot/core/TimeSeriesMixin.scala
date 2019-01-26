@@ -66,23 +66,20 @@ trait TimeSeriesMixin { self: Strategy =>
       bar.getVolume.getDelegate.doubleValue())
   }
 
-  def record(key: String, micros: Long, value: Double)(implicit ctx: TradingSession): Unit =
-    record(key, micros, value, None)
+  def observeIndicator(key: String, micros: Long, value: Double)(implicit ctx: TradingSession): Unit =
+    observePrice(indicatorKey(key), micros, value, None)
 
-  def record(exchange: String,
-             product: String,
-             micros: Long,
-             price: Double,
-             amount: Option[Double] = None)
-            (implicit ctx: TradingSession): Unit = {
-    record(priceKey(exchange, product), micros, price, amount)
+  def observePrice(exchange: String,
+                   product: String,
+                   micros: Long,
+                   price: Double,
+                   amount: Option[Double] = None)
+                  (implicit ctx: TradingSession): Unit = {
+    observePrice(priceKey(exchange, product), micros, price, amount)
   }
 
-  def record(key: String,
-             micros: Long,
-             price: Double,
-             amount: Option[Double] = None)
-            (implicit ctx: TradingSession): Unit = {
+  def observePrice(key: String, micros: Long, price: Double, amount: Option[Double])
+                  (implicit ctx: TradingSession): Unit = {
     if (!allSeries.isDefinedAt(key)) {
       allSeries += (key ->
         new BaseTimeSeries.SeriesBuilder().withName(key).withMaxBarCount(1000).build())
@@ -183,7 +180,7 @@ trait TimeSeriesMixin { self: Strategy =>
              price: Double,
              amount: Option[Double])
             (implicit ctx: TradingSession): Unit =
-    record(exchange, product.toString, micros, price, amount)
+    observePrice(exchange, product.toString, micros, price, amount)
 
   def series(exchange: String, product: String): Option[TimeSeries] =
     allSeries.get(priceKey(exchange, product))

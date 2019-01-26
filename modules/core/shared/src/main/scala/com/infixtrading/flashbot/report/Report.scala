@@ -16,7 +16,7 @@ import scala.concurrent.duration._
 
 case class Report(strategy: String,
                   params: Json,
-                  barSize: Duration,
+                  barSize: FiniteDuration,
                   trades: Vector[TradeEvent],
                   collections: Map[String, Vector[Json]],
                   timeSeries: Map[String, Vector[Candle]],
@@ -169,7 +169,7 @@ object Report {
 
   def empty(strategyName: String,
             params: Json,
-            barSize: Option[Duration] = None): Report = Report(
+            barSize: Option[FiniteDuration] = None): Report = Report(
     strategyName,
     params,
     barSize.getOrElse(1 hour),

@@ -51,7 +51,7 @@ object FlashbotConfig {
   case class BotConfig(strategy: String,
                        mode: TradingSessionMode,
                        params: Json = Json.obj(),
-                       ttl: Duration = DefaultTTL,
+                       ttl: FiniteDuration = DefaultTTL,
                        `initial-assets`: Map[String, Double] = Map.empty,
                        `initial-positions`: Map[String, Position] = Map.empty) {
     def ttlOpt: Option[Duration] = ttl match {

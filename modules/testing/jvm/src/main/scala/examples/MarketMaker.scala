@@ -71,7 +71,7 @@ class MarketMaker extends Strategy with TimeSeriesMixin {
       *      available for analysis and graphing.
       */
     case trade: Trade =>
-      record(params.exchange, params.market, md.micros, trade.price, Some(trade.size))
+      observePrice(params.exchange, params.market, md.micros, trade.price, Some(trade.size))
 
     /**
       * Calculate and submit the intended quotes when there is new OrderBook data.
@@ -85,7 +85,7 @@ class MarketMaker extends Strategy with TimeSeriesMixin {
 
       // Record the computed fair price value to a time series so that it's available
       // on dashboards.
-      record("fair_price", md.micros, fairPrice)
+      observeIndicator("fair_price", md.micros, fairPrice)
 
       // Calculate the best ask price in the book. We will not bid above it.
       val bestAskPrice = book.asks.index.head._1

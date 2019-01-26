@@ -49,7 +49,7 @@ object DataServer {
 
   case class RemoteServerTerminated(ref: ActorRef)
 
-  def props: Props = props(FlashbotConfig.load)
+  def props: Props = props(FlashbotConfig.load())
   def props(config: FlashbotConfig): Props = {
     Props(new DataServer(
       config.db,

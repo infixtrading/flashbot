@@ -19,7 +19,7 @@ import scala.util.{Failure, Success}
 
 object CoinbaseIngest extends App {
 
-  implicit val config = FlashbotConfig.load.copy(
+  implicit val config = FlashbotConfig.load().copy(
     ingest = IngestConfig(
 //      enabled = Seq("coinbase/btc_usd/trades"),
 //      enabled = Seq("coinbase/btc_usd/book"),

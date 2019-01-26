@@ -124,7 +124,7 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
         strategy.buffer = new VarBuffer(initialReport.values.mapValues(_.value))
 
         // Set the bar size
-        strategy.sessionBarSize = java.time.Duration.ofSeconds(initialReport.barSize.toSeconds)
+        strategy.sessionBarSize = initialReport.barSize
 
         // Load params
         strategy.loadParams(strategyParams)
