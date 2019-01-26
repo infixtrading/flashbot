@@ -298,12 +298,6 @@ lazy val flashbot = project
         |import scala.concurrent.Future 
         |import scala.concurrent.duration._
         |
-        |import io.circe._
-        |import io.circe.generic.auto._
-        |import io.circe.literal._
-        |import io.circe.parser._
-        |import io.circe.syntax._
-        |
         |import akka.actor.ActorSystem
         |import akka.stream.ActorMaterializer
         |
@@ -412,7 +406,6 @@ lazy val server = flashbotModule("server", previousFBVersion).settings(
 
       "com.typesafe.slick" %% "slick" % "3.2.3",
       "com.typesafe.slick" %% "slick-hikaricp" % "3.2.3",
-//      "com.zaxxer" % "HikariCP" % "3.3.0",
       "com.lightbend.akka" %% "akka-stream-alpakka-slick" % "1.0-M2",
       "com.h2database" % "h2" % "1.4.192",
       "org.postgresql" % "postgresql" % "42.2.5"

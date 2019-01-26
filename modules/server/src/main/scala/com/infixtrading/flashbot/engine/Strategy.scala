@@ -76,7 +76,7 @@ abstract class Strategy {
   def limitOrder(market: Market,
                  size: FixedSizeD,
                  price: Double,
-                 key: String = DEFAULT,
+                 key: String,
                  postOnly: Boolean = false)
                 (implicit ctx: TradingSession): String = {
     val target = OrderTarget(

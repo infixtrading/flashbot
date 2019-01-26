@@ -29,10 +29,12 @@ class MarketMaker extends Strategy with TimeSeriesMixin {
     * @param layerSpacing the distance in quote currency between each quote.
     */
   case class Params(exchange: String, market: String, fairPriceIndicator: String,
-                    layersCount: Int, layerSpacing: Double, readjustInterval: String)
+                    layersCount: Int, layerSpacing: Double, readjustInterval: String,
+                    quoteSize: Double)
 
-  lazy val closePrice = new ClosePriceIndicator(series(params.exchange, params.market).get)
+  // Declare the indicators which may be selected for the "fair price" value.
   lazy val vwap = new VWAPIndicator(series(params.exchange, params.market).get, 7)
+  lazy val closePrice = new ClosePriceIndicator(series(params.exchange, params.market).get)
   lazy val sma7 = new SMAIndicator(closePrice, 7)
   lazy val sma14 = new SMAIndicator(closePrice, 14)
 
@@ -42,7 +44,7 @@ class MarketMaker extends Strategy with TimeSeriesMixin {
     case "sma14" => sma14.getValue(sma14.getTimeSeries.getEndIndex).doubleValue()
   }
 
-  // Automatically derive the JSON decoder.
+  // Automatically derive the `Params` JSON decoder.
   override def paramsDecoder = deriveDecoder[Params]
 
   /**
@@ -72,7 +74,7 @@ class MarketMaker extends Strategy with TimeSeriesMixin {
       record(params.exchange, params.market, md.micros, trade.price, Some(trade.size))
 
     /**
-      * Calculate our intended quotes when there is new OrderBook data.
+      * Calculate and submit the intended quotes when there is new OrderBook data.
       */
     case book: OrderBook =>
       // Infer the tick size if we haven't already.
@@ -81,15 +83,36 @@ class MarketMaker extends Strategy with TimeSeriesMixin {
       // Calculate the fair price which we will quote around.
       val fairPrice = fairPriceValue()
 
-      // Record the computed fair price value to it's own time series so that it's
-      // available on dashboards.
+      // Record the computed fair price value to a time series so that it's available
+      // on dashboards.
       record("fair_price", md.micros, fairPrice)
+
+      // Calculate the best ask price in the book. We will not bid above it.
+      val bestAskPrice = book.asks.index.head._1
+
+      // Calculate the best bid price in the book. We will not ask below it.
+      val bestBidPrice = book.bids.index.head._1
 
       // Declare at most `layersCount` number of quotes on each side.
       val instrument = ctx.instruments(params.market)
       for (i <- 1 to params.layersCount) {
+        // Calculate the target ask price for the `i`th level.
         val targetAskPrice: Double = fairPrice + (i * params.layerSpacing)
-        limitOrder(params.market, (params.layerSpacing, instrument.quote), ???)
+
+        // Declare the limit order if the target ask price is above the best bid.
+        if (targetAskPrice > bestBidPrice) {
+          limitOrder(params.market, (params.quoteSize, instrument.quote), targetAskPrice,
+            s"ask_$i", postOnly = true)
+        }
+
+        // Calculate the target bid price for the `i`th level.
+        val targetBidPrice: Double = fairPrice - (i * params.layerSpacing)
+
+        // Declare the limit order if the target bid price is below the best ask.
+        if (targetBidPrice < bestAskPrice) {
+          limitOrder(params.market, (params.quoteSize, instrument.quote), targetBidPrice,
+            s"bid_$i", postOnly = true)
+        }
       }
   }
 }

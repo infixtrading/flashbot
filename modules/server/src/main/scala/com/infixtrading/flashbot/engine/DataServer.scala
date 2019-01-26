@@ -50,22 +50,19 @@ object DataServer {
   case class RemoteServerTerminated(ref: ActorRef)
 
   def props: Props = props(FlashbotConfig.load)
-  def props(config: FlashbotConfig): Props = props(config, useCluster = false)
-  def props(config: FlashbotConfig, useCluster: Boolean): Props = {
+  def props(config: FlashbotConfig): Props = {
     Props(new DataServer(
       config.db,
       config.sources,
       config.exchanges,
-      ingestConfig = config.ingest,
-      useCluster = useCluster))
+      ingestConfig = config.ingest))
   }
 }
 
 class DataServer(dbConfig: Config,
                  configs: Map[String, DataSourceConfig],
                  exchangeConfigs: Map[String, ExchangeConfig],
-                 ingestConfig: IngestConfig,
-                 useCluster: Boolean) extends Actor with ActorLogging {
+                 ingestConfig: IngestConfig) extends Actor with ActorLogging {
   import DataServer._
 
   implicit val system = context.system
@@ -77,7 +74,8 @@ class DataServer(dbConfig: Config,
   implicit val slickSession = SlickSession.forConfig(dbConfig)
 
   // Subscribe to cluster MemberUp events to register ourselves with all other data servers.
-  val cluster: Option[Cluster] = if (useCluster) Some(Cluster(context.system)) else None
+  val cluster: Option[Cluster] =
+    if (context.system.hasExtension(Cluster)) Some(Cluster(context.system)) else None
   override def preStart() = {
     if (cluster.isDefined) {
       cluster.get.subscribe(self, initialStateMode = InitialStateAsEvents, classOf[MemberUp])

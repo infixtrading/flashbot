@@ -4,7 +4,7 @@ import com.infixtrading.flashbot.models.core.Ladder.ladderFillOrder
 import com.infixtrading.flashbot.models.core.Order._
 import com.infixtrading.flashbot.core._
 import com.infixtrading.flashbot.engine.TradingSession
-import com.infixtrading.flashbot.models.core.{Ladder, Order, OrderBook}
+import com.infixtrading.flashbot.models.core.{Candle, Ladder, Order, OrderBook}
 
 import scala.collection.immutable.Queue
 
@@ -27,6 +27,7 @@ class Simulator(base: Exchange, latencyMicros: Long = 0) extends Exchange {
 
   private var myOrders = Map.empty[String, OrderBook]
 
+  private var books = Map.empty[String, OrderBook]
   private var depths = Map.empty[String, Ladder]
   private var prices = Map.empty[String, Double]
 
@@ -124,14 +125,19 @@ class Simulator(base: Exchange, latencyMicros: Long = 0) extends Exchange {
     // Update latest depth/pricing data.
     data.map(_.data) match {
       case Some(book: OrderBook) =>
-        // TODO: Turn aggregate full order books into aggregate depths here
-        ???
+        books = books + (data.get.topic -> book)
+
       case Some(ladder: Ladder) =>
         depths = depths + (data.get.topic -> ladder)
 
       case Some(p: Priced) =>
         prices = prices + (data.get.topic -> p.price)
 
+      case _ =>
+    }
+
+    // Generate fills
+    data.map(_.data) match {
       /**
         * Match trades against the aggregate book. This is a pretty naive matching strategy.
         * We should use a more precise matching engine for full order books. Also, this mutates
@@ -142,14 +148,14 @@ class Simulator(base: Exchange, latencyMicros: Long = 0) extends Exchange {
         // First simulate fills on the aggregate book. Remove the associated liquidity from
         // the depths.
         val simulatedFills =
-          ladderFillOrder(depths(topic), trade.direction.takerSide, Some(trade.size), None)
+        ladderFillOrder(depths(topic), trade.direction.takerSide, Some(trade.size), None)
         simulatedFills.foreach { case (fillPrice, fillAmount) =>
-            depths = depths + (topic -> depths(topic).updateLevel(
-              trade.direction match {
-                case Up => Ask
-                case Down => Bid
-              }, fillPrice, depths(topic).quantityAtPrice(fillPrice).get - fillAmount
-            ))
+          depths = depths + (topic -> depths(topic).updateLevel(
+            trade.direction match {
+              case Up => Ask
+              case Down => Bid
+            }, fillPrice, depths(topic).quantityAtPrice(fillPrice).get - fillAmount
+          ))
         }
 
         // Then use the fills to determine if any of our orders would have executed.
@@ -173,6 +179,29 @@ class Simulator(base: Exchange, latencyMicros: Long = 0) extends Exchange {
               order.amount, trade.micros, Maker, order.side)
           }
         }
+
+      /**
+        * When candle data comes in, we check if the high has crossed over any of our ask
+        * orders or if the low has crossed any of our bids. If so, fill those orders.
+        */
+      case Some(Candle(micros, open, high, low, close, volume)) =>
+        val topic = data.get.topic
+        val matchedAsks: Stream[Order] =
+          myOrders(topic).asks.index.toStream.takeWhile(_._1 < high).flatMap(_._2)
+        val matchedBids: Stream[Order] =
+          myOrders(topic).bids.index.toStream.takeWhile(_._1 > low).flatMap(_._2)
+        (matchedAsks ++ matchedBids).foreach { order =>
+          // Remove order from private book
+          myOrders = myOrders + (topic -> myOrders(topic).done(order.id))
+
+          // Emit OrderDone event
+          events :+= OrderDone(order.id, topic, order.side, Filled, order.price, Some(0))
+
+          // Emit the fill
+          fills :+= Fill(order.id, Some("t_" + order.id), makerFee, topic, order.price.get,
+            order.amount, micros, Maker, order.side)
+        }
+
       case _ =>
     }
 

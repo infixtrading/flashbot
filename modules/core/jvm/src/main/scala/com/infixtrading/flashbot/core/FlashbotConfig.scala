@@ -73,18 +73,23 @@ object FlashbotConfig {
 
   case class GrafanaConfig(port: Int)
 
-  def tryLoad: Try[FlashbotConfig] = {
+  def tryLoad(configKey: String, standalone: Boolean): Try[FlashbotConfig] = {
     val overrides = ConfigFactory.defaultOverrides()
-    val apps = ConfigFactory.parseResources("application.conf")
+    val apps = ConfigFactory.parseResources("application.conf").getConfig(configKey).atKey("flashbot")
     val refs = ConfigFactory.parseResources("reference.conf")
+
+    var fbAkkaConf = refs.getConfig("flashbot").withOnlyPath("akka")
+    if (!standalone) {
+      fbAkkaConf = refs.getConfig("flashbot.akka-cluster").atKey("akka").withFallback(fbAkkaConf)
+    }
 
     var conf = overrides
       // Initial fallback is to `application.conf`
       .withFallback(apps)
       // We want `flashbot.akka` reference to override `akka` reference.
-      .withFallback(refs.getConfig("flashbot").withOnlyPath("akka"))
+      .withFallback(fbAkkaConf)
       // Then we fallback to default references.
-      .withFallback(refs.withoutPath("flashbot.akka"))
+      .withFallback(refs.withoutPath("flashbot.akka").withoutPath("flashbot.akka-cluster"))
       // Finally, resolve.
       .resolve()
 
@@ -98,5 +103,9 @@ object FlashbotConfig {
     // Decode into a FlashbotConfig
     conf.getConfig("flashbot").as[FlashbotConfig].toTry
   }
-  def load: FlashbotConfig = tryLoad.get
+  def load(configKey: String = "flashbot"): FlashbotConfig =
+    tryLoad(configKey, standalone = false).get
+
+  def loadStandalone(configKey: String = "flashbot"): FlashbotConfig =
+    tryLoad(configKey, standalone = true).get
 }

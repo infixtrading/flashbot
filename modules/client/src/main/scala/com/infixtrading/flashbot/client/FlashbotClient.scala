@@ -4,20 +4,21 @@ import java.time.Instant
 import java.util.concurrent.Executors
 
 import akka.{Done, NotUsed}
-import akka.actor.ActorRef
-import akka.pattern.ask
+import akka.actor.{Actor, ActorPath, ActorRef, ActorSystem, Props}
+import akka.pattern.{ask, pipe}
 import akka.stream.scaladsl.{Flow, Source}
 import akka.util.Timeout
 import com.infixtrading.flashbot.core.DataType.{LadderType, OrderBookType}
 import com.infixtrading.flashbot.core.FlashbotConfig.BotConfig
-import com.infixtrading.flashbot.core.{DataType, MarketData, Priced}
+import com.infixtrading.flashbot.core.{MarketData, Priced}
 import com.infixtrading.flashbot.engine.{NetworkSource, StreamResponse}
 import com.infixtrading.flashbot.models.api._
 import com.infixtrading.flashbot.util._
 import com.infixtrading.flashbot.models.core._
 import com.infixtrading.flashbot.report.Report
+import com.infixtrading.flashbot.client.FlashbotClient._
 
-import scala.concurrent.{Await, ExecutionContext, Future}
+import scala.concurrent._
 import scala.concurrent.duration._
 import scala.language.postfixOps
 import scala.reflect.ClassTag
@@ -44,13 +45,20 @@ import scala.reflect.ClassTag
   */
 class FlashbotClient(engine: ActorRef, skipTouch: Boolean = false) {
 
+  /**
+    * Alternative constructor for when the ActorRef is not available. This blocks on a ping
+    * to the given actor path to retreive the ActorRef of the engine. `skipTouch` is set to
+    * `true` because the touch already happened.
+    */
+  def this(path: ActorPath)(implicit system: ActorSystem) = {
+    this(await[ActorRef](tradingEngineRef(path)), skipTouch = true)
+  }
+
   // A single-thread ExecutionContext for this client instance so that we can provide
   // synchronous, blocking versions of API methods without requiring an ExecutionContext
   // instance from the user.
   implicit val blockingEc: ExecutionContext =
     ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
-
-  implicit val timeout: Timeout = Timeout(10.seconds)
 
   // This blocks on a ping from the server. This is useful when the client is created immediately
   // after the engine actor is. We will usually want to wait for the engine to initialize before
@@ -162,5 +170,34 @@ class FlashbotClient(engine: ActorRef, skipTouch: Boolean = false) {
         case _ => future
       }
   }
+}
 
+object FlashbotClient {
+
+  implicit val timeout: Timeout = Timeout(10.seconds)
+
+  /**
+    * A lightweight actor that collects ActorRefs of TradingEngine actors in the system.
+    */
+  class EngineCollector extends Actor {
+    implicit val ec: ExecutionContext = context.system.dispatcher
+    val refPromise = Promise[ActorRef]
+    override def receive = {
+      case Pong(_) =>
+        if (!refPromise.isCompleted)
+          refPromise.success(sender)
+      case GetSender(path) =>
+        context.actorSelection(path) ! Ping
+        (refPromise.future pipeTo sender) andThen {
+          case _ => context.stop(self)
+        }
+    }
+  }
+
+  case class GetSender(path: ActorPath)
+
+  def tradingEngineRef(path: ActorPath)(implicit system: ActorSystem): Future[ActorRef] = {
+    val collector = system.actorOf(Props[EngineCollector])
+    (collector ? GetSender(path)).mapTo[ActorRef]
+  }
 }

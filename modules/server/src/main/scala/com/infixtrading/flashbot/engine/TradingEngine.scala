@@ -4,7 +4,9 @@ import java.time.Instant
 import java.util.concurrent.Executors
 
 import akka.Done
-import akka.actor.{ActorLogging, ActorRef, ActorSystem, PoisonPill, Props, Status}
+import akka.actor.{ActorLogging, ActorRef, ActorSystem, PoisonPill, Props, RootActorPath, Status}
+import akka.cluster.Cluster
+import akka.cluster.ClusterEvent.{InitialStateAsEvents, MemberUp}
 import akka.http.scaladsl.Http
 import akka.pattern.{ask, pipe}
 import akka.persistence._
@@ -100,6 +102,19 @@ class TradingEngine(engineId: String,
     "localhost", grafana.port)
 
   self ! BootEvents(bootEvents)
+
+  // Subscribe to cluster MemberUp events to register ourselves with newly connected clients.
+  val cluster: Option[Cluster] =
+    if (context.system.hasExtension(Cluster)) Some(Cluster(context.system)) else None
+
+  override def preStart() = {
+    if (cluster.isDefined) {
+      cluster.get.subscribe(self, initialStateMode = InitialStateAsEvents, classOf[MemberUp])
+    }
+  }
+  override def postStop() = {
+    if (cluster.isDefined) cluster.get.unsubscribe(self)
+  }
 
   def startEngine: Future[(EngineStarted, Seq[TradingEngineEvent])] = {
     implicit val loader = new SessionLoader(getExchangeConfigs, dataServer)

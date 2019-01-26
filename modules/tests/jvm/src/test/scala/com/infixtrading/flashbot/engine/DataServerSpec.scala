@@ -44,8 +44,7 @@ class DataServerSpec extends WordSpecLike with Matchers with Eventually {
         Map("bitfinex" -> DataSourceConfig("sources.TestDataSource",
           Some(Seq("btc_usd")), Some(Seq("trades")))),
         fbConfig.exchanges,
-        IngestConfig(Seq("bitfinex/btc_usd/trades"), Seq(), Seq(Seq())),
-        useCluster = false
+        IngestConfig(Seq("bitfinex/btc_usd/trades"), Seq(), Seq(Seq()))
       )))
 
       // Ingest for 2 second with no subscriptions.
@@ -83,8 +82,7 @@ class DataServerSpec extends WordSpecLike with Matchers with Eventually {
         Map("bitfinex" -> DataSourceConfig("sources.TestLadderDataSource",
           Some(Seq("btc_usd")), Some(Seq("ladder")))),
         fbConfig.exchanges,
-        IngestConfig(Seq("bitfinex/btc_usd/ladder"), Seq(), Seq(Seq())),
-        useCluster = false
+        IngestConfig(Seq("bitfinex/btc_usd/ladder"), Seq(), Seq(Seq()))
       )))
 
       // Ingest for 2 second with no subscriptions.
