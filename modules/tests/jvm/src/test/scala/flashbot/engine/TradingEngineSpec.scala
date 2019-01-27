@@ -4,31 +4,22 @@ import java.io.File
 import java.time.Instant
 import java.util.{Date, TimeZone}
 
-import akka.Done
 import akka.actor.{ActorSystem, Props}
 import akka.pattern.ask
 import akka.stream.ActorMaterializer
 import akka.stream.scaladsl.Sink
-import akka.testkit.{ImplicitSender, TestKit}
 import akka.util.Timeout
 import flashbot.core._
 import flashbot.config._
-import flashbot.util.{files, time}
+import flashbot.util.time
 import flashbot.models.api._
 import flashbot.report.Report
 import flashbot.util.files.rmRf
-import de.sciss.chart.api._
 import flashbot.client.FlashbotClient
 import flashbot.models.core.Order._
 import flashbot.models.core._
-import io.circe.{Json, Printer}
-import io.circe.literal._
+import io.circe.Printer
 import io.circe.syntax._
-import io.circe.syntax._
-import org.jfree.chart.ChartFactory
-import org.jfree.chart.plot.PlotOrientation
-import org.jfree.chart.renderer.xy.{CandlestickRenderer, StandardXYBarPainter, XYBarRenderer}
-import org.jfree.data.statistics.{HistogramDataset, HistogramType}
 import org.jfree.data.time._
 import org.jfree.data.time.ohlc.{OHLCSeries, OHLCSeriesCollection}
 import org.scalatest.{BeforeAndAfterAll, FlatSpec, Matchers, WordSpecLike}
@@ -239,33 +230,33 @@ class TradingEngineSpec extends WordSpecLike
 //      priceCollection.addSeries(buildCandleSeries(report, "local.equity_usd"))
 //      priceCollection.addSeries(buildCandleSeries(report, "local.eth"))
 
-      val chart = ChartFactory.createCandlestickChart("Look-ahead Report", "Time",
-        "Price", priceCollection, true)
+//      val chart = ChartFactory.createCandlestickChart("Look-ahead Report", "Time",
+//        "Price", priceCollection, true)
 
-      val renderer = new CandlestickRenderer
-      renderer.setAutoWidthMethod(CandlestickRenderer.WIDTHMETHOD_SMALLEST)
-
-      val plot = chart.getXYPlot
-      plot.setRenderer(renderer)
-
-
-      val histogramData = new HistogramDataset()
-      histogramData.setType(HistogramType.RELATIVE_FREQUENCY)
-
-      val returns = report.collections("fill_size").map(_.as[Double].right.get)
-      histogramData.addSeries("Fill Size", returns.toArray, 40)
-
-      val histogram = ChartFactory.createHistogram("Fill Size", "Size", "# of trades",
-        histogramData, PlotOrientation.VERTICAL, true, true, false)
-
-      val hPlot = histogram.getXYPlot
-      hPlot.setForegroundAlpha(0.85f)
-      val yaxis = hPlot.getRangeAxis
-      yaxis.setAutoTickUnitSelection(true)
-      val xyRenderer = hPlot.getRenderer.asInstanceOf[XYBarRenderer]
-      xyRenderer.setDrawBarOutline(false)
-      xyRenderer.setBarPainter(new StandardXYBarPainter)
-      xyRenderer.setShadowVisible(false)
+//      val renderer = new CandlestickRenderer
+//      renderer.setAutoWidthMethod(CandlestickRenderer.WIDTHMETHOD_SMALLEST)
+//
+//      val plot = chart.getXYPlot
+//      plot.setRenderer(renderer)
+//
+//
+//      val histogramData = new HistogramDataset()
+//      histogramData.setType(HistogramType.RELATIVE_FREQUENCY)
+//
+//      val returns = report.collections("fill_size").map(_.as[Double].right.get)
+//      histogramData.addSeries("Fill Size", returns.toArray, 40)
+//
+//      val histogram = ChartFactory.createHistogram("Fill Size", "Size", "# of trades",
+//        histogramData, PlotOrientation.VERTICAL, true, true, false)
+//
+//      val hPlot = histogram.getXYPlot
+//      hPlot.setForegroundAlpha(0.85f)
+//      val yaxis = hPlot.getRangeAxis
+//      yaxis.setAutoTickUnitSelection(true)
+//      val xyRenderer = hPlot.getRenderer.asInstanceOf[XYBarRenderer]
+//      xyRenderer.setDrawBarOutline(false)
+//      xyRenderer.setBarPainter(new StandardXYBarPainter)
+//      xyRenderer.setShadowVisible(false)
 
 //      chart.setAntiAlias(true)
 
@@ -280,15 +271,15 @@ class TradingEngineSpec extends WordSpecLike
 //      frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE)
 
 
-      val mydata = for {
-        bp <- report.collections("all/equity").map(_.as[BalancePoint].right.get)
-      } yield (bp.micros, bp.balance)
+//      val mydata = for {
+//        bp <- report.collections("all/equity").map(_.as[BalancePoint].right.get)
+//      } yield (bp.micros, bp.balance)
+//
+//      val priceData =
+//        for(price <- report.timeSeries("local.price.bitfinex.eth_usd").dropRight(1))
+//        yield (price.micros / 1000, price.close)
 
-      val priceData =
-        for(price <- report.timeSeries("local.price.bitfinex.eth_usd").dropRight(1))
-        yield (price.micros / 1000, price.close)
-
-      val mychart = XYLineChart(mydata)
+//      val mychart = XYLineChart(mydata)
 
 
 //      mychart.show("Equity")
