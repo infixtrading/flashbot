@@ -4,12 +4,12 @@ import java.util.concurrent.Executors
 
 import akka.actor.ActorSystem
 import akka.stream.ActorMaterializer
-import com.infixtrading.flashbot.client.FlashbotClient
-import com.infixtrading.flashbot.core.FlashbotConfig
-import com.infixtrading.flashbot.util.time._
-import com.infixtrading.flashbot.core.FlashbotConfig.IngestConfig
-import com.infixtrading.flashbot.engine.{DataServer, TradingEngine}
-import com.infixtrading.flashbot.models.core.{OrderBook, TimeRange}
+import flashbot.client.FlashbotClient
+import flashbot.util.time._
+import flashbot.core._
+import flashbot.config._
+import flashbot.engine.{DataServer, TradingEngine}
+import flashbot.models.core.OrderBook
 import io.prometheus.client.exporter.HTTPServer
 
 import scala.concurrent.{Await, ExecutionContext, Future}

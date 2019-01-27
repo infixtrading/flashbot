@@ -4,13 +4,14 @@ import akka.NotUsed
 import akka.actor.ActorRef
 import akka.stream.Materializer
 import akka.stream.scaladsl.{Keep, Sink, Source}
-import com.infixtrading.flashbot.core.DataType.CandlesType
-import com.infixtrading.flashbot.core.Instrument.CurrencyPair
-import com.infixtrading.flashbot.core.MarketData.BaseMarketData
-import com.infixtrading.flashbot.core.{MarketData, TimeSeriesMixin, TimeSeriesTap}
-import com.infixtrading.flashbot.engine.{SessionLoader, Strategy, TradingSession}
-import com.infixtrading.flashbot.models.api.{DataSelection, OrderTarget}
-import com.infixtrading.flashbot.models.core._
+import flashbot.core.DataType.CandlesType
+import flashbot.core.Instrument.CurrencyPair
+import flashbot.core.MarketData.BaseMarketData
+import flashbot.core.{TimeSeriesMixin, TimeSeriesTap}
+import flashbot.engine.{SessionLoader, Strategy, TradingSession}
+import flashbot.models.api.{DataSelection, OrderTarget}
+import flashbot.core.MarketData
+import flashbot.models.core._
 import io.circe.{Decoder, Encoder}
 import io.circe.generic.auto._
 import io.circe.generic.semiauto._

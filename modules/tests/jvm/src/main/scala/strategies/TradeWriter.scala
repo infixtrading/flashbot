@@ -2,12 +2,13 @@ package strategies
 import akka.actor.ActorRef
 import akka.stream.Materializer
 import akka.stream.scaladsl.Source
-import com.infixtrading.flashbot.core.MarketData.BaseMarketData
-import com.infixtrading.flashbot.core.{DataSource, MarketData, Trade}
-import com.infixtrading.flashbot.engine.{SessionLoader, Strategy, TradingSession}
-import com.infixtrading.flashbot.models.core.Portfolio
-import com.infixtrading.flashbot.core.State.ops._
-import com.infixtrading.flashbot.models.api.DataSelection
+import flashbot.core.MarketData.BaseMarketData
+import flashbot.core.{DataSource, Trade}
+import flashbot.engine.{SessionLoader, Strategy, TradingSession}
+import flashbot.core.State.ops._
+import flashbot.models.api.DataSelection
+import flashbot.core.MarketData
+import flashbot.models.core.Portfolio
 import io.circe.generic.semiauto._
 
 import scala.concurrent.duration._

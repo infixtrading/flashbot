@@ -3,11 +3,12 @@ import akka.NotUsed
 import akka.actor.ActorRef
 import akka.stream.Materializer
 import akka.stream.scaladsl.Source
-import com.infixtrading.flashbot.core.MarketData.BaseMarketData
-import com.infixtrading.flashbot.core.{DataSource, MarketData, TimeSeriesTap}
-import com.infixtrading.flashbot.engine.{SessionLoader, Strategy, TradingSession}
-import com.infixtrading.flashbot.models.api.DataSelection
-import com.infixtrading.flashbot.models.core.{Candle, Portfolio}
+import flashbot.core.MarketData.BaseMarketData
+import flashbot.core.{DataSource, TimeSeriesTap}
+import flashbot.engine.{SessionLoader, Strategy, TradingSession}
+import flashbot.models.api.DataSelection
+import flashbot.core.MarketData
+import flashbot.models.core.{Candle, Portfolio}
 import io.circe.generic.semiauto._
 
 import scala.concurrent.{ExecutionContext, Future}

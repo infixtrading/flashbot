@@ -6,11 +6,12 @@ import akka.actor.{ActorPath, ActorSystem, RelativeActorPath, RootActorPath}
 import akka.cluster.Cluster
 import akka.stream.{ActorMaterializer, KillSwitches, UniqueKillSwitch}
 import akka.stream.scaladsl.{Keep, Source}
-import com.infixtrading.flashbot.client.FlashbotClient
-import com.infixtrading.flashbot.core.{FlashbotConfig, Trade}
-import com.infixtrading.flashbot.engine.{DataServer, TimeLog, TradingEngine}
-import com.infixtrading.flashbot.engine.TimeLog.TimeLog
-import com.infixtrading.flashbot.models.core.Order.{Buy, Down, Sell, Up}
+import flashbot.engine.{DataServer, TimeLog, TradingEngine}
+import flashbot.engine.TimeLog.TimeLog
+import flashbot.client.FlashbotClient
+import flashbot.config.FlashbotConfig
+import flashbot.core._
+import flashbot.models.core.Order._
 
 import scala.concurrent.duration._
 

@@ -1,8 +1,9 @@
 package examples
 
-import com.infixtrading.flashbot.core.{Indicator, MarketData, TimeSeriesMixin, Trade}
-import com.infixtrading.flashbot.engine.{SessionLoader, Strategy, TradingSession}
-import com.infixtrading.flashbot.models.core.{OrderBook, Portfolio}
+import flashbot.core.{TimeSeriesMixin, Trade}
+import flashbot.engine.{SessionLoader, Strategy, TradingSession}
+import flashbot.core.MarketData
+import flashbot.models.core.{OrderBook, Portfolio}
 import io.circe.generic.semiauto._
 import org.ta4j.core.indicators.SMAIndicator
 import org.ta4j.core.indicators.helpers.ClosePriceIndicator

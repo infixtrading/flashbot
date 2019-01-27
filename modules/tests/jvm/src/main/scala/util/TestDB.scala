@@ -1,8 +1,8 @@
 package util
 
 import akka.stream.alpakka.slick.javadsl.SlickSession
-import com.infixtrading.flashbot.core.FlashbotConfig
-import com.infixtrading.flashbot.db.Tables
+import flashbot.config.FlashbotConfig
+import flashbot.db.Tables
 
 import scala.concurrent.Future
 

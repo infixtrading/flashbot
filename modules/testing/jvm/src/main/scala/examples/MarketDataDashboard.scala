@@ -3,9 +3,9 @@ package examples
 import akka.actor.ActorSystem
 import akka.stream.ActorMaterializer
 import akka.util.Timeout
-import com.infixtrading.flashbot.client.FlashbotClient
-import com.infixtrading.flashbot.core.{FlashbotConfig, Trade}
-import com.infixtrading.flashbot.engine.TradingEngine
+import flashbot.client.FlashbotClient
+import flashbot.core.{FlashbotConfig, Trade}
+import flashbot.engine.TradingEngine
 
 import scala.concurrent.Await
 import scala.concurrent.duration._

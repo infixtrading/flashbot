@@ -3,10 +3,10 @@ import akka.NotUsed
 import akka.actor.ActorContext
 import akka.stream.ActorMaterializer
 import akka.stream.scaladsl.Source
-import com.infixtrading.flashbot.core.DataType.{LadderType, TradesType}
-import com.infixtrading.flashbot.core._
-import com.infixtrading.flashbot.models.core.Ladder
-import com.infixtrading.flashbot.models.core.Order.{Buy, Sell}
+import flashbot.core.DataType.{LadderType, TradesType}
+import flashbot.core._
+import flashbot.core.DataType
+import flashbot.models.core.Ladder
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
