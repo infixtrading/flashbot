@@ -98,12 +98,10 @@ Add the following dependencies to your pom.xml:
 The default [configuration file](https://github.com/infixtrading/flashbot/blob/master/modules/server/src/main/resources/reference.conf) contains a list of available options. You can override any of the settings in your own `application.conf` file.
 
 ## Requirements
-Flashbot uses Akka for persistence, streaming, clustering, fault-tolerance, and concurrency control. [Akka Cluster 2.5.x](https://doc.akka.io/docs/akka/2.5/index-cluster.html) is a dependency, but running a cluster is not required. You may use Flashbot in standalone mode on a non-cluster actor system.
+Akka is used for persistence, streaming, clustering, fault-tolerance, and concurrency control. [Akka Cluster 2.5.x](https://doc.akka.io/docs/akka/2.5/index-cluster.html) is a dependency, but running a cluster is not required. You may use Flashbot in standalone mode on a non-cluster actor system.
 
 ## Status
 This project is alpha software. In it's current state it's a good tool for prototyping and simulating strategies however the unit tests are minimal and it hasn't been battle tested in production yet. Do not use it out of the box with real money yet! You have been warned.
-
-The client library and actor APIs support both Java and Scala, however extensions such as custom exchanges, data sources, and strategies currently require Scala. Full Java support is planned for future releases.
 
 ## Contributing
 Contributions are very welcome! This project is young, it's scope is large, and needs more manpower. Please propose issues through GitHub first before submitting a pull request.
