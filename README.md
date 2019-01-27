@@ -8,29 +8,22 @@ Flashbot is a Java and Scala framework for building, simulating, and running rob
 
 Crypto markets are unique in the world of finance because the "playing field is level". I.e. If you have an idea for a high-frequency trading strategy, you don't need to pay millions for infastructure, data, and co-location to get started. But you do still have to write performant software. Flashbot helps with that by providing a simple interface for building complex strategies and a common infrastructure to run them on.
 
+## Features
+* Cross-platform. Windows, Linux, and Mac OS
+* Pluggable strategies, exchanges, and data sources
+  * Market data server works for other financial markets too
+* Backtests with simulated fees and latency
+* Support for derivatives such as the XBTUSD futures contract
+* Bots that run in live or paper mode
+* Fault tolerance for strategies (bots are restored if they crash)
+* Dashboards & alerting
+* Configurable market data database via JDBC
+* Delta compression for efficient streaming and storage of order books
+* Automatic historical data collection and retention
+* Tolerant to network and websocket failures (i.e. it manages the retries)
 
 ## Docs
 Check out the [wiki](https://github.com/infixtrading/flashbot/wiki) for documentation. 
-
-## Features
-### Trading Engine
-The main component of Flashbot is the `TradingEngine` actor. It handles things such as:
-* Pluggable strategies
-* Running backtests on data in the cluster
-* Managing bots that run in live or paper mode
-* Fault tolerance for strategy exceptions (bots are restored if they crash)
-* Backtests simulate fees and network latency
-* Dashboards & alerting
-
-### Data Server
-Market data servers (the `DataServer` actor) connect to outside data sources such as exchange websockets or 3rd party signals. They persist and serve that data. Here's a list of features:
-* Pluggable data sources (supports market data for other financial markets too)
-* Publish data streams (live, historical, or historical+live) to subscribers
-* Works with any JDBC compatible database
-* Delta compression for efficient streaming and storage of order books
-* Data retention policies
-* Automatic backfilling of historical data
-* Tolerant to network and websocket failures (i.e. it manages the retries)
 
 ## Installation
 Flashbot is published to Bintray, so you'll have to add our repository as a resolver in your build tool and then list Flashbot as a dependency.
