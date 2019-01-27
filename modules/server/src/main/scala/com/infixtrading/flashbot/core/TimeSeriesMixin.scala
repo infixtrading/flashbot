@@ -190,6 +190,4 @@ trait TimeSeriesMixin { self: Strategy =>
   def priceKey(exchange: String, product: String): String = s"price.$exchange.$product"
 
   def indicatorKey(name: String): String = s"indicator.$name"
-
-//  def calc[T](expr: String)
 }
