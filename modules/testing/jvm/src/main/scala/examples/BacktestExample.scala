@@ -4,7 +4,7 @@ import akka.actor.{ActorRef, ActorSystem}
 import akka.stream.ActorMaterializer
 import akka.util.Timeout
 import flashbot.client.FlashbotClient
-import flashbot.core.{FlashbotConfig, Trade}
+import flashbot.config.FlashbotConfig
 import flashbot.engine.TradingEngine
 
 import scala.concurrent.Await
@@ -16,7 +16,7 @@ object BacktestExample extends App {
   val config = FlashbotConfig.load()
 
   // Create the actor system and trading engine
-  implicit val system = ActorSystem(config.`system-name`, config.conf)
+  implicit val system = ActorSystem(config.systemName, config.conf)
   implicit val materializer = ActorMaterializer()
   val engine = system.actorOf(TradingEngine.props("example-engine"))
 
