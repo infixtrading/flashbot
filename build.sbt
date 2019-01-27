@@ -17,7 +17,7 @@ import scala.xml.transform.{ RewriteRule, RuleTransformer }
 organization in ThisBuild := "com.infixtrading"
 parallelExecution in ThisBuild := false
 
-lazy val akkaVersion = "2.5.18"
+lazy val akkaVersion = "2.5.19"
 lazy val akkaHttpVersion = "10.1.5"
 lazy val fbCirceVersion = "0.10.0"
 
