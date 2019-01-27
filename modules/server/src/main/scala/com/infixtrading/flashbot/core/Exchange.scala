@@ -1,71 +1,37 @@
 package com.infixtrading.flashbot.core
 
 import java.util.UUID.randomUUID
+import java.util.concurrent.ConcurrentLinkedQueue
 
-import com.typesafe.config.Config
 import io.circe.Json
-import io.circe.generic.auto._
-import io.circe.parser._
-import com.infixtrading.flashbot.core.Instrument.CurrencyPair
 import com.infixtrading.flashbot.engine.TradingSession
 import com.infixtrading.flashbot.models.core.FixedSize.FixedSizeD
 import com.infixtrading.flashbot.models.core.{FixedSize, Portfolio, Position}
 import com.infixtrading.flashbot.models.core.Order.{Fill, Side}
+import com.infixtrading.flashbot.core.Exchange._
 
 import scala.collection.JavaConverters._
 import scala.math.BigDecimal.RoundingMode.HALF_DOWN
-import scala.concurrent.Future
+import scala.concurrent.{ExecutionContext, Future}
+import scala.util.{Failure, Success}
 
 abstract class Exchange {
 
+  implicit val ec: ExecutionContext
+
+  // Fees used for simulation
   def makerFee: Double
   def takerFee: Double
 
-  // API requests submitted to the exchange are fire-and-forget, hence the Unit return type
-  def order(req: OrderRequest): Unit
-  def cancel(id: String, pair: Instrument): Unit
+  // Exchange API request implementations
+  def order(req: OrderRequest): Future[ExchangeResponse]
+  def cancel(id: String, pair: Instrument): Future[ExchangeResponse]
+  def fetchPortfolio: Future[(Map[String, Double], Map[String, Position])]
 
+  // Settings for order size and price rounding
   def baseAssetPrecision(pair: Instrument): Int
   def quoteAssetPrecision(pair: Instrument): Int
   def lotSize(pair: Instrument): Option[Double] = None
-
-  def useFundsForMarketBuys: Boolean = false
-
-  var tick: () => Unit = () => {
-    throw new RuntimeException("The default tick function should never be called")
-  }
-  def setTickFn(fn: () => Unit): Unit = {
-    tick = fn
-  }
-
-  private var fills = Seq.empty[Fill]
-  def fill(f: Fill): Unit = fills :+= f
-
-  private var events = Seq.empty[OrderEvent]
-  def event(e: OrderEvent): Unit = events :+= e
-
-  /**
-    * A function that returns user data by the exchange in its current state for the given
-    * trading session.
-    */
-  def collect(session: TradingSession,
-              data: Option[MarketData[_]]): (Seq[Fill], Seq[OrderEvent]) = {
-    val ret = (fills, events)
-    fills = Seq.empty
-    events = Seq.empty
-    ret
-  }
-
-  def fetchPortfolio: Future[(Map[String, Double], Map[String, Position])]
-
-  def genOrderId: String = randomUUID.toString
-
-  def instruments: Future[Set[Instrument]] = Future.successful(Set.empty)
-
-  def roundQuote(instrument: Instrument)(balance: Double): Double = BigDecimal(balance)
-    .setScale(quoteAssetPrecision(instrument), HALF_DOWN).doubleValue()
-  def roundBase(instrument: Instrument)(balance: Double): Double = BigDecimal(balance)
-    .setScale(baseAssetPrecision(instrument), HALF_DOWN).doubleValue()
 
   def round(instrument: Instrument)(size: FixedSizeD): FixedSizeD =
     if (size.security == instrument.security.get)
@@ -74,29 +40,80 @@ abstract class Exchange {
       size.map(roundQuote(instrument))
     else throw new RuntimeException(s"Can't round $size for instrument $instrument")
 
+  def instruments: Future[Set[Instrument]] = Future.successful(Set.empty)
+
+  def genOrderId: String = randomUUID.toString
+
+  protected[flashbot] def _order(req: OrderRequest): Unit = {
+    handleResponse(order(req))
+  }
+
+  protected[flashbot] def _cancel(id: String, instrument: Instrument): Unit = {
+    handleResponse(cancel(id, instrument))
+  }
+
+  private def handleResponse(fut: Future[ExchangeResponse]): Unit = {
+    fut onComplete {
+      case Success(RequestOk) => // Ignore successful responses
+      case Success(RequestFailed(cause: ExchangeError)) =>
+        error(cause)
+      case Failure(err) =>
+        error(InternalError(err))
+    }
+  }
+
+  private var tick: () => Unit = () => {
+    throw new RuntimeException("The default tick function should never be called")
+  }
+  protected[flashbot] def setTickFn(fn: () => Unit): Unit = {
+    tick = fn
+  }
+
+  private val fills = new ConcurrentLinkedQueue[Fill]()
+  def fill(f: Fill): Unit = {
+    fills.add(f)
+    tick()
+  }
+
+  private val events = new ConcurrentLinkedQueue[OrderEvent]()
+  def event(e: OrderEvent): Unit = {
+    events.add(e)
+    tick()
+  }
+
+  private val errors = new ConcurrentLinkedQueue[ExchangeError]()
+  private def error(err: ExchangeError): Unit = {
+    errors.add(err)
+    tick()
+  }
+
+  private def collectQueue[T](queue: ConcurrentLinkedQueue[T]): Seq[T] = {
+    var seq = Seq.empty[T]
+    var item = Option(queue.poll())
+    while (item.isDefined) {
+      seq :+= item
+      item = Option(queue.poll())
+    }
+    seq
+  }
+
+  /**
+    * The internal function that returns user data by the exchange in its current state for
+    * the given trading session.
+    */
+  protected[flashbot] def collect(session: TradingSession,
+                                  data: Option[MarketData[_]]): (Seq[Fill], Seq[OrderEvent], Seq[ExchangeError]) =
+    (collectQueue(fills), collectQueue(events), collectQueue(errors))
+
   private var jsonParams: Option[Json] = _
   def withParams(json: Option[Json]): Exchange = {
     jsonParams = json
     this
   }
+
+  private def roundQuote(instrument: Instrument)(balance: Double): Double = BigDecimal(balance)
+    .setScale(quoteAssetPrecision(instrument), HALF_DOWN).doubleValue()
+  private def roundBase(instrument: Instrument)(balance: Double): Double = BigDecimal(balance)
+    .setScale(baseAssetPrecision(instrument), HALF_DOWN).doubleValue()
 }
-
-sealed trait OrderRequest {
-  val clientOid: String
-  val side: Side
-  val product: Instrument
-}
-
-final case class LimitOrderRequest(clientOid: String,
-                                   side: Side,
-                                   product: Instrument,
-                                   size: Double,
-                                   price: Double,
-                                   postOnly: Boolean) extends OrderRequest
-
-final case class MarketOrderRequest(clientOid: String,
-                                    side: Side,
-                                    product: Instrument,
-                                    size: Option[Double],
-                                    funds: Option[Double]) extends OrderRequest
 

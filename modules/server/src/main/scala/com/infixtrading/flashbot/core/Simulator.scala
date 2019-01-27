@@ -1,9 +1,9 @@
-package com.infixtrading.flashbot.exchanges
+package com.infixtrading.flashbot.core
 
+import com.infixtrading.flashbot.core.Exchange._
+import com.infixtrading.flashbot.engine.TradingSession
 import com.infixtrading.flashbot.models.core.Ladder.ladderFillOrder
 import com.infixtrading.flashbot.models.core.Order._
-import com.infixtrading.flashbot.core._
-import com.infixtrading.flashbot.engine.TradingSession
 import com.infixtrading.flashbot.models.core.{Candle, Ladder, Order, OrderBook}
 
 import scala.collection.immutable.Queue
@@ -223,8 +223,6 @@ class Simulator(base: Exchange, latencyMicros: Long = 0) extends Exchange {
   override def baseAssetPrecision(pair: Instrument): Int = base.baseAssetPrecision(pair)
 
   override def quoteAssetPrecision(pair: Instrument): Int = base.quoteAssetPrecision(pair)
-
-  override def useFundsForMarketBuys: Boolean = base.useFundsForMarketBuys
 
   override def lotSize(pair: Instrument): Option[Double] = base.lotSize(pair)
 

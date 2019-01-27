@@ -88,10 +88,9 @@ package object core {
 
   case class Tick(events: Seq[Any] = Seq.empty, exchange: Option[String] = None)
 
-  sealed trait StrategyEvent
-  case class StrategyOrderEvent(targetId: TargetId, event: OrderEvent) extends StrategyEvent
+  final case class TargetId(market: Market, key: String) {
+    def instrument(implicit idx: InstrumentIndex) = idx(market)
 
-  sealed trait StrategyCommand
-
-  final case class TargetId(instrument: Instrument, key: String)
+    override def toString = s"$market:$key"
+  }
 }

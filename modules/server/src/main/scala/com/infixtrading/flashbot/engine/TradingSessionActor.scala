@@ -18,10 +18,9 @@ import com.infixtrading.flashbot.core.Instrument.CurrencyPair
 import com.infixtrading.flashbot.util.stream._
 import com.infixtrading.flashbot.util._
 import com.infixtrading.flashbot.util.time.currentTimeMicros
-import com.infixtrading.flashbot.core.{DataSource, _}
+import com.infixtrading.flashbot.core.{DataSource, Simulator, _}
 import com.infixtrading.flashbot.engine.TradingSession._
 import com.infixtrading.flashbot.engine.TradingSessionActor.{SessionPing, SessionPong, StartSession, StopSession}
-import com.infixtrading.flashbot.exchanges.Simulator
 import com.infixtrading.flashbot.models.api.{DataSelection, LogMessage, OrderTarget}
 import com.infixtrading.flashbot.models.core.{Account, DataPath, Market, Portfolio}
 import com.infixtrading.flashbot.report.Report.ReportError
@@ -272,6 +271,7 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
           }
 
           implicit val ctx: TradingSession = session
+          implicit val idx: InstrumentIndex = ctx.instruments
 
           // Split up `dataOrTick` into two Options
           val (tick, data) = dataOrTick match {
@@ -294,9 +294,14 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
           }
 
           // Update the relevant exchange with the market data to collect fills and user data
-          val (fills, userData) = exchange
+          val (fills, userData, errors) = exchange
             .map(_.collect(session, data))
-            .getOrElse((Seq.empty, Seq.empty))
+            .getOrElse((Seq.empty, Seq.empty, Seq.empty))
+
+          // TODO: Add support for logging errors in the Report.
+          for (err <- errors) {
+            strategy.handleEvent()
+          }
 
           userData.foldLeft((session.orderManagers, session.actionQueues)) {
             /**
@@ -304,27 +309,36 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
               * with the exchange id. Do not close any actions yet. Wait until the order is
               * open, in the case of limit order, or done if it's a market order.
               */
-            case ((os, as), o @ OrderReceived(id, _, clientId, _)) =>
-              strategy.handleEvent(StrategyOrderEvent(os(ex.get).ids.clientToTarget(clientId.get), o))
-              (os.updated(ex.get, os(ex.get).receivedOrder(clientId.get, id)), as)
+            case (memo @ (os, as), o @ OrderReceived(id, _, clientId, _)) =>
+              val targetOpt = os(ex.get).ids.clientToTarget.get(clientId.get)
+              strategy.handleEvent(OrderTargetEvent(targetOpt, o))
+              if (targetOpt.isDefined)
+                (os.updated(ex.get, os(ex.get).receivedOrder(clientId.get, id)), as)
+              else memo
 
             /**
               * Limit order is opened on the exchange. Close the action that submitted it.
               */
-            case ((os, as), o @ OrderOpen(id, _, _, _, _)) =>
-              strategy.handleEvent(StrategyOrderEvent(os(ex.get).ids.actualToTarget(id), o))
-              (os.updated(ex.get, os(ex.get).openOrder(o)),
-                as.updated(ex.get, closeActionForOrderId(as(ex.get), os(ex.get).ids, id)))
+            case (memo @ (os, as), o @ OrderOpen(id, _, _, _, _)) =>
+              val targetOpt = os(ex.get).ids.actualToTarget.get(id)
+              strategy.handleEvent(OrderTargetEvent(targetOpt, o))
+              if (targetOpt.isDefined)
+                (os.updated(ex.get, os(ex.get).openOrder(o)),
+                  as.updated(ex.get, closeActionForOrderId(as(ex.get), os(ex.get).ids, id)))
+              else memo
 
             /**
               * Either market or limit order is done. Could be due to a fill, or a cancel.
               * Disassociate the ids to keep memory bounded in the ids manager. Also close
               * the action for the order id.
               */
-            case ((os, as), o @ OrderDone(id, _, _, _, _, _)) =>
-              strategy.handleEvent(StrategyOrderEvent(os(ex.get).ids.actualToTarget(id), o))
-              (os.updated(ex.get, os(ex.get).orderComplete(id)),
-                as.updated(ex.get, closeActionForOrderId(as(ex.get), os(ex.get).ids, id)))
+            case (memo @ (os, as), o @ OrderDone(id, _, _, _, _, _)) =>
+              val targetOpt = os(ex.get).ids.actualToTarget.get(id)
+              strategy.handleEvent(OrderTargetEvent(targetOpt, o))
+              if (targetOpt.isDefined)
+                (os.updated(ex.get, os(ex.get).orderComplete(id)),
+                  as.updated(ex.get, closeActionForOrderId(as(ex.get), os(ex.get).ids, id)))
+              else memo
 
           } match {
             case (newOMs, newActions) =>
@@ -338,11 +352,6 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
 
               session.send(CollectionEvent("fill_size", fill.size.asJson))
               session.send(CollectionEvent("gauss", (gaussian.draw() * 10 + 5).asJson))
-
-              if (data.isDefined) {
-                val dur = (data.get.micros - fill.micros) / 1000000
-//                log.debug(s"Diff between now and fill time: {} seconds", dur)
-              }
 
               // Execute the fill on the portfolio
               val instrument = instruments(ex.get, fill.instrument)
@@ -442,19 +451,19 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
                   case action @ PostMarketOrder(clientId, targetId, side, size, funds) =>
                     session.orderManagers += (exName ->
                       session.orderManagers(exName).initCreateOrder(targetId, clientId, action))
-                    exchanges(exName).order(
+                    exchanges(exName)._order(
                       MarketOrderRequest(clientId, side, targetId.instrument, size, funds))
 
                   case action @ PostLimitOrder(clientId, targetId, side, size, price, postOnly) =>
                     session.orderManagers += (exName ->
                       session.orderManagers(exName).initCreateOrder(targetId, clientId, action))
                     exchanges(exName)
-                      .order(LimitOrderRequest(clientId, side, targetId.instrument, size, price, postOnly))
+                      ._order(LimitOrderRequest(clientId, side, targetId.instrument, size, price, postOnly))
 
                   case action @ CancelLimitOrder(targetId) =>
                     session.orderManagers += (exName ->
                       session.orderManagers(exName).initCancelOrder(targetId))
-                    exchanges(exName).cancel(
+                    exchanges(exName)._cancel(
                       session.orderManagers(exName).ids.actualIdForTargetId(targetId), targetId.instrument)
                 }
               case _ =>

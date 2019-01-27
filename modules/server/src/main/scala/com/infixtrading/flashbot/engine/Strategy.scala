@@ -93,11 +93,6 @@ abstract class Strategy {
   def handleEvent(event: StrategyEvent)(implicit ctx: TradingSession): Unit = {}
 
   /**
-    * Receives commands that occur from outside of the system, such as from the UI or API.
-    */
-  def handleCommand(command: StrategyCommand)(implicit ctx: TradingSession): Unit = {}
-
-  /**
     * Idempotent API for placing orders. This method is used to declare the target state of
     * limit orders on the exchange. Flashbot manages the process of creating and cancelling
     * actual limit orders on the exchange so that they conform to the limit order targets

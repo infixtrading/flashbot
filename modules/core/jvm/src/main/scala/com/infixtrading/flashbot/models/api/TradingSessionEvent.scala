@@ -1,4 +1,5 @@
 package com.infixtrading.flashbot.models.api
+import com.infixtrading.flashbot.core.TargetId
 import com.infixtrading.flashbot.models.core.{FixedSize, Market}
 
 trait TradingSessionEvent
@@ -9,6 +10,6 @@ case class OrderTarget(market: Market,
                        price: Option[Double],
                        once: Option[Boolean] = None,
                        postOnly: Option[Boolean] = None) extends TradingSessionEvent {
-  def id: String = s"$market:$key"
+  def id: TargetId = TargetId(market, key)
 }
 
