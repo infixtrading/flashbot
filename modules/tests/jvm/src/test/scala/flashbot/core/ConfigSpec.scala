@@ -25,5 +25,6 @@ class ConfigSpec extends FlatSpec with Matchers {
   "FlashbotConfig" should "allow overwriting Akka options" in {
     val config = FlashbotConfig.load("custom-akka")
     config.conf.getString("akka.loglevel") shouldBe "ERROR"
+    config.conf.getString("akka.cluster.log-info") shouldBe "off"
   }
 }
