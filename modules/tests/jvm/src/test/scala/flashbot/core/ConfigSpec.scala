@@ -27,4 +27,16 @@ class ConfigSpec extends FlatSpec with Matchers {
     config.conf.getString("akka.loglevel") shouldBe "ERROR"
     config.conf.getString("akka.cluster.log-info") shouldBe "off"
   }
+
+  "FlashbotConfig" should "support includes" in {
+    // No include here
+    val noInclude = FlashbotConfig.load("custom-akka")
+    noInclude.engineRoot shouldBe FlashbotConfig.load("non-existent-app").engineRoot
+    noInclude.conf.getInt("akka.port") shouldBe 2551
+
+    // Includes "application"
+    val config = FlashbotConfig.load("custom-port")
+    config.engineRoot shouldBe "target/engines"
+    config.conf.getInt("akka.port") shouldBe 2555
+  }
 }
