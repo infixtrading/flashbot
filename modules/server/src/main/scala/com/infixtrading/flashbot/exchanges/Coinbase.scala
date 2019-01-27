@@ -2,12 +2,16 @@ package com.infixtrading.flashbot.exchanges
 import akka.actor.ActorSystem
 import akka.stream.{ActorMaterializer, Materializer}
 import com.infixtrading.flashbot.core.Instrument.CurrencyPair
-import com.infixtrading.flashbot.core.{Exchange, Instrument, OrderRequest}
+import com.infixtrading.flashbot.core.{Exchange, Instrument}
+import com.infixtrading.flashbot.models.core.OrderRequest
 
 import scala.concurrent.Future
 
 class Coinbase(implicit val system: ActorSystem,
                val mat: Materializer) extends Exchange {
+
+  override implicit val ec = scala.concurrent.ExecutionContext.global
+
   override def makerFee = .0000
   override def takerFee = .003
   override def order(req: OrderRequest) = ???

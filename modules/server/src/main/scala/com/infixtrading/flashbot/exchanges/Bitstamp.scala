@@ -2,21 +2,25 @@ package com.infixtrading.flashbot.exchanges
 
 import akka.actor.ActorSystem
 import akka.stream.{ActorMaterializer, Materializer}
-import com.infixtrading.flashbot.core.{Exchange, Instrument, OrderRequest}
+import com.infixtrading.flashbot.core.{Exchange, Instrument}
 import io.circe.Json
 import com.infixtrading.flashbot.core.Instrument.CurrencyPair
+import com.infixtrading.flashbot.models.core.{ExchangeResponse, OrderRequest}
 
 import scala.concurrent.Future
 
 class Bitstamp(implicit val system: ActorSystem,
                val mat: Materializer) extends Exchange {
+
+  override implicit val ec = scala.concurrent.ExecutionContext.global
+
   override def makerFee: Double = .0005
 
   override def takerFee: Double = .0005
 
-  override def order(req: OrderRequest): Unit = ???
+  override def order(req: OrderRequest): Future[ExchangeResponse] = ???
 
-  override def cancel(id: String, pair: Instrument): Unit = ???
+  override def cancel(id: String, pair: Instrument): Future[ExchangeResponse] = ???
 
   override def baseAssetPrecision(pair: Instrument): Int = pair match {
     case CurrencyPair("eur", "usd") => 5

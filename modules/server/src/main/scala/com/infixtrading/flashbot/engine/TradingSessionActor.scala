@@ -22,7 +22,7 @@ import com.infixtrading.flashbot.core.{DataSource, Simulator, _}
 import com.infixtrading.flashbot.engine.TradingSession._
 import com.infixtrading.flashbot.engine.TradingSessionActor.{SessionPing, SessionPong, StartSession, StopSession}
 import com.infixtrading.flashbot.models.api.{DataSelection, LogMessage, OrderTarget}
-import com.infixtrading.flashbot.models.core.{Account, DataPath, Market, Portfolio}
+import com.infixtrading.flashbot.models.core._
 import com.infixtrading.flashbot.report.Report.ReportError
 import com.infixtrading.flashbot.report.ReportEvent._
 import com.infixtrading.flashbot.report._
@@ -300,7 +300,7 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
 
           // TODO: Add support for logging errors in the Report.
           for (err <- errors) {
-            strategy.handleEvent()
+            strategy.handleEvent(ExchangeErrorEvent(err))
           }
 
           userData.foldLeft((session.orderManagers, session.actionQueues)) {

@@ -286,7 +286,7 @@ class TradingEngineSpec extends WordSpecLike
       } yield (bp.micros, bp.balance)
 
       val priceData =
-        for(price <- report.timeSeries("local.bitfinex.eth_usd").dropRight(1))
+        for(price <- report.timeSeries("local.price.bitfinex.eth_usd").dropRight(1))
         yield (price.micros / 1000, price.close)
 
       val mychart = XYLineChart(mydata)

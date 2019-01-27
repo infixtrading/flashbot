@@ -1,6 +1,6 @@
 package com.infixtrading.flashbot.core
 
-import com.infixtrading.flashbot.core.Exchange.ExchangeError
+import com.infixtrading.flashbot.models.core.ExchangeError
 
 sealed trait StrategyEvent
 

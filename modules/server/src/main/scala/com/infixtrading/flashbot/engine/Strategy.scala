@@ -124,7 +124,7 @@ abstract class Strategy {
       postOnly = Some(postOnly)
     )
     ctx.send(target)
-    target.id
+    target.id.toString
   }
 
   /**
@@ -158,7 +158,7 @@ abstract class Strategy {
       postOnly = Some(postOnly)
     )
     ctx.send(target)
-    target.id
+    target.id.toString
   }
 
   /**
@@ -179,7 +179,7 @@ abstract class Strategy {
       None
     )
     ctx.send(target)
-    target.id
+    target.id.toString
   }
 
   /**

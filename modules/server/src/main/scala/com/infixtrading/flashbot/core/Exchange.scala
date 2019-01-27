@@ -6,11 +6,9 @@ import java.util.concurrent.ConcurrentLinkedQueue
 import io.circe.Json
 import com.infixtrading.flashbot.engine.TradingSession
 import com.infixtrading.flashbot.models.core.FixedSize.FixedSizeD
-import com.infixtrading.flashbot.models.core.{FixedSize, Portfolio, Position}
+import com.infixtrading.flashbot.models.core._
 import com.infixtrading.flashbot.models.core.Order.{Fill, Side}
-import com.infixtrading.flashbot.core.Exchange._
 
-import scala.collection.JavaConverters._
 import scala.math.BigDecimal.RoundingMode.HALF_DOWN
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success}
@@ -91,7 +89,7 @@ abstract class Exchange {
     var seq = Seq.empty[T]
     var item = Option(queue.poll())
     while (item.isDefined) {
-      seq :+= item
+      seq :+= item.get
       item = Option(queue.poll())
     }
     seq

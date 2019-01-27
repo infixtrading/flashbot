@@ -1,12 +1,12 @@
 package com.infixtrading.flashbot.core
 
-import com.infixtrading.flashbot.core.Exchange._
 import com.infixtrading.flashbot.engine.TradingSession
 import com.infixtrading.flashbot.models.core.Ladder.ladderFillOrder
 import com.infixtrading.flashbot.models.core.Order._
-import com.infixtrading.flashbot.models.core.{Candle, Ladder, Order, OrderBook}
+import com.infixtrading.flashbot.models.core._
 
 import scala.collection.immutable.Queue
+import scala.concurrent.Future
 
 /**
   * The simulator is an exchange used for backtesting and paper trading. It takes an instance of a
@@ -14,6 +14,8 @@ import scala.collection.immutable.Queue
   * interactions so that no network requests are actually made.
   */
 class Simulator(base: Exchange, latencyMicros: Long = 0) extends Exchange {
+
+  override implicit val ec = scala.concurrent.ExecutionContext.global
 
   private var currentTimeMicros: Long = 0
 
@@ -35,7 +37,7 @@ class Simulator(base: Exchange, latencyMicros: Long = 0) extends Exchange {
   override def takerFee: Double = base.takerFee
 
   override def collect(session: TradingSession,
-                       data: Option[MarketData[_]]): (Seq[Order.Fill], Seq[OrderEvent]) = {
+                       data: Option[MarketData[_]]): (Seq[Order.Fill], Seq[OrderEvent], Seq[ExchangeError]) = {
     var fills = Seq.empty[Order.Fill]
     var events = Seq.empty[OrderEvent]
 
@@ -207,17 +209,17 @@ class Simulator(base: Exchange, latencyMicros: Long = 0) extends Exchange {
       case _ =>
     }
 
-    (fills, events)
+    (fills, events, Seq.empty)
   }
 
-  override def order(req: OrderRequest): Unit = {
+  override def order(req: OrderRequest): Future[ExchangeResponse] = {
     apiRequestQueue = apiRequestQueue.enqueue(OrderReq(currentTimeMicros, req))
-    tick()
+    Future.successful(RequestOk)
   }
 
-  override def cancel(id: String, pair: Instrument): Unit = {
+  override def cancel(id: String, pair: Instrument): Future[ExchangeResponse] = {
     apiRequestQueue = apiRequestQueue.enqueue(CancelReq(currentTimeMicros, id, pair))
-    tick()
+    Future.successful(RequestOk)
   }
 
   override def baseAssetPrecision(pair: Instrument): Int = base.baseAssetPrecision(pair)
