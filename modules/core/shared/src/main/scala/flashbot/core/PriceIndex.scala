@@ -112,7 +112,7 @@ class PriceIndex(private val priceMap: mutable.Map[Market, Double] = mutable.Map
     */
 //  def compose(markets: Seq[Market])(implicit instruments: InstrumentIndex): Double = {
 //    markets
-//      .map(m => ((instruments(m).security.get, instruments(m).settledIn), prices(m)))
+//      .map(m => ((instruments(m).security.build, instruments(m).settledIn), prices(m)))
 //      .reduce { x =>
 ////        case (((prevBase: String, prevQuote: String), prevPrice: Double),
 ////              ((curBase: String, curQuote: String), curPrice: Double)) =>
@@ -128,19 +128,19 @@ class PriceIndex(private val priceMap: mutable.Map[Market, Double] = mutable.Map
 //    var price: Option[Double] = Some(1)
 //    solution.slice(1, solution.size - 1).foreach { node =>
 //      if (lastNode.isDefined) {
-//        if (lastNode.get.exchange.get == node.exchange.get) {
+//        if (lastNode.build.exchange.build == node.exchange.build) {
 //          // First find a forward price.
-//          val forwardPrice: Option[Double] = instruments.instruments(node.exchange.get)
-//            .find(i => i.security.get == lastNode.get.symbol && i.settledIn == node.symbol)
-//            .map(i => prices(Market(node.exchange.get, i.symbol)))
+//          val forwardPrice: Option[Double] = instruments.instruments(node.exchange.build)
+//            .find(i => i.security.build == lastNode.build.symbol && i.settledIn == node.symbol)
+//            .map(i => prices(Market(node.exchange.build, i.symbol)))
 //
 //          // Otherwise look for backward price.
-//          val finalPrice = forwardPrice.orElse(instruments.instruments(node.exchange.get)
-//            .find(i => i.security.get == node.symbol && i.settledIn == lastNode.get.symbol)
-//            .map(i => 1d / prices(Market(node.exchange.get, i.symbol))))
+//          val finalPrice = forwardPrice.orElse(instruments.instruments(node.exchange.build)
+//            .find(i => i.security.build == node.symbol && i.settledIn == lastNode.build.symbol)
+//            .map(i => 1d / prices(Market(node.exchange.build, i.symbol))))
 //
 //          if (finalPrice.isDefined) {
-//            price = price.map(_ * finalPrice.get)
+//            price = price.map(_ * finalPrice.build)
 //          }
 //        }
 //      } else {

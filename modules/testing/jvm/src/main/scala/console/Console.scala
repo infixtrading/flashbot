@@ -6,8 +6,8 @@ import akka.actor.{ActorPath, ActorSystem, RelativeActorPath, RootActorPath}
 import akka.cluster.Cluster
 import akka.stream.{ActorMaterializer, KillSwitches, UniqueKillSwitch}
 import akka.stream.scaladsl.{Keep, Source}
-import flashbot.engine.{DataServer, TimeLog, TradingEngine}
-import flashbot.engine.TimeLog.TimeLog
+import flashbot.server.TimeLog
+import flashbot.server.TimeLog.TimeLog
 import flashbot.client.FlashbotClient
 import flashbot.config.FlashbotConfig
 import flashbot.core._

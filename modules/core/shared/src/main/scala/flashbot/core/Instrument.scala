@@ -19,7 +19,7 @@ trait Instrument {
   // If None, it's not tradable. Such as an index.
   def security: Option[String]
 
-  // When you sell this instrument, what asset do you get back in exchange?
+  // When you sell this instrument, what asset do you build back in exchange?
   def settledIn: String
 
   def markPrice(prices: PriceIndex): Double = prices(symbol)

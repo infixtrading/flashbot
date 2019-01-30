@@ -21,6 +21,6 @@ trait Conversions {
 //  def apply(source: AssetKey, target: AssetKey)
 //           (implicit prices: PriceIndex,
 //            instruments: InstrumentIndex): FixedPrice[AssetKey] =
-//    apply(source, target, approx = false).orElse(apply(source, target, approx = true)).get
+//    apply(source, target, approx = false).orElse(apply(source, target, approx = true)).build
 
 }

@@ -375,7 +375,24 @@ lazy val flashbot = project
 
 lazy val coreBase = crossModule("core", previousFBVersion)
 lazy val core = coreBase.jvm.settings(
-  libraryDependencies ++= (configDeps ++ akkaDeps)
+  libraryDependencies ++= (configDeps ++ akkaDeps ++ timeSeriesDeps ++ Seq(
+    "com.github.andyglow" % "scala-jsonschema-core_2.12" % "0.0.8",
+    "com.github.andyglow" % "scala-jsonschema-api_2.12" % "0.0.8",
+    "com.github.andyglow" % "scala-jsonschema-circe-json_2.12" % "0.0.8",
+    "org.jgrapht" % "jgrapht" % "1.3.0",
+    "org.jgrapht" % "jgrapht-core" % "1.3.0",
+    "org.jgrapht" % "jgrapht-io" % "1.3.0",
+    "com.quantego" % "clp-java" % "1.16.10",
+    "com.vmunier" %% "scalajs-scripts" % "1.1.2",
+    "com.github.inamik.text.tables" % "inamik-text-tables" % "0.8",
+    "com.lihaoyi" %% "fansi" % "0.2.5",
+    "de.sciss" %% "fingertree" % "1.5.2",
+    "com.twitter" %% "chill-akka" % "0.9.3",
+    
+    // For Java support
+    "com.fasterxml.jackson.core" % "jackson-core" % "2.9.8",
+    "com.kjetland" %% "mbknor-jackson-jsonschema" % "1.0.32"
+  ))
 )
 lazy val coreJS = coreBase.js
 
@@ -385,21 +402,6 @@ lazy val server = flashbotModule("server", previousFBVersion).settings(
     serviceDeps ++ akkaDeps ++ networkDeps ++ jsonDeps 
     ++ dataStores ++ timeSeriesDeps ++ statsDeps 
     ++ Seq(
-      "org.jgrapht" % "jgrapht" % "1.3.0",
-      "org.jgrapht" % "jgrapht-core" % "1.3.0",
-      "org.jgrapht" % "jgrapht-io" % "1.3.0",
-      "com.quantego" % "clp-java" % "1.16.10",
-      "com.vmunier" %% "scalajs-scripts" % "1.1.2",
-      "com.github.inamik.text.tables" % "inamik-text-tables" % "0.8",
-      "com.lihaoyi" %% "fansi" % "0.2.5",
-
-      "com.github.andyglow" % "scala-jsonschema-core_2.12" % "0.0.8",
-      "com.github.andyglow" % "scala-jsonschema-api_2.12" % "0.0.8",
-      "com.github.andyglow" % "scala-jsonschema-circe-json_2.12" % "0.0.8",
-      "de.sciss" %% "fingertree" % "1.5.2",
-
-      "com.twitter" %% "chill-akka" % "0.9.3",
-
       "com.typesafe.slick" %% "slick" % "3.2.3",
       "com.typesafe.slick" %% "slick-hikaricp" % "3.2.3",
       "com.lightbend.akka" %% "akka-stream-alpakka-slick" % "1.0-M2",
@@ -502,8 +504,8 @@ lazy val noPublishSettings = Seq(
 
 //credentials ++= (
 //  for {
-//    username <- Option(System.getenv().get("SONATYPE_USERNAME"))
-//    password <- Option(System.getenv().get("SONATYPE_PASSWORD"))
+//    username <- Option(System.getenv().build("SONATYPE_USERNAME"))
+//    password <- Option(System.getenv().build("SONATYPE_PASSWORD"))
 //  } yield
 //    Credentials(
 //      "Sonatype Nexus Repository Manager",

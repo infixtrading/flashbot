@@ -3,11 +3,9 @@ import akka.actor.ActorRef
 import akka.stream.Materializer
 import akka.stream.scaladsl.Source
 import flashbot.core.MarketData.BaseMarketData
-import flashbot.core.{DataSource, Trade}
-import flashbot.engine.{SessionLoader, Strategy, TradingSession}
-import flashbot.core.State.ops._
-import flashbot.models.api.DataSelection
-import flashbot.core.MarketData
+import flashbot.core.{SessionLoader, _}
+import flashbot.core.VarState.ops._
+import flashbot.models.api.{DataOverride, DataSelection}
 import flashbot.models.core.Portfolio
 import io.circe.generic.semiauto._
 
@@ -18,7 +16,7 @@ class TradeWriter extends Strategy {
 
   override type Params = TradeWriter.Params
 
-  def paramsDecoder = TradeWriter.Params.de
+  def decodeParams = TradeWriter.Params.de
 
   def title = "Trade Writer"
 
@@ -30,8 +28,9 @@ class TradeWriter extends Strategy {
       "last_trade".set(trade)
   }
 
-  override def resolveMarketData[T](selection: DataSelection[T], dataServer: ActorRef)
-                                (implicit mat: Materializer, ec: ExecutionContext) = {
+  override def resolveMarketData[T](selection: DataSelection[T], dataServer: ActorRef,
+                                    dataOverrides: Seq[DataOverride[_]])
+                                   (implicit mat: Materializer, ec: ExecutionContext) = {
     Future.successful(Source(params.trades.toList)
       .throttle(1, 200 millis)
       .zipWithIndex

@@ -1,7 +1,6 @@
 package flashbot.models.core
 
 import flashbot.core.{InstrumentIndex, PriceIndex}
-import flashbot.models.core.FixedSize.FixedSizeD
 import io.circe.generic.semiauto._
 import io.circe.{Decoder, Encoder}
 
@@ -22,7 +21,7 @@ case class Portfolio(assets: Map[Account, Double],
   def balances: Set[Balance] = assets map { case (acc, qty) => Balance(acc, qty) } toSet
 
   def positionPNL(market: Market)
-                 (implicit prices: PriceIndex, instruments: InstrumentIndex): FixedSizeD = {
+                 (implicit prices: PriceIndex, instruments: InstrumentIndex): FixedSize = {
     val position = positions(market)
     val instrument = instruments(market)
     val pnlVal = instrument.PNL(position.size, position.entryPrice, prices(market))
@@ -34,7 +33,7 @@ case class Portfolio(assets: Map[Account, Double],
     */
   def equity(targetAsset: String = "usd")
             (implicit prices: PriceIndex,
-             instruments: InstrumentIndex): FixedSizeD = {
+             instruments: InstrumentIndex): FixedSize = {
     import FixedSize.dNumeric._
     val assetsEquity = balances.map(_ as targetAsset size).sum
     val PNLs = positions.keys.map(positionPNL(_) as targetAsset).sum

@@ -2,19 +2,26 @@ package flashbot.models.api
 
 import java.time.{Duration, Instant}
 
+import akka.NotUsed
 import akka.actor.ActorRef
-import flashbot.models.core.{DataPath, TimeRange}
+import akka.stream.scaladsl.Source
+import flashbot.core.MarketData
+import flashbot.models.core.{DataPath, Portfolio, TimeRange}
+import io.circe.Json
 
 import scala.concurrent.duration.FiniteDuration
+
+case class DataOverride[T](path: DataPath[T], source: Source[MarketData[T], NotUsed])
 
 sealed trait TradingEngineQuery
 case object Ping extends TradingEngineQuery
 case class BacktestQuery(strategyName: String,
-                         params: String,
+                         params: Json,
                          timeRange: TimeRange,
-                         portfolio: String,
+                         portfolio: Portfolio,
                          barSize: Option[FiniteDuration],
-                         eventsOut: Option[ActorRef] = None) extends TradingEngineQuery
+                         eventsOut: Option[ActorRef] = None,
+                         dataOverrides: Seq[DataOverride[_]] = Seq.empty) extends TradingEngineQuery
 
 case class BotReportQuery(botId: String) extends TradingEngineQuery
 case class BotReportsQuery() extends TradingEngineQuery
@@ -48,7 +55,7 @@ case class PriceQuery(path: DataPath[_], range: TimeRange, interval: FiniteDurat
 sealed trait StreamRequest[T]
 
 /**
-  * Request a data stream source from the cluster. Returns a [[flashbot.engine.CompressedSourceRef]]
+  * Request a data stream source from the cluster. Returns a [[flashbot.server.CompressedSourceRef]]
   * if the sender is remote and just a Source[ MarketData[_] ] if the sender is local.
   */
 case class DataStreamReq[T](selection: DataSelection[T]) extends StreamRequest[T] with TradingEngineQuery

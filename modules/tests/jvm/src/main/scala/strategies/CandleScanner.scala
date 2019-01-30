@@ -4,10 +4,8 @@ import akka.actor.ActorRef
 import akka.stream.Materializer
 import akka.stream.scaladsl.Source
 import flashbot.core.MarketData.BaseMarketData
-import flashbot.core.{DataSource, TimeSeriesTap}
-import flashbot.engine.{SessionLoader, Strategy, TradingSession}
-import flashbot.models.api.DataSelection
-import flashbot.core.MarketData
+import flashbot.core.{SessionLoader, _}
+import flashbot.models.api.{DataOverride, DataSelection}
 import flashbot.models.core.{Candle, Portfolio}
 import io.circe.generic.semiauto._
 
@@ -18,7 +16,7 @@ class CandleScanner extends Strategy {
 
   case class Params()
 
-  override def paramsDecoder = deriveDecoder[Params]
+  override def decodeParams = deriveDecoder[Params]
 
   override def title = "Candle Scanner"
 
@@ -30,8 +28,9 @@ class CandleScanner extends Strategy {
     println(data)
   }
 
-  override def resolveMarketData[T](selection: DataSelection[T], dataServer: ActorRef)
-                       (implicit mat: Materializer, ec: ExecutionContext)
+  override def resolveMarketData[T](selection: DataSelection[T], dataServer: ActorRef,
+                                    dataOverrides: Seq[DataOverride[_]])
+                                   (implicit mat: Materializer, ec: ExecutionContext)
       : Future[Source[MarketData[T], NotUsed]] = {
     Future.successful(TimeSeriesTap
       .prices(1 day)

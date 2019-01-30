@@ -1,6 +1,6 @@
 package flashbot.models.api
 
-import flashbot.report.{Report, ReportDelta}
+import flashbot.core.{Report, ReportDelta}
 import flashbot.models.core.{Portfolio, TradingSessionMode}
 import io.circe.Json
 

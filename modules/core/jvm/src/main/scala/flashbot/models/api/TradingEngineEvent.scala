@@ -1,7 +1,7 @@
 package flashbot.models.api
 
 import flashbot.config.BotConfig
-import flashbot.report.{Report, ReportDelta}
+import flashbot.core.{Report, ReportDelta}
 import flashbot.models.core._
 import io.circe.Json
 

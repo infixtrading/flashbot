@@ -7,10 +7,8 @@ import akka.stream.scaladsl.{Keep, Sink, Source}
 import flashbot.core.DataType.CandlesType
 import flashbot.core.Instrument.CurrencyPair
 import flashbot.core.MarketData.BaseMarketData
-import flashbot.core.{TimeSeriesMixin, TimeSeriesTap}
-import flashbot.engine.{SessionLoader, Strategy, TradingSession}
-import flashbot.models.api.{DataSelection, OrderTarget}
-import flashbot.core.MarketData
+import flashbot.core.{SessionLoader, _}
+import flashbot.models.api.{DataOverride, DataSelection, OrderTarget}
 import flashbot.models.core._
 import io.circe.{Decoder, Encoder}
 import io.circe.generic.auto._
@@ -53,7 +51,7 @@ class LookAheadCandleStrategy extends Strategy
 
   type Params = LookaheadParams
 
-  override def paramsDecoder = deriveDecoder
+  override def decodeParams = deriveDecoder
 
   // Source the data from the strategy itself.
   val path1 = DataPath("bitfinex", "eth_usd", CandlesType(5 seconds))
@@ -92,7 +90,7 @@ class LookAheadCandleStrategy extends Strategy
   override def handleData(md: MarketData[_])(implicit ctx: TradingSession) = md.data match {
     case candle: Candle =>
 
-      record(md.source, md.topic, candle)
+      recordCandle(md.source, md.topic, candle)
 
       if (prediction.isDefined) {
         if (prediction.get != candle.close) {
@@ -141,8 +139,9 @@ class LookAheadCandleStrategy extends Strategy
     * Make the resolved market data lag by one item. This way we can lookahead to the next
     * item being streamed and base our test strategy off of it.
     */
-  override def resolveMarketData[T](selection: DataSelection[T], dataServer: ActorRef)
-                       (implicit mat: Materializer, ec: ExecutionContext)
+  override def resolveMarketData[T](selection: DataSelection[T], dataServer: ActorRef,
+                                    dataOverrides: Seq[DataOverride[_]])
+                                   (implicit mat: Materializer, ec: ExecutionContext)
       : Future[Source[MarketData[T], NotUsed]] = {
 
     // Build static data if not yet built.

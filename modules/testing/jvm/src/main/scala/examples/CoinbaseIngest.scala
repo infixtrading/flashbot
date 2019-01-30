@@ -6,9 +6,8 @@ import akka.actor.ActorSystem
 import akka.stream.ActorMaterializer
 import flashbot.client.FlashbotClient
 import flashbot.util.time._
-import flashbot.core._
+import flashbot.core.{TradingEngine, _}
 import flashbot.config._
-import flashbot.engine.{DataServer, TradingEngine}
 import flashbot.models.core.OrderBook
 import io.prometheus.client.exporter.HTTPServer
 

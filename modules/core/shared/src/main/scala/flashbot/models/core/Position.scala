@@ -1,9 +1,9 @@
 package flashbot.models.core
 
 import flashbot.core.Instrument
-import io.circe._
-import io.circe.generic.semiauto._
+import io.circe.generic.JsonCodec
 
+@JsonCodec
 case class Position(size: Long, leverage: Double, entryPrice: Double) {
 
   /**
@@ -39,9 +39,3 @@ case class Position(size: Long, leverage: Double, entryPrice: Double) {
   def isLong: Boolean = size > 0
   def isShort: Boolean = size < 0
 }
-
-object Position {
-  implicit val postionEn: Encoder[Position] = deriveEncoder
-  implicit val postionDe: Decoder[Position] = deriveDecoder
-}
-

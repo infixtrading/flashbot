@@ -9,31 +9,24 @@ import akka.stream.scaladsl.Source
 import akka.util.Timeout
 import akka.{Done, NotUsed}
 import flashbot.core._
-import flashbot.config._
 import flashbot.core.DataType.{LadderType, OrderBookType}
-import flashbot.engine.{NetworkSource, StreamResponse}
+import flashbot.server.{NetworkSource, StreamResponse}
 import flashbot.models.api._
 import flashbot.models.core._
-import flashbot.report.Report
 import flashbot.client.FlashbotClient._
+import io.circe.Json
 
 import scala.concurrent._
 import scala.concurrent.duration._
+import scala.concurrent.ExecutionContext.Implicits.global
 import scala.language.postfixOps
 import scala.reflect.ClassTag
 
 /**
   * FlashbotClient is the primary way of interacting with a Flashbot system. It requires an
-  * ActorRef of a JVM-local TradingEngine as the entry point.
-  *
-  * Every method has both a blocking version (e.g. client.ping()) and a non-blocking async
-  * [[Future]] based version (e.g. client.pingAsync()). Note that the blocking methods are
-  * light wrappers around the non-blocking ones and are implemented with a single, internal,
-  * shared thread. For this reason, when using FlashbotClient in a multi-threaded environment
-  * it's best to either exclusively use the non-blocking `...Async` methods (a good idea in
-  * any case), or to create separate instances per thread, so they don't have to share. Using
-  * the blocking methods on a shared instance from multiple threads will degrade your system's
-  * performance severely due to eventual deadlock.
+  * ActorRef of a JVM-local TradingEngine as the entry point. Every method has both a blocking
+  * version (e.g. client.ping()) and a non-blocking async [[Future]] based version (e.g.
+  * client.pingAsync()).
   *
   * @param engine the TradingEngine which serves as the entry point to the FlashbotSystem
   *               this client is connecting to.
@@ -53,12 +46,6 @@ class FlashbotClient(engine: ActorRef, skipTouch: Boolean = false) {
     this(Await.result[ActorRef](tradingEngineRef(path), timeout.duration), skipTouch = true)
   }
 
-  // A single-thread ExecutionContext for this client instance so that we can provide
-  // synchronous, blocking versions of API methods without requiring an ExecutionContext
-  // instance from the user.
-  implicit val blockingEc: ExecutionContext =
-    ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
-
   // This blocks on a ping from the server. This is useful when the client is created immediately
   // after the engine actor is. We will usually want to wait for the engine to initialize before
   // sending any requests to it. Blocking on a ping in the client constructor achieves this.
@@ -66,36 +53,49 @@ class FlashbotClient(engine: ActorRef, skipTouch: Boolean = false) {
     this.ping()
   }
 
-  def pingAsync() = req[Pong](Ping)
+  def pingAsync(): Future[Pong] = req[Pong](Ping)
   def ping(): Pong = await[Pong](pingAsync())
 
-  def configureBotAsync(id: String, config: BotConfig) = req[Done](ConfigureBot(id, config))
+  def configureBotAsync(id: String, config: BotConfig): Future[Done] = req[Done](ConfigureBot(id, config))
   def configureBot(id: String, config: BotConfig): Unit = await(configureBotAsync(id, config))
 
-  def botStatusAsync(id: String) = req[BotStatus](BotStatusQuery(id))
-  def botStatus(id: String) = await(botStatusAsync(id))
+  def botStatusAsync(id: String): Future[BotStatus] = req[BotStatus](BotStatusQuery(id))
+  def botStatus(id: String): BotStatus = await(botStatusAsync(id))
 
-  def enableBotAsync(id: String) = req[Done](EnableBot(id))
+  def enableBotAsync(id: String): Future[Done] = req[Done](EnableBot(id))
   def enableBot(id: String): Unit = await(enableBotAsync(id))
 
-  def disableBotAsync(id: String) = req[Done](DisableBot(id))
+  def disableBotAsync(id: String): Future[Done] = req[Done](DisableBot(id))
   def disableBot(id: String): Unit = await(disableBotAsync(id))
 
-  def botHeartbeatAsync(id: String) = req[Done](BotHeartbeat(id))
+  def botHeartbeatAsync(id: String): Future[Done] = req[Done](BotHeartbeat(id))
   def botHeartbeat(id: String): Unit = await(botHeartbeatAsync(id))
 
-  def subscribeToReportAsync(id: String) =
+  def subscribeToReportAsync(id: String): Future[Source[Report, NotUsed]] =
     req[NetworkSource[Report]](SubscribeToReport(id)).map(_.toSource)
-  def subscribeToReport(id: String) = await(subscribeToReportAsync(id))
+  def subscribeToReport(id: String): Source[Report, NotUsed] = await(subscribeToReportAsync(id))
 
-  def indexAsync() = req[Map[String, DataPath[Any]]](MarketDataIndexQuery)
-  def index() = await(indexAsync())
+  def indexAsync(): Future[Map[String, DataPath[Any]]] = req[Map[String, DataPath[Any]]](MarketDataIndexQuery)
+  def index(): Map[String, DataPath[Any]] = await(indexAsync())
 
-  def pricesAsync(path: DataPath[Priced], timeRange: TimeRange, interval: FiniteDuration) =
+  def pricesAsync(path: DataPath[Priced], timeRange: TimeRange,
+                  interval: FiniteDuration) : Future[Map[String, Vector[Candle]]] =
     req[Map[String, Vector[Candle]]](PriceQuery(path, timeRange, interval))
 
-  def prices(path: DataPath[Priced], timeRange: TimeRange, interval: FiniteDuration) =
+  def prices(path: DataPath[Priced], timeRange: TimeRange,
+             interval: FiniteDuration): Map[String, Vector[Candle]] =
     await(pricesAsync(path, timeRange, interval))
+
+  def backtestAsync(strategy: String, params: Json, initialPortfolio: Portfolio,
+                    interval: FiniteDuration = 1 day, timeRange: TimeRange = TimeRange(0),
+                    dataOverrides: Seq[DataOverride[_]] = Seq.empty): Future[Report] =
+    req[Report](BacktestQuery(strategy, params, timeRange, initialPortfolio,
+      Some(interval), None, dataOverrides))
+
+  def backtest(strategy: String, params: Json, initialPortfolio: Portfolio,
+               interval: FiniteDuration = 1 day, timeRange: TimeRange = TimeRange(0),
+               dataOverrides: Seq[DataOverride[_]] = Seq.empty): Report =
+    await(backtestAsync(strategy, params, initialPortfolio, interval, timeRange, dataOverrides))
 
   /**
     * Returns a polling stream of live market data.
@@ -141,7 +141,8 @@ class FlashbotClient(engine: ActorRef, skipTouch: Boolean = false) {
     // and then request them individually and merge.
     else for {
       idx: Map[String, DataPath[Any]] <- indexAsync()
-      paths = idx.values.toSet.toIterator.map((x: DataPath[Any]) => x.filter(path)).collect { case Some(x) => x }
+      paths = idx.values.toSet.toIterator.map((x: DataPath[Any]) =>
+        x.filter(path)).collect { case Some(x) => x }
       allStreamRsps <- Future.sequence(paths.map(singleStream(_: DataPath[T])))
     } yield allStreamRsps.reduce(_.mergeSorted(_)(Ordering.by(_.micros)))
   }
@@ -152,8 +153,11 @@ class FlashbotClient(engine: ActorRef, skipTouch: Boolean = false) {
       : Source[MarketData[T], NotUsed] =
     await(historicalMarketDataAsync[T](path, from, to))
 
-  private def req[T](query: Any)(implicit tag: ClassTag[T]): Future[T] = (engine ? query).mapTo[T]
-  private def await[T](fut: Future[T]): T = Await.result[T](fut, timeout.duration)
+  private def req[T](query: Any)(implicit tag: ClassTag[T]): Future[T] =
+    (engine ? query).mapTo[T]
+
+  private def await[T](fut: Future[T]): T =
+    Await.result[T](fut, timeout.duration)
 
   implicit class RecoverOps[T](future: Future[Source[MarketData[T], NotUsed]]) {
 
@@ -179,7 +183,6 @@ object FlashbotClient {
     * A lightweight actor that collects ActorRefs of TradingEngine actors in the system.
     */
   class EngineCollector extends Actor {
-    implicit val ec: ExecutionContext = context.system.dispatcher
     val refPromise = Promise[ActorRef]
     override def receive = {
       case Pong(_) =>

@@ -3,7 +3,14 @@ package flashbot.models.core
 import flashbot.core.{AssetKey, InstrumentIndex, PriceIndex}
 import flashbot.models.core.Order._
 
-case class FixedSize[T: Numeric](num: T, security: String) {
+import scala.language.implicitConversions
+
+case class FixedSize(override val num: Double,
+                     override val security: String)
+    extends GenericFixedSize[Double](num, security)
+
+class GenericFixedSize[T: Numeric](val num: T, val security: String) {
+
   val tn: Numeric[T] = implicitly[Numeric[T]]
   import tn._
 
@@ -16,66 +23,62 @@ case class FixedSize[T: Numeric](num: T, security: String) {
     else Sell
   }
 
-  def map(fn: T => T) = {
-    copy(num = fn(num))
-  }
+  def map(fn: T => T): this.type = new GenericFixedSize[T](fn(num), security)
 }
 
 object FixedSize {
 
-  type FixedSizeD = FixedSize[Double]
-
-  implicit def buildFixedSizeStr(str: String): FixedSizeD = {
+  implicit def buildFixedSizeStr(str: String): FixedSize = {
     val parts = str.trim.split(" ")
     val symbol = parts.tail.mkString("")
     FixedSize(parts.head.toDouble, symbol)
   }
-  implicit def buildFixedSizeFromTuple(tuple: (Double, String)): FixedSizeD =
+  implicit def buildFixedSizeFromTuple(tuple: (Double, String)): FixedSize =
     FixedSize(tuple._1, tuple._2)
 
-//  def apply[T: Numeric](amount: T, symbol: String): FixedSize[T] =
-//    {
-//      println("apply FixedSize[T]", amount, symbol)
-//      FixedSize(amount, symbol)
-//    }
+  def numeric[T: Numeric](amount: T, symbol: String): GenericFixedSize[T] =
+    new GenericFixedSize[T](amount, symbol)
 
-  implicit class ConvertFixedSizeOps(size: FixedSizeD) {
+  implicit class ConvertFixedSizeOps(size: FixedSize) {
     def as(key: AssetKey)(implicit prices: PriceIndex,
-                          instruments: InstrumentIndex): FixedSizeD =
+                          instruments: InstrumentIndex): FixedSize =
       FixedSize(prices.convert(size.security, key).get.price * size.qty, key.security)
   }
 
   implicit class ToFixedSizeOps(qty: Double) {
-    def of(key: AssetKey): FixedSizeD = FixedSize(qty, key.security)
+    def of(key: AssetKey): FixedSize = FixedSize(qty, key.security)
   }
 
-  def checkUnits[T: Numeric, O: Numeric](x: FixedSize[T],
-                                         y: FixedSize[T],
-                                         impl: (T, T) => O): FixedSize[O] = {
+  def checkUnits[T: Numeric, O: Numeric](x: GenericFixedSize[T],
+                                         y: GenericFixedSize[T],
+                                         impl: (T, T) => O): GenericFixedSize[O] = {
     if (x.security != y.security) {
       throw new UnsupportedOperationException("Could not perform numerical operation on " +
         s"FixedSizes of different securities: ($x, $y).")
     }
-    FixedSize(impl(x.num, y.num), x.security)
+    FixedSize.numeric(impl(x, y), x.security)
   }
 
-  implicit def fixedSizeNumeric[T: Numeric]: Numeric[FixedSize[T]] =
-    new Numeric[FixedSize[T]] {
+  implicit def fixedSizeNumeric[T: Numeric]: Numeric[GenericFixedSize[T]] =
+    new Numeric[GenericFixedSize[T]] {
       val impl = implicitly[Numeric[T]]
-      override def plus(x: FixedSize[T], y: FixedSize[T]) = checkUnits(x, y, impl.plus)
-      override def minus(x: FixedSize[T], y: FixedSize[T]) = checkUnits(x, y, impl.minus)
-      override def times(x: FixedSize[T], y: FixedSize[T]) = checkUnits(x, y, impl.times)
-      override def negate(x: FixedSize[T]) = x.map(impl.negate)
-      override def fromInt(x: Int) = FixedSize(impl.fromInt(x), "usd")
-      override def toInt(x: FixedSize[T]) = impl.toInt(x.num)
-      override def toLong(x: FixedSize[T]) = impl.toLong(x.num)
-      override def toFloat(x: FixedSize[T]) = impl.toFloat(x.num)
-      override def toDouble(x: FixedSize[T]) = impl.toDouble(x.num)
-      override def compare(x: FixedSize[T], y: FixedSize[T]) =
+      override def plus(x: GenericFixedSize[T], y: GenericFixedSize[T]) = checkUnits(x, y, impl.plus)
+      override def minus(x: GenericFixedSize[T], y: GenericFixedSize[T]) = checkUnits(x, y, impl.minus)
+      override def times(x: GenericFixedSize[T], y: GenericFixedSize[T]) = checkUnits(x, y, impl.times)
+      override def negate(x: GenericFixedSize[T]) = x.map(impl.negate)
+      override def fromInt(x: Int) = FixedSize.numeric(impl.fromInt(x), "usd")
+      override def toInt(x: GenericFixedSize[T]) = impl.toInt(x.num)
+      override def toLong(x: GenericFixedSize[T]) = impl.toLong(x.num)
+      override def toFloat(x: GenericFixedSize[T]) = impl.toFloat(x.num)
+      override def toDouble(x: GenericFixedSize[T]) = impl.toDouble(x.num)
+      override def compare(x: GenericFixedSize[T], y: GenericFixedSize[T]) =
         checkUnits[T, Int](x, y, impl.compare).num
     }
 
-  def apply[T: Numeric] = implicitly[Numeric[FixedSize[T]]]
+  implicit def fixedSizeD: Numeric[FixedSize] = implicitly[Numeric[GenericFixedSize[Double]]]
+    .asInstanceOf[Numeric[FixedSize]]
 
-  val dNumeric = implicitly[Numeric[FixedSizeD]]
+//  def apply[T: Numeric] = implicitly[Numeric[FixedSize[T]]]
+
+  val dNumeric = implicitly[Numeric[FixedSize]]
 }
