@@ -40,13 +40,13 @@ package object time {
 
   def printDuration(d: FiniteDuration): String = printDurationOpt(d).get
 
-  implicit val durationEncoder: Encoder[FiniteDuration] = new Encoder[FiniteDuration] {
+  implicit def DurationEncoder: Encoder[FiniteDuration] = new Encoder[FiniteDuration] {
     override def apply(a: FiniteDuration) = a match {
       case fd: FiniteDuration => printDuration(fd).asJson
     }
   }
 
-  implicit val durationDecoder: Decoder[FiniteDuration] = new Decoder[FiniteDuration] {
+  implicit def DurationDecoder: Decoder[FiniteDuration] = new Decoder[FiniteDuration] {
     override def apply(c: HCursor) = {
       val strDecoder = Decoder[String]
       strDecoder(c).right.map(parseDuration)

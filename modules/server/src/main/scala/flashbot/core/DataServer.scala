@@ -11,7 +11,7 @@ import akka.stream.scaladsl.{Sink, Source}
 import akka.util.Timeout
 import akka.{Done, NotUsed}
 import com.typesafe.config.Config
-import flashbot.config._
+import flashbot.core.FlashbotConfig.{DataSourceConfig, ExchangeConfig, IngestConfig}
 import flashbot.core.MarketData.BaseMarketData
 import flashbot.db._
 import flashbot.server.{DataSourceActor, StreamResponse}

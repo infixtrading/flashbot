@@ -1,5 +1,7 @@
 package flashbot.core
 
+import flashbot.core.Report._
+import flashbot.core.ReportDelta._
 import flashbot.models.core._
 import io.circe._
 import io.circe.generic.semiauto._

@@ -1,6 +1,6 @@
 package flashbot.core
 
-import flashbot.models.core.FixedSize.FixedSizeD
+import flashbot.models.core.FixedSize
 
 object Transaction {
   implicit def ordering: Ordering[Transaction] = new Ordering[Transaction] {
@@ -18,6 +18,6 @@ case class TradeTx(trade: Trade) extends Transaction {
   def micros = trade.micros
 }
 
-case class Deposit(id: String, micros: Long, size: FixedSizeD) extends Transaction
+case class Deposit(id: String, micros: Long, size: FixedSize) extends Transaction
 
-case class Withdraw(id: String, micros: Long, size: FixedSizeD) extends Transaction
+case class Withdraw(id: String, micros: Long, size: FixedSize) extends Transaction

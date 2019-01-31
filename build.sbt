@@ -9,9 +9,9 @@ import scala.xml.transform.{ RewriteRule, RuleTransformer }
   * How to run from the command line with options:
   * Example assumes there is a MyMainApp object in the classpath.
   *
-  * $ sbt '; set javaOptions += "-Dflashbot.db=postgresdb" ; runMain MyMainApp'
+  * $ sbt '; set javaOptions += "-Dflashbot.db=postgres" ; runMain MyMainApp'
   * 
-  * $ sbt '; set javaOptions += "-Dflashbot.db=postgresdb"; set javaOptions += "-Dakka.loglevel=INFO" ; runMain examples.CoinbaseIngest'
+  * $ sbt '; set javaOptions += "-Dflashbot.db=postgres"; set javaOptions += "-Dakka.loglevel=INFO" ; runMain examples.CoinbaseIngest'
   */
 
 organization in ThisBuild := "com.infixtrading"
@@ -375,7 +375,8 @@ lazy val flashbot = project
 
 lazy val coreBase = crossModule("core", previousFBVersion)
 lazy val core = coreBase.jvm.settings(
-  libraryDependencies ++= (configDeps ++ akkaDeps ++ timeSeriesDeps ++ Seq(
+  libraryDependencies ++= (configDeps ++ akkaDeps ++ timeSeriesDeps ++ 
+        networkDeps ++ serviceDeps ++ statsDeps ++ Seq(
     "com.github.andyglow" % "scala-jsonschema-core_2.12" % "0.0.8",
     "com.github.andyglow" % "scala-jsonschema-api_2.12" % "0.0.8",
     "com.github.andyglow" % "scala-jsonschema-circe-json_2.12" % "0.0.8",
@@ -399,9 +400,7 @@ lazy val coreJS = coreBase.js
 
 lazy val server = flashbotModule("server", previousFBVersion).settings(
   libraryDependencies ++= (
-    serviceDeps ++ akkaDeps ++ networkDeps ++ jsonDeps 
-    ++ dataStores ++ timeSeriesDeps ++ statsDeps 
-    ++ Seq(
+    dataStores ++ Seq(
       "com.typesafe.slick" %% "slick" % "3.2.3",
       "com.typesafe.slick" %% "slick-hikaricp" % "3.2.3",
       "com.lightbend.akka" %% "akka-stream-alpakka-slick" % "1.0-M2",

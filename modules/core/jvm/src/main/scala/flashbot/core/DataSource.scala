@@ -4,8 +4,8 @@ import akka.NotUsed
 import akka.actor.ActorContext
 import akka.stream.ActorMaterializer
 import akka.stream.scaladsl.Source
-import flashbot.config.ExchangeConfig
 import flashbot.core.DataSource._
+import flashbot.core.FlashbotConfig.ExchangeConfig
 
 import scala.concurrent.Future
 import scala.concurrent.duration._

@@ -10,7 +10,6 @@ import akka.stream.ActorMaterializer
 import akka.stream.scaladsl.Sink
 import akka.util.Timeout
 import flashbot.core.{Report, _}
-import flashbot.config._
 import flashbot.util.time
 import flashbot.models.api._
 import flashbot.util.files.rmRf

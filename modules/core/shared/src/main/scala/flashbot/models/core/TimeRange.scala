@@ -3,6 +3,7 @@ package flashbot.models.core
 import java.time.Instant
 
 import flashbot.util.time._
+import io.circe.generic.JsonCodec
 
 import scala.concurrent.duration.Duration
 
@@ -10,6 +11,7 @@ import scala.concurrent.duration.Duration
   * Specifies a start and end time in micros. This differs from from/to in DataSelection in that it
   * has no semantics for polling.
   */
+@JsonCodec
 case class TimeRange(start: Long, end: Long = Long.MaxValue) {
   def startInstant: Instant = Instant.ofEpochMilli(start / 1000)
   def endInstant: Instant = Instant.ofEpochMilli(end / 1000)

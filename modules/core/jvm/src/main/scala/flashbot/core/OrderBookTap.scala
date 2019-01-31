@@ -2,6 +2,7 @@ package flashbot.core
 
 import java.util.UUID
 
+import breeze.stats.distributions.Gaussian
 import flashbot.models.core.Order.{Buy, Sell, Side}
 import flashbot.models.core.{Order, OrderBook}
 

@@ -8,9 +8,8 @@ import akka.stream.ActorMaterializer
 import akka.stream.scaladsl.Source
 import io.circe.syntax._
 import flashbot.client.FlashbotClient
-import flashbot.config.FlashbotConfig
 import flashbot.core.MarketData.BaseMarketData
-import flashbot.core.{MarketData, TimeSeriesTap, TradingEngine}
+import flashbot.core.{FlashbotConfig, MarketData, TimeSeriesTap, TradingEngine}
 import flashbot.models.api.DataOverride
 import flashbot.models.core.{Candle, Portfolio, TimeRange}
 

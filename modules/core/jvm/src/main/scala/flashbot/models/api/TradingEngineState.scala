@@ -1,8 +1,8 @@
 package flashbot.models.api
 import java.time.Instant
 
+import flashbot.core.FlashbotConfig.BotConfig
 import flashbot.core.Transaction
-import flashbot.config.BotConfig
 import io.circe.Json
 
 import scala.collection.SortedSet

@@ -11,7 +11,7 @@ import akka.stream.scaladsl.Source
 import akka.util.Timeout
 import flashbot.server.{StrategyInfo, StreamResponse}
 import flashbot.models.api.{DataOverride, DataSelection, DataStreamReq, OrderTarget}
-import flashbot.models.core.FixedSize.FixedSizeD
+import flashbot.models.core.FixedSize
 import flashbot.models.core._
 import io.circe._
 import com.github.andyglow.jsonschema.AsCirce._
@@ -184,7 +184,7 @@ abstract class Strategy[P] {
     * @tparam T the type of data being requested (Trade, OrderBook, Candle, Ladder, etc...)
     * @return a future of the Akka Source which can be materialized to the requested data stream.
     */
-  def resolveMarketData[T](selection: DataSelection[T], dataServer: ActorRef, dataOverrides: Seq[DataOverride[_]])
+  def resolveMarketData[T](selection: DataSelection[T], dataServer: ActorRef, dataOverrides: Seq[DataOverride[Any]])
                        (implicit mat: Materializer, ec: ExecutionContext)
       : Future[Source[MarketData[T], NotUsed]] = {
     val timeRange = selection.timeRange.get

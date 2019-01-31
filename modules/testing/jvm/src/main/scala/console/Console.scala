@@ -9,7 +9,6 @@ import akka.stream.scaladsl.{Keep, Source}
 import flashbot.server.TimeLog
 import flashbot.server.TimeLog.TimeLog
 import flashbot.client.FlashbotClient
-import flashbot.config.FlashbotConfig
 import flashbot.core._
 import flashbot.models.core.Order._
 

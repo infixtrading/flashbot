@@ -1,7 +1,7 @@
 package util
 
 import akka.stream.alpakka.slick.javadsl.SlickSession
-import flashbot.config.FlashbotConfig
+import flashbot.core.FlashbotConfig
 import flashbot.db.Tables
 
 import scala.concurrent.Future

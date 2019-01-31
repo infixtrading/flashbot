@@ -7,7 +7,6 @@ import akka.stream.ActorMaterializer
 import flashbot.client.FlashbotClient
 import flashbot.util.time._
 import flashbot.core.{TradingEngine, _}
-import flashbot.config._
 import flashbot.models.core.OrderBook
 import io.prometheus.client.exporter.HTTPServer
 
@@ -18,28 +17,15 @@ import scala.util.{Failure, Success}
 
 object CoinbaseIngest extends App {
 
-  implicit val config = FlashbotConfig.load().copy(
-    ingest = IngestConfig(
-//      enabled = Seq("coinbase/btc_usd/trades"),
-//      enabled = Seq("coinbase/btc_usd/book"),
-      enabled = Seq("coinbase/btc_usd/trades", "coinbase/btc_usd/book"),
-//      enabled = Seq(),
-      backfill = Seq("coinbase/btc_usd/trades"),
-//      backfill = Seq(),
-      retention = Seq()
-    )
-  )
+  implicit val config = FlashbotConfig.load("coinbase-ingest")
 
   var metricsServer: HTTPServer = new HTTPServer(9322)
 
-  implicit val system = ActorSystem("coinbase-system", config.conf)
+  implicit val system = ActorSystem(config.systemName, config.conf)
 
   val dataServer = system.actorOf(DataServer.props(config))
 
   val engine = system.actorOf(TradingEngine.props("trading-engine", config, dataServer))
-
-  val blockingEc: ExecutionContext =
-    ExecutionContext.fromExecutor(Executors.newFixedThreadPool(5))
 
   implicit val ec: ExecutionContext = system.dispatcher
   implicit val mat = ActorMaterializer()

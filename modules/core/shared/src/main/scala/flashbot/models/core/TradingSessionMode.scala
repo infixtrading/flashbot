@@ -6,6 +6,9 @@ import flashbot.util.time
 import io.circe.{Decoder, Encoder, Json}
 
 import scala.concurrent.duration._
+import scala.language.postfixOps
+
+import TradingSessionMode._
 
 sealed trait TradingSessionMode {
   def timeRange(now: Instant): TimeRange
@@ -37,10 +40,11 @@ object TradingSessionMode {
     case "paper" :: durStr :: Nil => Paper(time.parseDuration(durStr))
   }
 
+  implicit val durationDecoder: Decoder[FiniteDuration] = time.DurationDecoder
+
   implicit val en: Encoder[TradingSessionMode] = Encoder.encodeString.contramap(_.toString)
 
-  implicit val de: Decoder[TradingSessionMode] =
-    Decoder.decodeString.map(TradingSessionMode.apply)
+  implicit val de: Decoder[TradingSessionMode] = Decoder.decodeString.map(TradingSessionMode.apply)
 }
 
 

@@ -1,6 +1,6 @@
 package flashbot.models.api
 
-import flashbot.config.BotConfig
+import flashbot.core.FlashbotConfig.BotConfig
 import flashbot.core.ReportEvent
 import flashbot.models.core.Portfolio
 

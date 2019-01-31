@@ -1,6 +1,5 @@
 package flashbot.core
 
-import flashbot.config._
 import org.scalatest.{FlatSpec, FunSpec, FunSuite, Matchers}
 
 class ConfigSpec extends FlatSpec with Matchers {

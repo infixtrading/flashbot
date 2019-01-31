@@ -3,9 +3,11 @@ package flashbot.core
 import akka.actor.{ActorRef, ActorSystem}
 import akka.stream.Materializer
 import akka.util.Timeout
+import flashbot.core.FlashbotConfig.ExchangeConfig
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
+import scala.language.postfixOps
 import scala.util.{Failure, Success, Try}
 
 class SessionLoader(getExchangeConfigs: () => Map[String, ExchangeConfig], dataServer: ActorRef)
@@ -14,7 +16,7 @@ class SessionLoader(getExchangeConfigs: () => Map[String, ExchangeConfig], dataS
 
   def exchanges: Set[String] = getExchangeConfigs().keySet
 
-  protected[engine] def loadNewExchange(name: String)
+  protected[flashbot] def loadNewExchange(name: String)
                                        (implicit system: ActorSystem,
                                         mat: Materializer): Try[Exchange] = {
     val config = getExchangeConfigs().get(name)
@@ -39,12 +41,10 @@ class SessionLoader(getExchangeConfigs: () => Map[String, ExchangeConfig], dataS
     }
   }
 
-  protected[engine] def loadNewStrategy(className: String): Try[Strategy] =
+  protected[flashbot] def loadNewStrategy[P](className: String): Try[Strategy[P]] =
     try {
-      Success(getClass.getClassLoader
-        .loadClass(className)
-        .asSubclass(classOf[Strategy])
-        .newInstance())
+      val clazz = getClass.getClassLoader.loadClass(className).asSubclass(classOf[Strategy[P]])
+      Success(clazz.newInstance())
     } catch {
       case err: ClassNotFoundException =>
         Failure(new RuntimeException(s"Strategy class not found: $className", err))

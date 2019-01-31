@@ -1,12 +1,12 @@
 package flashbot.core
 
 import flashbot.core.DeltaFmt.HasUpdateEvent
+import flashbot.core.Report._
+import flashbot.core.ReportDelta._
+import flashbot.core.ReportEvent._
 import flashbot.models.core.Candle
-import flashbot.report.ReportDelta._
-import flashbot.report.ReportEvent._
 import flashbot.util.time._
 import io.circe._
-import io.circe.generic.auto._
 import io.circe.generic.semiauto._
 import io.circe.syntax._
 

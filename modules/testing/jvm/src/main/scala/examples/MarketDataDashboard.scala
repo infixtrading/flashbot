@@ -4,8 +4,7 @@ import akka.actor.ActorSystem
 import akka.stream.ActorMaterializer
 import akka.util.Timeout
 import flashbot.client.FlashbotClient
-import flashbot.config.FlashbotConfig
-import flashbot.core.{Trade, TradingEngine}
+import flashbot.core.{FlashbotConfig, Trade, TradingEngine}
 
 import scala.concurrent.Await
 import scala.concurrent.duration._

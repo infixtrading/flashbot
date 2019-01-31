@@ -11,7 +11,7 @@ import io.circe.Json
 
 import scala.concurrent.duration.FiniteDuration
 
-case class DataOverride[T](path: DataPath[T], source: Source[MarketData[T], NotUsed])
+case class DataOverride[+T](path: DataPath[T], source: Source[MarketData[_], NotUsed])
 
 sealed trait TradingEngineQuery
 case object Ping extends TradingEngineQuery
@@ -21,7 +21,7 @@ case class BacktestQuery(strategyName: String,
                          portfolio: Portfolio,
                          barSize: Option[FiniteDuration],
                          eventsOut: Option[ActorRef] = None,
-                         dataOverrides: Seq[DataOverride[_]] = Seq.empty) extends TradingEngineQuery
+                         dataOverrides: Seq[DataOverride[Any]] = Seq.empty) extends TradingEngineQuery
 
 case class BotReportQuery(botId: String) extends TradingEngineQuery
 case class BotReportsQuery() extends TradingEngineQuery

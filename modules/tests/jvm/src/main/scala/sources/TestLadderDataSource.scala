@@ -1,5 +1,4 @@
 package sources
-import akka.NotUsed
 import akka.actor.ActorContext
 import akka.stream.ActorMaterializer
 import akka.stream.scaladsl.Source

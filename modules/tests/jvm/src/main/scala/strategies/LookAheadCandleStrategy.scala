@@ -11,9 +11,8 @@ import flashbot.core.{SessionLoader, _}
 import flashbot.models.api.{DataOverride, DataSelection, OrderTarget}
 import flashbot.models.core._
 import io.circe.{Decoder, Encoder}
-import io.circe.generic.auto._
 import io.circe.generic.semiauto._
-import org.jquantlib.time.TimeSeries
+import io.circe.parser._
 
 import scala.concurrent.duration._
 import scala.concurrent.{Await, ExecutionContext, Future}
@@ -43,15 +42,13 @@ object LookaheadParams {
 /**
   * A strategy that predicts data one step forwards in time.
   */
-class LookAheadCandleStrategy extends Strategy
+class LookAheadCandleStrategy extends Strategy[LookaheadParams]
     with Predictor1[MarketData[Candle], Double]
     with TimeSeriesMixin {
 
-  import FixedSize.dNumeric._
+  import FixedSize.numericDouble._
 
-  type Params = LookaheadParams
-
-  override def decodeParams = deriveDecoder
+  override def decodeParams(paramsStr: String) = decode[LookaheadParams](paramsStr).toTry
 
   // Source the data from the strategy itself.
   val path1 = DataPath("bitfinex", "eth_usd", CandlesType(5 seconds))
@@ -90,7 +87,7 @@ class LookAheadCandleStrategy extends Strategy
   override def handleData(md: MarketData[_])(implicit ctx: TradingSession) = md.data match {
     case candle: Candle =>
 
-      recordCandle(md.source, md.topic, candle)
+      recordCandle((md.source, md.topic), candle)
 
       if (prediction.isDefined) {
         if (prediction.get != candle.close) {

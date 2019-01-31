@@ -13,7 +13,7 @@ import flashbot.server.StrategyInfo
 import flashbot.util.JavaUtils
 
 import scala.collection.JavaConverters._
-import scala.concurrent.ExecutionContext
+import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success, Try}
 
 /**
@@ -34,16 +34,17 @@ abstract class JavaStrategy[P] extends Strategy[P] with TimeSeriesMixin {
   def jDecodeParams(paramsStr: String): P
 
   final override def info(loader: SessionLoader) =
-    JavaUtils.fromJava(jInfo(loader).thenApply(Option(_)))
+    JavaUtils.fromJava(jInfo(loader).thenApply[Option[StrategyInfo]](info => Option[StrategyInfo](info)))
 
   def jInfo(loader: SessionLoader): CompletableFuture[StrategyInfo] =
     CompletableFuture.completedFuture(null)
 
-  final override def initialize(portfolio: Portfolio, loader: SessionLoader) =
-    JavaUtils.fromJava(jInitialize(portfolio, loader).thenApply(_.asScala.toSeq))
+  final override def initialize(portfolio: Portfolio, loader: SessionLoader): Future[Seq[DataPath[Any]]] =
+    JavaUtils.fromJava[Seq[DataPath[Any]]](
+      jInitialize(portfolio, loader).thenApply[Seq[DataPath[Any]]](paths => paths.asScala))
 
   def jInitialize(portfolio: Portfolio, loader: SessionLoader)
-    : CompletableFuture[java.util.List[DataPath[Object]]]
+    : CompletableFuture[java.util.List[DataPath[Any]]]
 
   final override def handleData(data: MarketData[_])(implicit ctx: TradingSession) = jHandleData(data)
   def jHandleData(data: MarketData[_])(implicit ctx: TradingSession): Unit
@@ -52,12 +53,12 @@ abstract class JavaStrategy[P] extends Strategy[P] with TimeSeriesMixin {
   def jHandleEvent(event: StrategyEvent)(implicit ctx: TradingSession): Unit
 
   final override def resolveMarketData[T](selection: DataSelection[T],
-                                          dataServer: ActorRef, dataOverrides: Seq[DataOverride[_]])
+                                          dataServer: ActorRef, dataOverrides: Seq[DataOverride[Any]])
                                          (implicit mat: Materializer, ec: ExecutionContext) =
     JavaUtils.fromJava(jResolveMarketData(selection, dataServer, dataOverrides.asJava))
 
   def jResolveMarketData[T](selection: DataSelection[T],
-                            dataServer: ActorRef, dataOverrides: java.util.List[DataOverride[_]])
+                            dataServer: ActorRef, dataOverrides: java.util.List[DataOverride[Any]])
                            (implicit mat: Materializer, ec: ExecutionContext)
       : CompletableFuture[Source[MarketData[T], NotUsed]] = {
     JavaUtils.toJava(super.resolveMarketData(selection, dataServer, dataOverrides.asScala))

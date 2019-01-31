@@ -5,9 +5,12 @@ import java.time.Instant
 import akka.NotUsed
 import akka.stream.scaladsl.{Flow, Sink, Source}
 import akka.stream.{Materializer, OverflowStrategy}
+import breeze.stats.distributions.Gaussian
 import flashbot.models.core.{Candle, TimeRange}
 
-import scala.concurrent.duration.{Duration, FiniteDuration}
+import scala.concurrent.duration._
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.language.postfixOps
 
 /**
   * TimeTap is an artificial source of time series data.

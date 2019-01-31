@@ -14,6 +14,7 @@ import flashbot.server.{NetworkSource, StreamResponse}
 import flashbot.models.api._
 import flashbot.models.core._
 import flashbot.client.FlashbotClient._
+import flashbot.core.FlashbotConfig.BotConfig
 import io.circe.Json
 
 import scala.concurrent._

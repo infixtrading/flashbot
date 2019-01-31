@@ -1,7 +1,8 @@
 package flashbot.core
 
-import flashbot.models.core.FixedSize.FixedSizeD
-import flashbot.models.core.{Market, Portfolio}
+import flashbot.models.core.{FixedSize, Market, Portfolio}
+
+import com.quantego.clp
 
 /**
   * PositionManager is a set of functions that analyze a portfolio to answer questions about
@@ -105,9 +106,9 @@ object PositionManager {
                    markets: Seq[Market],
                    targetPercents: Map[String, Double],
                    priceMap: PriceIndex,
-                   equityDenomination: String = "usd"): Map[Market, FixedSizeD] = {
+                   equityDenomination: String = "usd"): Map[Market, FixedSize] = {
 
-    val model = new quantego.clp.CLP()
+    val model = new clp.CLP()
 
     // For all accounts in portfolio, create an account variable.
 

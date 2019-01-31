@@ -17,7 +17,7 @@ trait TradingSession {
 object TradingSession {
   case class SessionSetup(instruments: InstrumentIndex,
                           exchanges: Map[String, Exchange],
-                          strategy: Strategy,
+                          strategy: Strategy[_],
                           sessionId: String,
                           streams: Seq[Source[MarketData[_], NotUsed]],
                           sessionMicros: Long,

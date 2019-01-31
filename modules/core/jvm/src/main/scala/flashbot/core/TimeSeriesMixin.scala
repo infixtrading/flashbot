@@ -3,7 +3,7 @@ package flashbot.core
 import java.time.{Instant, ZoneOffset, ZonedDateTime}
 
 import flashbot.core.ReportEvent.{CandleAdd, CandleUpdate}
-import flashbot.models.core.{Candle, Market, FixedSize}
+import flashbot.models.core.{Candle, FixedSize, GenericFixedSize, Market}
 import flashbot.util.time._
 import org.ta4j.core.{Bar, BaseBar, BaseTimeSeries, TimeSeries}
 import org.ta4j.core.indicators.helpers.ClosePriceIndicator
@@ -26,7 +26,7 @@ trait TimeSeriesMixin { self: Strategy[_] =>
     val key = priceKey(market.exchange, market.symbol)
     val indicator = closePrices.getOrElse(key, new ClosePriceIndicator(allSeries(key)))
     val price = indicator.getValue(indicator.getTimeSeries.getEndIndex).doubleValue()
-    (price, market.symbol)
+    FixedSize(price, market.symbol)
   }
 
   case class PriceIndicator(market: Market) extends Indicator[Double] {
@@ -73,15 +73,6 @@ trait TimeSeriesMixin { self: Strategy[_] =>
                   amount: Option[Double] = None)
                  (implicit ctx: TradingSession): Unit = {
     _record(priceKey(market.exchange, market.symbol), micros, price, amount)
-  }
-
-  def recordTrade(exchange: String,
-                  product: String,
-                  micros: Long,
-                  price: Double,
-                  amount: Option[Double] = None)
-                 (implicit ctx: TradingSession): Unit = {
-    _record(priceKey(exchange, product), micros, price, amount)
   }
 
   private def _record(key: String, micros: Long, price: Double, amount: Option[Double])
@@ -175,10 +166,6 @@ trait TimeSeriesMixin { self: Strategy[_] =>
   def recordCandle(market: Market, candle: Candle)
                   (implicit ctx: TradingSession): Unit =
     _record(priceKey(market.exchange, market.symbol), candle)
-
-  def recordCandle(exchange: String, product: String, candle: Candle)
-                  (implicit ctx: TradingSession): Unit =
-    _record(priceKey(exchange, product), candle)
 
   def prices(exchange: String, product: String): TimeSeries = _series(priceKey(exchange, product))
 

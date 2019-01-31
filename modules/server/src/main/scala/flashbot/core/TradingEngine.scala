@@ -13,11 +13,13 @@ import akka.stream.scaladsl.{Keep, Sink, Source}
 import akka.stream.{Materializer, OverflowStrategy}
 import akka.util.Timeout
 import flashbot.client.FlashbotClient
-import flashbot.config._
+import flashbot.core.FlashbotConfig.{BotConfig, ExchangeConfig, GrafanaConfig, StaticBotsConfig}
+import flashbot.core.ReportEvent._
 import flashbot.server.TradingSessionActor.{SessionPing, SessionPong, StartSession, StopSession}
 import flashbot.server._
 import flashbot.models.api._
 import flashbot.models.core.{Account, Market, Portfolio, _}
+import flashbot.strategies.TimeSeriesStrategy
 import flashbot.util._
 import flashbot.util.stream._
 import flashbot.util.time.currentTimeMicros
@@ -415,8 +417,8 @@ class TradingEngine(engineId: String,
           new IllegalArgumentException("Patterns are not currently supported in time series queries."))
         else {
           val params = TimeSeriesStrategy.Params(query.path)
-          (self ? BacktestQuery("time_series", params.asJson.noSpaces, query.range,
-              Portfolio.empty.asJson.noSpaces, Some(query.interval)))
+          (self ? BacktestQuery("time_series", params.asJson, query.range,
+              Portfolio.empty, Some(query.interval)))
             .mapTo[ReportResponse]
             .map(_.report.timeSeries)
         }) pipeTo sender()

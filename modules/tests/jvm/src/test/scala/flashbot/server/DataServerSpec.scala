@@ -11,7 +11,6 @@ import akka.testkit.{ImplicitSender, TestKit}
 import akka.util.Timeout
 import flashbot.models.api.{DataSelection, DataStreamReq}
 import com.typesafe.config.ConfigFactory
-import flashbot.config._
 import flashbot.core.{DataServer, MarketData, Trade, TradingEngine}
 import flashbot.models.core.Ladder
 import org.scalatest.concurrent.{Eventually, IntegrationPatience}

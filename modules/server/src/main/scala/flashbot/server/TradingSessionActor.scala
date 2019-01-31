@@ -10,7 +10,7 @@ import akka.stream._
 import akka.pattern.ask
 import akka.util.Timeout
 import breeze.stats.distributions.Gaussian
-import flashbot.config.ExchangeConfig
+import flashbot.core.FlashbotConfig.ExchangeConfig
 import io.circe._
 import io.circe.syntax._
 import flashbot.core.Instrument.CurrencyPair
@@ -18,14 +18,14 @@ import flashbot.util.stream._
 import flashbot.util._
 import flashbot.util.time.currentTimeMicros
 import flashbot.core.{Strategy, _}
-import flashbot.server.TradingSession._
 import flashbot.server.TradingSessionActor.{SessionPing, SessionPong, StartSession, StopSession}
 import flashbot.models.api.{DataOverride, DataSelection, LogMessage, OrderTarget}
 import flashbot.models.core.Action._
 import flashbot.models.core._
-import flashbot.report.Report.ReportError
-import flashbot.report.ReportEvent._
-import flashbot.report._
+import flashbot.core.Report.ReportError
+import flashbot.core.ReportEvent._
+import flashbot.core.Report._
+import flashbot.core.TradingSession._
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
@@ -67,7 +67,7 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
 
   var killSwitch: Option[SharedKillSwitch] = None
 
-  def setup(): Future[SessionSetup] = {
+  def setup[P](): Future[SessionSetup] = {
 
     val exchangeConfigs = getExchangeConfigs()
 
@@ -117,7 +117,7 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
       _ = { log.debug("Found strategy class") }
 
       // Load the strategy
-      rawStrategy <- Future.fromTry[Strategy](sessionLoader.loadNewStrategy(strategyClassName))
+      rawStrategy <- Future.fromTry[Strategy[P]](sessionLoader.loadNewStrategy[P](strategyClassName))
 
       strategy <- for {
         // Decode the params

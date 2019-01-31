@@ -3,7 +3,7 @@ package flashbot.core
 import java.util.UUID.randomUUID
 import java.util.concurrent.ConcurrentLinkedQueue
 
-import flashbot.models.core.FixedSize.FixedSizeD
+import flashbot.models.core.FixedSize
 import flashbot.models.core.Order.Fill
 import flashbot.models.core._
 import io.circe.Json
@@ -30,7 +30,7 @@ abstract class Exchange {
   def quoteAssetPrecision(pair: Instrument): Int
   def lotSize(pair: Instrument): Option[Double] = None
 
-  def round(instrument: Instrument)(size: FixedSizeD): FixedSizeD =
+  def round(instrument: Instrument)(size: FixedSize): FixedSize =
     if (size.security == instrument.security.get)
       size.map(roundBase(instrument))
     else if (size.security == instrument.settledIn)

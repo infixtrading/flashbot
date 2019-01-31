@@ -15,7 +15,7 @@ import flashbot.db._
 import flashbot.models.api.StreamLiveData
 import flashbot.util.stream._
 import com.typesafe.config.Config
-import flashbot.config._
+import flashbot.core.FlashbotConfig.{DataSourceConfig, ExchangeConfig, IngestConfig}
 import flashbot.core.{DataType, DeltaFmt, DeltaFmtJson, MarketData}
 import flashbot.models.core.DataPath
 import io.circe.Printer
