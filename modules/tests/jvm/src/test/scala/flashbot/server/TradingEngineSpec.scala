@@ -23,6 +23,7 @@ import org.jfree.data.time._
 import org.jfree.data.time.ohlc.{OHLCSeries, OHLCSeriesCollection}
 import org.scalatest.{BeforeAndAfterAll, FlatSpec, Matchers, WordSpecLike}
 import strategies.{LookaheadParams, TradeWriter}
+import util.TestDB
 
 import scala.concurrent.Await
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -43,8 +44,8 @@ class TradingEngineSpec extends WordSpecLike
 
   "TradingEngine" should {
     "respond to a ping" in {
-      val config = FlashbotConfig.load()
-      val system = ActorSystem("System1", config.conf)
+      implicit val config = FlashbotConfig.load()
+      val system = ActorSystem(config.systemName, config.conf)
 
       val dataServer = system.actorOf(DataServer.props(config))
 
@@ -66,12 +67,15 @@ class TradingEngineSpec extends WordSpecLike
           fail("should respond with a Pong")
       }
 
-      Await.ready(system.terminate(), 10 seconds)
+      Await.ready(for {
+        _ <- system.terminate()
+        _ <- TestDB.dropTestDB()
+      } yield Unit, 10 seconds)
     }
 
     "respect bot TTL" in {
-      val config = FlashbotConfig.load()
-      val system = ActorSystem("System1", config.conf)
+      implicit val config = FlashbotConfig.load()
+      val system = ActorSystem(config.systemName, config.conf)
 
       val engine = system.actorOf(TradingEngine.props("test-engine"))
       val fb = new FlashbotClient(engine)
@@ -109,7 +113,10 @@ class TradingEngineSpec extends WordSpecLike
         fb.botStatus("mybot")
       }
 
-      Await.ready(system.terminate(), 10 seconds)
+      Await.ready(for {
+        _ <- system.terminate()
+        _ <- TestDB.dropTestDB()
+      } yield Unit, 10 seconds)
     }
 
     /**
@@ -117,8 +124,8 @@ class TradingEngineSpec extends WordSpecLike
       */
     "subscribe to the report of a running bot" in {
 
-      val config = FlashbotConfig.load()
-      implicit val system = ActorSystem("System1", config.conf)
+      implicit val config = FlashbotConfig.load()
+      implicit val system = ActorSystem(config.systemName, config.conf)
 
       val engine = system.actorOf(TradingEngine.props("test-engine"))
       val fb = new FlashbotClient(engine)
@@ -150,11 +157,14 @@ class TradingEngineSpec extends WordSpecLike
       // Also check that it was reverted to disabled state after the data stream completed.
       fb.botStatus("bot2") shouldBe Disabled
 
-      Await.ready(system.terminate(), 10 seconds)
+      Await.ready(for {
+        _ <- system.terminate()
+        _ <- TestDB.dropTestDB()
+      } yield Unit, 10 seconds)
     }
 
     "enable static bots" in {
-      val config = FlashbotConfig.load().copy(bots = StaticBotsConfig(
+      implicit val config = FlashbotConfig.load().copy(bots = StaticBotsConfig(
         enabled = Seq("scanner1"),
         configs = Map(
           "scanner1" -> BotConfig("candlescanner", Paper()),
@@ -162,19 +172,22 @@ class TradingEngineSpec extends WordSpecLike
         )
       ))
 
-      implicit val system = ActorSystem("System1", config.conf)
+      implicit val system = ActorSystem(config.systemName, config.conf)
       val engine = system.actorOf(TradingEngine.props("engine", config))
       val fb = new FlashbotClient(engine)
       fb.botStatus("scanner1") shouldBe Running
       fb.botStatus("scanner2") shouldBe Disabled
 
-      Await.ready(system.terminate(), 10 seconds)
+      Await.ready(for {
+        _ <- system.terminate()
+        _ <- TestDB.dropTestDB()
+      } yield Unit, 10 seconds)
     }
 
     "be profitable when using lookahead" in {
 
-      val config = FlashbotConfig.load()
-      implicit val system = ActorSystem("System1", config.conf)
+      implicit val config = FlashbotConfig.load()
+      implicit val system = ActorSystem(config.systemName, config.conf)
 
       val now = Instant.now()
 
@@ -302,7 +315,10 @@ class TradingEngineSpec extends WordSpecLike
 
       // There shouldn't be a single period of negative returns when the algo is cheating.
 
-      Await.ready(system.terminate(), 10 seconds)
+      Await.ready(for {
+        _ <- system.terminate()
+        _ <- TestDB.dropTestDB()
+      } yield Unit, 10 seconds)
     }
 
 //    "lose money when using lookahead to self sabatoge" in {

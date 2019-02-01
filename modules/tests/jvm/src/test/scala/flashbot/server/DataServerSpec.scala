@@ -29,23 +29,19 @@ class DataServerSpec extends WordSpecLike with Matchers with Eventually {
 
   "DataServer" should {
     "ingest and serve trades" in {
-      val conf = ConfigFactory.load(classOf[TradingEngine].getClassLoader)
-      val fbConf = conf.getConfig("flashbot")
-      implicit val system = ActorSystem("System1", ConfigFactory.defaultApplication()
-          .withFallback(fbConf)
-          .withFallback(conf))
+      implicit val config = FlashbotConfig.load()
+      implicit val system = ActorSystem(config.systemName, config.conf)
 
       implicit val timeout = Timeout(10 seconds)
       implicit val mat = ActorMaterializer()
       implicit val ec = system.dispatcher
 
       // Create data server actor.
-      implicit val fbConfig = FlashbotConfig.load()
-      val dataserver = system.actorOf(Props(new DataServer(fbConfig.db,
+      val dataserver = system.actorOf(Props(new DataServer(config.db,
         // Ingests from a stream that is configured to send data for about 3 seconds.
         Map("bitfinex" -> DataSourceConfig("flashbot.sources.TestDataSource",
           Some(Seq("btc_usd")), Some(Seq("trades")))),
-        fbConfig.exchanges,
+        config.exchanges,
         IngestConfig(Seq("bitfinex/btc_usd/trades"), Seq(), Seq(Seq()))
       )))
 
@@ -68,22 +64,18 @@ class DataServerSpec extends WordSpecLike with Matchers with Eventually {
     }
 
     "ingest and serve ladders" in {
-      val conf = ConfigFactory.load(classOf[TradingEngine].getClassLoader)
-      val fbConf = conf.getConfig("flashbot")
-      implicit val system = ActorSystem("System1", ConfigFactory.defaultApplication()
-          .withFallback(fbConf)
-          .withFallback(conf))
+      implicit val config = FlashbotConfig.load()
+      implicit val system = ActorSystem(config.systemName, config.conf)
 
       implicit val timeout = Timeout(1 minute)
       implicit val mat = ActorMaterializer()
       implicit val ec = system.dispatcher
 
       // Create data server actor.
-      implicit val fbConfig = FlashbotConfig.load()
-      val dataserver = system.actorOf(Props(new DataServer(fbConfig.db,
+      val dataserver = system.actorOf(Props(new DataServer(config.db,
         Map("bitfinex" -> DataSourceConfig("flashbot.sources.TestLadderDataSource",
           Some(Seq("btc_usd")), Some(Seq("ladder")))),
-        fbConfig.exchanges,
+        config.exchanges,
         IngestConfig(Seq("bitfinex/btc_usd/ladder"), Seq(), Seq(Seq()))
       )))
 
@@ -152,28 +144,8 @@ class DataServerSpec extends WordSpecLike with Matchers with Eventually {
         implicit val patienceConfig =
           PatienceConfig(timeout = scaled(Span(8, Seconds)), interval = scaled(Span(500, Millis)))
 
-        try {
-          eventually {
-            assert(fetchTrades())
-          }
-        } catch {
-          case err: Throwable =>
-            implicit val slickSession = SlickSession.forConfig(config.db)
-            import slickSession.profile.api._
-            val backfills = Await.result(slickSession.db.run(Backfills.result), timeout.duration)
-            val bundles = Await.result(slickSession.db.run(Bundles.result), timeout.duration)
-            val snapshots = Await.result(slickSession.db.run(Snapshots.sortBy(x => (x.bundle, x.seqid)).result), timeout.duration)
-            val deltas = Await.result(slickSession.db.run(Deltas.sortBy(x => (x.bundle, x.seqid)).result), timeout.duration)
-            println("BACKFILLS")
-            backfills.foreach(println)
-            println("BUNDLES")
-            bundles.foreach(println)
-            println("SNAPSHOTS")
-            snapshots.foreach(println)
-            println("DELTAS")
-            deltas.foreach(println)
-
-            throw err
+        eventually {
+          assert(fetchTrades())
         }
 
         Await.ready(system.terminate(), 10 seconds)
