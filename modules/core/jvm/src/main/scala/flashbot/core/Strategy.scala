@@ -100,7 +100,7 @@ abstract class Strategy[P] {
     * @return the target id, globally unique within this session.
     */
   protected def limitOrder(market: Market,
-                           size: FixedSize,
+                           size: FixedSize[Double],
                            price: Double,
                            key: String,
                            postOnly: Boolean = false)
@@ -135,7 +135,7 @@ abstract class Strategy[P] {
     * @return the underlying target id, which is randomly generated in this call.
     */
   protected def limitOrderOnce(market: Market,
-                               size: FixedSize,
+                               size: FixedSize[Double],
                                price: Double,
                                postOnly: Boolean = false)
                               (implicit ctx: TradingSession): String = {
@@ -160,7 +160,7 @@ abstract class Strategy[P] {
     * @param ctx the trading session instance.
     * @return the underlying target id, which is randomly generated in this call.
     */
-  protected def marketOrder(market: Market, size: FixedSize)
+  protected def marketOrder(market: Market, size: FixedSize[Double])
                            (implicit ctx: TradingSession): String = {
     val target = OrderTarget(
       market,
@@ -189,7 +189,9 @@ abstract class Strategy[P] {
       : Future[Source[MarketData[T], NotUsed]] = {
     val timeRange = selection.timeRange.get
     val overrideOpt = dataOverrides
-      .find(_.path.matches(selection.path)).asInstanceOf[Option[Source[MarketData[T], NotUsed]]]
+      .find(_.path.matches(selection.path))
+      .map(_.source)
+      .asInstanceOf[Option[Source[MarketData[T], NotUsed]]]
       .map(_.filter(md => md.micros >= timeRange.start && md.micros < timeRange.end))
       .map(Future.successful)
 

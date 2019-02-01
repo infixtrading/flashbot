@@ -106,7 +106,7 @@ object PositionManager {
                    markets: Seq[Market],
                    targetPercents: Map[String, Double],
                    priceMap: PriceIndex,
-                   equityDenomination: String = "usd"): Map[Market, FixedSize] = {
+                   equityDenomination: String = "usd"): Map[Market, FixedSize[Double]] = {
 
     val model = new clp.CLP()
 

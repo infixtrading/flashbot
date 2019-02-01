@@ -7,16 +7,18 @@ import flashbot.core.MarketData.BaseMarketData
 import flashbot.core.{SessionLoader, _}
 import flashbot.models.api.{DataOverride, DataSelection}
 import flashbot.models.core.{Candle, Portfolio}
-import io.circe.generic.semiauto._
+import io.circe.generic.auto._
+import io.circe.parser._
 
 import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration._
 
-class CandleScanner extends Strategy {
 
-  case class Params()
+case class CandleScannerParams()
 
-  override def decodeParams = deriveDecoder[Params]
+class CandleScanner extends Strategy[CandleScannerParams] {
+
+  def decodeParams(paramsStr: String) = decode[CandleScannerParams](paramsStr).toTry
 
   override def title = "Candle Scanner"
 
@@ -29,7 +31,7 @@ class CandleScanner extends Strategy {
   }
 
   override def resolveMarketData[T](selection: DataSelection[T], dataServer: ActorRef,
-                                    dataOverrides: Seq[DataOverride[_]])
+                                    dataOverrides: Seq[DataOverride[Any]])
                                    (implicit mat: Materializer, ec: ExecutionContext)
       : Future[Source[MarketData[T], NotUsed]] = {
     Future.successful(TimeSeriesTap

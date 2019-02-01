@@ -3,11 +3,11 @@ package flashbot.core
 /**
   * This class is a WIP. Don't use it yet. Use TA4J directly instead.
   */
-trait Indicator[T] {
+trait FlashbotIndicator[T] {
   def minBars: Int
   def calculate: T
   def name: String
-  def parse(str: String, indicatorIndex: Map[String, Indicator[_]]): this.type
+  def parse(str: String, indicatorIndex: Map[String, FlashbotIndicator[_]]): this.type
 }
 
 object Indicator {

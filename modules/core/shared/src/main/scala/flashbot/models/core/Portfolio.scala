@@ -1,10 +1,12 @@
 package flashbot.models.core
 
 import flashbot.core.{InstrumentIndex, PriceIndex}
+import flashbot.models.core.FixedSize._
 import io.circe.generic.semiauto._
 import io.circe.{Decoder, Encoder}
 
 import scala.collection.immutable.Map
+import scala.language.postfixOps
 
 /**
   * Keeps track of asset balances and positions across all exchanges. Calculates equity and PnL.
@@ -21,7 +23,7 @@ case class Portfolio(assets: Map[Account, Double],
   def balances: Set[Balance] = assets map { case (acc, qty) => Balance(acc, qty) } toSet
 
   def positionPNL(market: Market)
-                 (implicit prices: PriceIndex, instruments: InstrumentIndex): FixedSize = {
+                 (implicit prices: PriceIndex, instruments: InstrumentIndex): FixedSize[Double] = {
     val position = positions(market)
     val instrument = instruments(market)
     val pnlVal = instrument.PNL(position.size, position.entryPrice, prices(market))
@@ -33,7 +35,7 @@ case class Portfolio(assets: Map[Account, Double],
     */
   def equity(targetAsset: String = "usd")
             (implicit prices: PriceIndex,
-             instruments: InstrumentIndex): FixedSize = {
+             instruments: InstrumentIndex): FixedSize[Double] = {
     import FixedSize.numericDouble._
     val assetsEquity = balances.map(_ as targetAsset size).sum
     val PNLs = positions.keys.map(positionPNL(_) as targetAsset).sum

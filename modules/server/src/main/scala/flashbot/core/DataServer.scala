@@ -193,7 +193,7 @@ class DataServer(dbConfig: Config,
 
           // Build the historical stream.
           historical <- from
-            .map(buildHistoricalStream[T](path, _, to.getOrElse(Long.MaxValue))
+            .map(buildHistoricalStreamOpt[T](path, _, to.getOrElse(Long.MaxValue))
               .flatMap(_.toFut(HistoricalDataNotFound(path))))
             // If `from` is none, the historical part of the stream is empty.
             .getOrElse[Future[Source[MarketData[T], NotUsed]]](Future.successful(Source.empty))
@@ -254,92 +254,92 @@ class DataServer(dbConfig: Config,
   }
 
   /**
+    * Historical data exists if there are any bundles or backfills for this path.
+    */
+  def historicalDataExists[T](path: DataPath[T]): Future[Boolean] =
+    slickSession.db.run(for {
+      numBackfills <- Backfills.forPath(path).size.result
+      numBundles <- Bundles.forPath(path).size.result
+    } yield numBackfills + numBundles > 0)
+
+  /**
     * Builds a stream of data from the persisted snapshots and deltas.
     *
     * @param fromMicros inclusive start time in epoch micros.
     * @param toMicros exclusive end time in epoch micros.
     */
   def buildHistoricalStream[T](path: DataPath[T], fromMicros: Long, toMicros: Long)
-      : Future[Option[Source[MarketData[T], NotUsed]]] = {
+      : Source[MarketData[T], NotUsed] = {
     implicit val fmt: DeltaFmtJson[T] = path.fmt
     val lookbackFromMicros = fromMicros - DataSourceActor.SnapshotInterval.toMicros
     log.debug("Building historical stream")
-    for {
-      bundles <- Slick.source(Bundles
-        .filter(b => b.source === path.source &&
-          b.topic === path.topic && b.datatype === path.datatype.toString)
-        .result).runWith(Sink.seq)
 
-      backfills <- Slick.source(Backfills
-        .filter(b => b.source === path.source &&
-          b.topic === path.topic && b.datatype === path.datatype.toString)
-        .result).runWith(Sink.seq)
+    val snapshots = Slick.source(
+      Snapshots.forPath(path)
+        .filter(x => (x.micros >= lookbackFromMicros) && (x.micros < toMicros))
+        .sortBy(x => (x.bundle, x.seqid))
+        .result)
+      .map(_.asInstanceOf[Wrap])
 
-      // Bundle ids will never be Some(empty list).
-      bundleIdsOpt = Some(bundles.map(_.id).toSet ++ backfills.map(_.bundle).toSet).filterNot(_.isEmpty)
-    } yield for {
-        snapshots <- bundleIdsOpt.map(bundleIds => Slick.source(
-          Snapshots
-            .filter(x => (x.micros >= lookbackFromMicros) && (x.micros < toMicros))
-            .filter(x => x.bundle.inSet(bundleIds))
-            .sortBy(x => (x.bundle, x.seqid))
-            .result)
-          .map(_.asInstanceOf[Wrap]))
+    val deltas = Slick.source(
+      Deltas.forPath(path)
+        .filter(x => (x.micros >= lookbackFromMicros) && (x.micros < toMicros))
+        .sortBy(x => (x.bundle, x.seqid))
+        .result)
+      .map(_.asInstanceOf[Wrap])
 
-        deltas <- bundleIdsOpt.map(bundleIds => Slick.source(
-          Deltas
-            .filter(x => (x.micros >= lookbackFromMicros) && (x.micros < toMicros))
-            .filter(x => x.bundle.inSet(bundleIds))
-            .sortBy(x => (x.bundle, x.seqid))
-            .result)
-          .map(_.asInstanceOf[Wrap]))
-      } yield snapshots.mergeSorted[Wrap, NotUsed](deltas)(Wrap.ordering)
-          .scan[Option[MarketData[T]]](None) {
-            /**
-              * Base case.
-              */
-            case (None, wrap) if wrap.isSnap =>
-              Some(BaseMarketData(
-                decode[T](wrap.data)(fmt.modelDe).right.get,
-                path, wrap.micros, wrap.bundle, wrap.seqid))
+    snapshots.mergeSorted[Wrap, NotUsed](deltas)(Wrap.ordering)
+      .scan[Option[MarketData[T]]](None) {
+      /**
+        * Base case.
+        */
+      case (None, wrap) if wrap.isSnap =>
+        Some(BaseMarketData(
+          decode[T](wrap.data)(fmt.modelDe).right.get,
+          path, wrap.micros, wrap.bundle, wrap.seqid))
 
-            /**
-              * If it's a snapshot from this or a later bundle, use its value.
-              */
-            case (Some(md), wrap) if wrap.isSnap && wrap.bundle >= md.bundle =>
-              Some(BaseMarketData(
-                decode[T](wrap.data)(fmt.modelDe).right.get,
-                path, wrap.micros, wrap.bundle, wrap.seqid))
+      /**
+        * If it's a snapshot from this or a later bundle, use its value.
+        */
+      case (Some(md), wrap) if wrap.isSnap && wrap.bundle >= md.bundle =>
+        Some(BaseMarketData(
+          decode[T](wrap.data)(fmt.modelDe).right.get,
+          path, wrap.micros, wrap.bundle, wrap.seqid))
 
-            /**
-              * If it's a snapshot from an outdated bundle, ignore.
-              */
-            case (Some(md), wrap) if wrap.isSnap => Some(md)
+      /**
+        * If it's a snapshot from an outdated bundle, ignore.
+        */
+      case (Some(md), wrap) if wrap.isSnap => Some(md)
 
-            /**
-              * No data yet. Delta has no effect.
-              */
-            case (None, wrap) if !wrap.isSnap => None
+      /**
+        * No data yet. Delta has no effect.
+        */
+      case (None, wrap) if !wrap.isSnap => None
 
-            /**
-              * Delta has effect if it's the same bundle and next sequence id.
-              */
-            case (Some(md: MarketData[_]), wrap)
-                if !wrap.isSnap && wrap.bundle == md.bundle && wrap.seqid == md.seqid + 1 =>
-              val delta = decode[fmt.D](wrap.data)(fmt.deltaDe).right.get
-              Some(BaseMarketData(fmt.update(md.data, delta),
-                md.path, wrap.micros, wrap.bundle, wrap.seqid))
+      /**
+        * Delta has effect if it's the same bundle and next sequence id.
+        */
+      case (Some(md: MarketData[_]), wrap)
+        if !wrap.isSnap && wrap.bundle == md.bundle && wrap.seqid == md.seqid + 1 =>
+        val delta = decode[fmt.D](wrap.data)(fmt.deltaDe).right.get
+        Some(BaseMarketData(fmt.update(md.data, delta),
+          md.path, wrap.micros, wrap.bundle, wrap.seqid))
 
-            /**
-              * Delta belongs to another bundle or not the next seqnr, ignore.
-              */
-            case (Some(x), wrap) if !wrap.isSnap => Some(x)
-          }
-            .collect { case Some(value) => value }
-            .via(deDupeBy(md => (md.bundle, md.seqid)))
-            .dropWhile(_.micros < fromMicros)
-
+      /**
+        * Delta belongs to another bundle or not the next seqnr, ignore.
+        */
+      case (Some(x), wrap) if !wrap.isSnap => Some(x)
     }
+      .collect { case Some(value) => value }
+      .via(deDupeBy(md => (md.bundle, md.seqid)))
+      .dropWhile(_.micros < fromMicros)
+  }
+
+  def buildHistoricalStreamOpt[T](path: DataPath[T], fromMicros: Long, toMicros: Long)
+      : Future[Option[Source[MarketData[T], NotUsed]]] =
+    for { dataExists <- historicalDataExists(path) } yield
+      if (dataExists) Some(buildHistoricalStream(path, fromMicros, toMicros))
+      else None
 
   /**
     * Asynchronous linear search over all servers for a live data stream for the given path.

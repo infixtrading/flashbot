@@ -204,10 +204,13 @@ class DataSourceActor(session: SlickSession,
                       case Success(bundleId) =>
                         log.info(s"Ingesting $path")
 
-                        // Also start a backfill service for each matching path.
+                        // Also start two backfill services for each matching path.
+                        // One to resume previous backfills, and one to create a new backfill
+                        // starting with the most recent data..
                         if (ingestConfig.backfillMatchers.exists(_.matches(path))) {
                           log.debug(s"Launching BackfillService for {}", path)
-                          context.actorOf(Props(new BackfillService(session, path, dataSource)))
+                          context.actorOf(Props(new BackfillService(session, path, dataSource, isResume = true)))
+                          context.actorOf(Props(new BackfillService(session, path, dataSource, isResume = false)))
                         } else {
                           log.debug("Skipping backfill for {}", path)
                         }
@@ -251,14 +254,14 @@ class DataSourceActor(session: SlickSession,
                               // Save the deltas
                               a <- session.db.run(Deltas ++= states.filter(_.delta.isDefined)
                                 .map(state => DeltaRow(bundleId, state.seqId, state.micros,
-                                  fmt.deltaEn(state.delta.get).pretty(Printer.noSpaces))))
+                                  fmt.deltaEn(state.delta.get).pretty(Printer.noSpaces), None)))
                               // Save the snapshots
                               b <- session.db.run(Snapshots ++= states
                                 .filter(_.snapshot.isDefined).map(state =>
                                   {
                                     println(state.seqId, state.micros)
                                     SnapshotRow(bundleId, state.seqId, state.micros,
-                                      fmt.modelEn(state.item).pretty(Printer.noSpaces))
+                                      fmt.modelEn(state.item).pretty(Printer.noSpaces), None)
                                   }))
                               _ = log.debug("Saved {} deltas and {} snapshots for {}", a, b, path)
                             } yield states.last.seqId

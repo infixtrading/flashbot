@@ -2,6 +2,7 @@ package flashbot.strategies
 
 import flashbot.core.{SessionLoader, Strategy, _}
 import flashbot.models.core._
+import flashbot.models.core.FixedSize._
 import io.circe.generic.JsonCodec
 import io.circe.parser._
 import org.ta4j.core.indicators.SMAIndicator
@@ -9,9 +10,10 @@ import org.ta4j.core.indicators.helpers.ClosePriceIndicator
 import org.ta4j.core.indicators.volume.VWAPIndicator
 import MarketMaker._
 import flashbot.core.DataType.{OrderBookType, TradesType}
-import io.circe.Decoder
+import io.circe.{Decoder, Encoder}
 
 import scala.concurrent.Future
+import scala.language.implicitConversions
 
 // This is the code for the tutorial at:
 // https://github.com/infixtrading/flashbot/wiki/Custom-Strategy:-Market-Making
@@ -26,7 +28,7 @@ import scala.concurrent.Future
   * @param layerSpacing the distance in quote currency between each quote.
   * @param quoteSize the size of each limit order.
   */
-@JsonCodec(decodeOnly = true)
+@JsonCodec
 case class MarketMakerParams(market: MarketParam,
                              datatype: DataTypeParam,
                              fairPriceIndicator: FairValueParam,
@@ -41,8 +43,9 @@ class FairValueParam(val value: String) extends AnyVal
     json.Schema.enum(Set(VWAP, SMA_7, SMA_14))
 }
 object FairValueParam {
-  implicit def decoder: Decoder[FairValueParam] =
-    Decoder.decodeString.map(new FairValueParam(_))
+  implicit def build(str: String): FairValueParam = new FairValueParam(str)
+  implicit def decoder: Decoder[FairValueParam] = Decoder.decodeString.map(x => x)
+  implicit def encoder: Encoder[FairValueParam] = Encoder.encodeString.contramap(_.value)
 }
 
 /**
@@ -53,14 +56,15 @@ class MarketMaker extends Strategy[MarketMakerParams] with TimeSeriesMixin {
 
   override def title = "Market Maker"
 
-  // Declare the indicators which may be selected for the "fair price" value. Only one of
-  // these will actually be used at strategy runtime.
-  val closePrice = new ClosePriceIndicator(prices(params.market))
-  val fairPriceIndicators = Map(
-    VWAP -> new VWAPIndicator(prices(params.market), 7),
-    SMA_7 -> new SMAIndicator(closePrice, 7),
-    SMA_14 -> new SMAIndicator(closePrice, 14)
-  )
+  // Declare the close price indicator and the fair price indicator.
+  // These values are lazy because `params` isn't initialized at the time that the
+  // constructor is called.
+  lazy val closePrice = new ClosePriceIndicator(prices(params.market))
+  lazy val fairPriceIndicator = params.fairPriceIndicator.value match {
+    case VWAP => new VWAPIndicator(prices(params.market), 7)
+    case SMA_7 => new SMAIndicator(closePrice, 7)
+    case SMA_14 => new SMAIndicator(closePrice, 14)
+  }
 
   override def decodeParams(paramsStr: String) = decode[MarketMakerParams](paramsStr).toTry
 
@@ -68,7 +72,7 @@ class MarketMaker extends Strategy[MarketMakerParams] with TimeSeriesMixin {
     * On initialization, we use the `market` and `datatype` parameters build a sequence of
     * DataPaths to subscribe to. If the datatype is "candles_1m", then that is the only
     * datatype that we'll use, as candles can be used by the simulator to fill orders.
-    * Similarly with trades. However, if the `datatype` is "book", then we'll also subscribe
+    * Same with trades. However, if the `datatype` is "book", then we'll also subscribe
     * to the "trades" stream, so that, during backtesting and paper trading, the simulator
     * can detect when our quotes would have been filled.
     *
@@ -134,8 +138,7 @@ class MarketMaker extends Strategy[MarketMakerParams] with TimeSeriesMixin {
                           (implicit ctx: TradingSession): Unit = {
 
     // Calculate the fair price which we will quote around.
-    val indicator = fairPriceIndicators(params.fairPriceIndicator)
-    val fairPrice = indicator.getValue(indicator.getTimeSeries.getEndIndex).doubleValue()
+    val fairPrice = fairPriceIndicator.getValue(fairPriceIndicator.getTimeSeries.getEndIndex).doubleValue()
 
     // Record the computed fair price value to a time series so that it's available
     // on dashboards.
@@ -150,7 +153,7 @@ class MarketMaker extends Strategy[MarketMakerParams] with TimeSeriesMixin {
       // Declare the ask order if the target ask price is above the best bid.
       limitOrder(
         market = params.market,
-        size = FixedSize(params.quoteSize, instrument.quote),
+        size = (params.quoteSize, instrument.quote),
         price = targetAskPrice,
         key = s"ask_$i",
         postOnly = true

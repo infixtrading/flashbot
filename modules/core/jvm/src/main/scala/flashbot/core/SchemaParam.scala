@@ -25,6 +25,8 @@ class ExchangeParam(val value: String) extends AnyVal with SchemaParam[ExchangeP
 object ExchangeParam {
   implicit def decoder: Decoder[ExchangeParam] =
     Decoder.decodeString.map(x => new ExchangeParam(x))
+  implicit def encoder: Encoder[ExchangeParam] =
+    Encoder.encodeString.contramap(_.value)
   implicit def build(str: String): ExchangeParam = new ExchangeParam(str)
 }
 
@@ -36,7 +38,10 @@ class MarketParam(val value: Market) extends AnyVal with SchemaParam[MarketParam
 object MarketParam {
   implicit def decoder: Decoder[MarketParam] =
     implicitly[Decoder[Market]].map(x => new MarketParam(x))
+  implicit def encoder: Encoder[MarketParam] =
+    implicitly[Encoder[Market]].contramap(_.value)
   implicit def build(v: Market): MarketParam = new MarketParam(v)
+  implicit def build(v: String): MarketParam = new MarketParam(v)
 }
 
 
@@ -47,6 +52,8 @@ class DataTypeParam(val value: String) extends AnyVal with SchemaParam[DataTypeP
 object DataTypeParam {
   implicit def decoder: Decoder[DataTypeParam] =
     Decoder.decodeString.map(x => new DataTypeParam(x))
+  implicit def encoder: Encoder[DataTypeParam] =
+    Encoder.encodeString.contramap(_.value)
   implicit def build(v: String): DataTypeParam = new DataTypeParam(v)
 }
 

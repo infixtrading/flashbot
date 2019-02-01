@@ -137,7 +137,7 @@ class LookAheadCandleStrategy extends Strategy[LookaheadParams]
     * item being streamed and base our test strategy off of it.
     */
   override def resolveMarketData[T](selection: DataSelection[T], dataServer: ActorRef,
-                                    dataOverrides: Seq[DataOverride[_]])
+                                    dataOverrides: Seq[DataOverride[Any]])
                                    (implicit mat: Materializer, ec: ExecutionContext)
       : Future[Source[MarketData[T], NotUsed]] = {
 

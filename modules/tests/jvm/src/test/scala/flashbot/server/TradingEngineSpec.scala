@@ -14,6 +14,7 @@ import flashbot.util.time
 import flashbot.models.api._
 import flashbot.util.files.rmRf
 import flashbot.client.FlashbotClient
+import flashbot.core.FlashbotConfig.{BotConfig, StaticBotsConfig}
 import flashbot.models.core.Order._
 import flashbot.models.core._
 import io.circe.Printer
@@ -187,12 +188,12 @@ class TradingEngineSpec extends WordSpecLike
 
       val report = Await.result((engine ? BacktestQuery(
         "lookahead",
-        params.asJson.pretty(Printer.noSpaces),
+        params.asJson,
         TimeRange.build(now, 1 hour),
         Portfolio(
           Map(Account("bitfinex/eth") -> 0, Account("bitfinex/usd") -> 800),
           Map.empty
-        ).asJson.pretty(Printer.noSpaces),
+        ),
         Some(1 minute),
         None
       )).map {

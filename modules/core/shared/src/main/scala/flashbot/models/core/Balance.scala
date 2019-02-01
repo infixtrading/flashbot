@@ -3,7 +3,7 @@ package flashbot.models.core
 import flashbot.core.{AssetKey, InstrumentIndex, PriceIndex}
 
 case class Balance(account: Account, qty: Double) {
-  def size = FixedSize(qty, account.security)
+  def size: FixedSize[Double] = FixedSize(qty, account.security)
   def assetKey: AssetKey = AssetKey(account)
 }
 

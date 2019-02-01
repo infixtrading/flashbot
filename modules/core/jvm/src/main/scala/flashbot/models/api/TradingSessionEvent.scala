@@ -6,7 +6,7 @@ trait TradingSessionEvent
 case class LogMessage(message: String) extends TradingSessionEvent
 case class OrderTarget(market: Market,
                        key: String,
-                       size: FixedSize,
+                       size: FixedSize[Double],
                        price: Option[Double],
                        once: Option[Boolean] = None,
                        postOnly: Option[Boolean] = None) extends TradingSessionEvent {

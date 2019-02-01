@@ -11,7 +11,8 @@ import akka.testkit.{ImplicitSender, TestKit}
 import akka.util.Timeout
 import flashbot.models.api.{DataSelection, DataStreamReq}
 import com.typesafe.config.ConfigFactory
-import flashbot.core.{DataServer, MarketData, Trade, TradingEngine}
+import flashbot.core.FlashbotConfig.{DataSourceConfig, IngestConfig}
+import flashbot.core._
 import flashbot.models.core.Ladder
 import org.scalatest.concurrent.{Eventually, IntegrationPatience}
 import org.scalatest.time.{Millis, Seconds, Span}
@@ -21,6 +22,7 @@ import util.TestDB
 
 import scala.concurrent.Await
 import scala.concurrent.duration._
+import scala.language.postfixOps
 
 class DataServerSpec extends WordSpecLike with Matchers with Eventually {
 
@@ -99,49 +101,78 @@ class DataServerSpec extends WordSpecLike with Matchers with Eventually {
     }
 
     /**
-      * This test uses a DataSource that splits a hard coded seq of trades in two parts.
-      * The first part will be backfilled and the second part will be streamed to ingest.
-      * We should be able to request the entire uninterrupted trade stream in its original
-      * form when ingest and backfill is done.
+      * Three separate data sources are used to simulate real world conditions:
+      *
+      *   * Data source A backfills from 0 to 150 and live streams from 150 to 200.
+      *   * Data source B backfills from 300 to 450 and live streams from 450 to 500.
+      *     It crashes when after it reaches 300. Leaving a gap between 200 and 300.
+      *   * Data source C backfills from 500 to 900 and live streams from 900 to 1000.
+      *     It also resumes where B left off, backfilling 200 to 300.
+      *
+      *                   <-----> - - - - - <------- C -------|----->
+      *       <---- A -|-->     x---- B -|-->
+      * <-----|-----|-----|-----|-----|-----|-----|-----|-----|-----|--->
+      *       0    100       ...           500      ...      900   1000
       */
     "ingest and backfill trades" in {
 
-      implicit val config = FlashbotConfig.load().copy(
+      import TestBackfillDataSource._
+
+      implicit val timeout = Timeout(1 minute)
+      implicit val _config = FlashbotConfig.load().copy(
         ingest = IngestConfig(
           enabled = Seq("bitfinex/btc_usd/trades"),
           backfill = Seq("bitfinex/btc_usd/trades"),
-          retention = Seq(Seq())
-        ),
-        sources = Map(
-          "bitfinex" -> DataSourceConfig("sources.TestBackfillDataSource",
-            Some(Seq("btc_usd")), Some(Seq("trades"))))
+          retention = Seq(Seq("*/*/trades", "10h"))
+        )
       )
 
-      implicit val system = ActorSystem("system1", config.conf)
-      val dataServer = system.actorOf(DataServer.props(config))
+      def runDataServer(dataSourceName: String, assert: Seq[MarketData[Trade]] => Unit): Unit = {
 
-      implicit val timeout = Timeout(1 minute)
-      implicit val mat = ActorMaterializer()
-      implicit val ec = system.dispatcher
+        val config = _config.copy(
+          sources = Map(
+            "bitfinex" -> DataSourceConfig(dataSourceName,
+              Some(Seq("btc_usd")), Some(Seq("trades")))))
 
-      def fetchTrades() = {
-        val fut = dataServer ? DataStreamReq(DataSelection("bitfinex/btc_usd/trades", Some(0), Some(Long.MaxValue)))
-        val rsp = Await.result(fut.mapTo[StreamResponse[MarketData[Trade]]], timeout.duration)
-        val src = rsp.toSource
-        Await.result(src.toMat(Sink.seq)(Keep.right).run, timeout.duration)
+        implicit val system = ActorSystem("system1", config.conf)
+        val dataServer = system.actorOf(DataServer.props(config))
+
+        implicit val mat = ActorMaterializer()
+        implicit val ec = system.dispatcher
+
+        def fetchTrades() = {
+          val fut = dataServer ? DataStreamReq(DataSelection(
+            "bitfinex/btc_usd/trades", Some(0), Some(Long.MaxValue)))
+          val rsp = Await.result(fut.mapTo[StreamResponse[MarketData[Trade]]], timeout.duration)
+          val src = rsp.toSource
+          Await.result(src.toMat(Sink.seq)(Keep.right).run, timeout.duration)
+        }
+
+        implicit val patienceConfig =
+          PatienceConfig(timeout = scaled(Span(8, Seconds)), interval = scaled(Span(500, Millis)))
+
+        eventually {
+          assert(fetchTrades())
+        }
+
+        Await.ready(system.terminate(), 10 seconds)
       }
 
-      implicit val patienceConfig =
-        PatienceConfig(timeout = scaled(Span(8, Seconds)), interval = scaled(Span(500, Millis)))
-      eventually {
-        val fetched = fetchTrades()
-        fetched.map(_.data) shouldEqual TestBackfillDataSource.allTrades
-      }
+      runDataServer("sources.TestBackfillDataSourceA", fetched => {
+        fetched.map(_.data) shouldEqual (historicalTradesA ++ liveTradesA)
+      })
 
-      Await.ready(for {
-        _ <- system.terminate()
-        _ <- TestDB.dropTestDB()
-      } yield Unit, 10 seconds)
+      runDataServer("sources.TestBackfillDataSourceB", fetched => {
+        fetched.map(_.data) shouldEqual
+          ((historicalTradesA ++ liveTradesA) ++
+            (historicalTradesB ++ liveTradesB))
+      })
+
+      runDataServer("sources.TestBackfillDataSourceC", fetched => {
+        fetched.map(_.data) shouldEqual allTradesAfterRetention
+      })
+
+      Await.ready(TestDB.dropTestDB(), 10 seconds)
     }
   }
 }

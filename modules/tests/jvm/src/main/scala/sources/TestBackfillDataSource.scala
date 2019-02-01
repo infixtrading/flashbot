@@ -8,6 +8,7 @@ import flashbot.core.DataType.TradesType
 import flashbot.core._
 import flashbot.models.core.Order._
 
+import scala.collection.immutable
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.language.postfixOps
@@ -15,37 +16,108 @@ import scala.language.postfixOps
 object TestBackfillDataSource {
   val MicrosPerMinute: Long = 60L * 1000000
   val nowMicros = System.currentTimeMillis() * 1000
-  val allTrades = (1 to 120) map { i =>
+  val allTrades = (1 to 1000) map { i =>
     Trade(i.toString, nowMicros + i * MicrosPerMinute, i, i, if (i % 2 == 0) Up else Down)
   }
 
-  val (_historicalTrades, liveTrades) = allTrades.splitAt(85)
-  // Add some overlap. The two data sets won't be evenly split in the real world.
-  val historicalTrades = _historicalTrades ++ liveTrades.take(20)
+  val batchSize = 40
+
+  // Find earliest snapshot that is outside of the retention period. Then delete all
+  // data that comes before it. Every page will have a snapshot at the start.
+  // Assumes 10 hour retention period.
+  val numDeletedBatches = allTrades.takeWhile(_.micros <
+    nowMicros - MicrosPerMinute * 60 * 10).size / batchSize
+  val allTradesAfterRetention = allTrades.drop(numDeletedBatches * batchSize)
+
+  val (historicalTradesA, liveTradesA) = allTrades.take(200).splitAt(150)
+  val (historicalTradesB, liveTradesB) = allTrades.slice(300, 500).splitAt(150)
+  val (historicalTradesC, liveTradesC) = allTrades.drop(500).splitAt(400)
+  val gapTrades = allTrades.slice(200, 300)
 }
 
-class TestBackfillDataSource extends DataSource {
+class TestBackfillDataSourceA extends DataSource {
   import TestBackfillDataSource._
 
   override def ingest[T](topic: String, datatype: DataType[T])
                         (implicit ctx: ActorContext, mat: ActorMaterializer) = datatype match {
     case TradesType =>
       val src: Source[(Long, T), NotUsed] =
-        Source(liveTrades map (t => (t.micros, t.asInstanceOf[T])))
+        Source(liveTradesA map (t => (t.micros, t.asInstanceOf[T])))
       Future.successful(src.throttle(1, 20 millis).concat(Source.maybe))
   }
 
   override def backfillPage[T](topic: String, datatype: DataType[T], cursor: Option[String])
                               (implicit ctx: ActorContext, mat: ActorMaterializer) = {
-    println(s"Backfill request for $topic/$datatype with cursor $cursor")
-    val batchSize = 40
-    val count: Int = cursor.map(_.toInt).getOrElse(0)
-    val page = historicalTrades
-      .dropRight(count)
-      .takeRight(batchSize)
-      .map(t => (t.micros, t.asInstanceOf[T]))
+    println(s"Backfill request A for $topic/$datatype with cursor $cursor")
+    val page = (historicalTradesA ++ liveTradesA.take(30))
       .reverse
-    val isDone = count + batchSize >= historicalTrades.size
-    Future.successful((page, if (isDone) None else Some(((count + batchSize).toString, 100 millis))))
+      .dropWhile(t => cursor.isDefined && t.id.toLong >= cursor.get.toLong)
+      .take(batchSize)
+    val isDone = page.last.id == historicalTradesA.head.id
+    Future.successful((
+      page.map(t => (t.micros, t.asInstanceOf[T])),
+      if (isDone) None else Some((page.last.id, 20 millis)))
+    )
   }
 }
+
+class TestBackfillDataSourceB extends DataSource {
+  import TestBackfillDataSource._
+
+  override def ingest[T](topic: String, datatype: DataType[T])
+                        (implicit ctx: ActorContext, mat: ActorMaterializer) = datatype match {
+    case TradesType =>
+      val src: Source[(Long, T), NotUsed] =
+        Source(liveTradesB map (t => (t.micros, t.asInstanceOf[T])))
+      Future.successful(src.throttle(1, 20 millis).concat(Source.maybe))
+
+  }
+
+  override def backfillPage[T](topic: String, datatype: DataType[T], cursor: Option[String])
+                              (implicit ctx: ActorContext, mat: ActorMaterializer)
+      : Future[(Seq[(Long, T)], Some[(String, FiniteDuration)])] = {
+
+    println(s"Backfill request B for $topic/$datatype with cursor $cursor")
+
+    cursor match {
+      case Some(historicalTradesB.head.id) =>
+        return Future.failed(new RuntimeException(s"Simulating exception at ${cursor.get}"))
+      case _ =>
+    }
+
+    val page = (historicalTradesB ++ liveTradesB.take(30))
+      .reverse
+      .dropWhile(t => cursor.isDefined && t.id.toLong >= cursor.get.toLong)
+      .take(batchSize)
+    Future.successful((
+      page.map(t => (t.micros, t.asInstanceOf[T])),
+      Some((page.last.id, 20 millis)))
+    )
+  }
+}
+class TestBackfillDataSourceC extends DataSource {
+  import TestBackfillDataSource._
+
+  override def ingest[T](topic: String, datatype: DataType[T])
+                        (implicit ctx: ActorContext, mat: ActorMaterializer) = datatype match {
+    case TradesType =>
+      val src: Source[(Long, T), NotUsed] =
+        Source(liveTradesC map (t => (t.micros, t.asInstanceOf[T])))
+      Future.successful(src.throttle(1, 20 millis).concat(Source.maybe))
+  }
+
+  override def backfillPage[T](topic: String, datatype: DataType[T], cursor: Option[String])
+                              (implicit ctx: ActorContext, mat: ActorMaterializer) = {
+    println(s"Backfill request C for $topic/$datatype with cursor $cursor")
+    val page = allTrades
+      .reverse
+      .dropWhile(t => cursor.isDefined && t.id.toLong >= cursor.get.toLong)
+      .take(batchSize)
+    Future.successful((
+      page.map(t => (t.micros, t.asInstanceOf[T])),
+      Some((page.last.id, 20 millis)))
+    )
+  }
+}
+
+

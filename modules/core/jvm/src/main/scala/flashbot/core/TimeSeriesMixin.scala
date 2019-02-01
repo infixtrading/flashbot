@@ -3,7 +3,7 @@ package flashbot.core
 import java.time.{Instant, ZoneOffset, ZonedDateTime}
 
 import flashbot.core.ReportEvent.{CandleAdd, CandleUpdate}
-import flashbot.models.core.{Candle, FixedSize, GenericFixedSize, Market}
+import flashbot.models.core.{Candle, FixedSize, Market}
 import flashbot.util.time._
 import org.ta4j.core.{Bar, BaseBar, BaseTimeSeries, TimeSeries}
 import org.ta4j.core.indicators.helpers.ClosePriceIndicator
@@ -22,19 +22,19 @@ trait TimeSeriesMixin { self: Strategy[_] =>
 
   var closePrices: Map[String, ClosePriceIndicator] = Map.empty
 
-  def getPrice(market: Market): FixedSize = {
+  def getPrice(market: Market): FixedSize[Double] = {
     val key = priceKey(market.exchange, market.symbol)
     val indicator = closePrices.getOrElse(key, new ClosePriceIndicator(allSeries(key)))
     val price = indicator.getValue(indicator.getTimeSeries.getEndIndex).doubleValue()
     FixedSize(price, market.symbol)
   }
 
-  case class PriceIndicator(market: Market) extends Indicator[Double] {
-    override def minBars = 0
-    override def calculate = getPrice(market).num
-    override def name = ???
-    override def parse(str: String, indicatorIndex: Map[String, Indicator[_]]) = ???
-  }
+//  case class PriceIndicator(market: Market) extends Indicator[Double] {
+//    override def minBars = 0
+//    override def calculate = getPrice(market).num
+//    override def name = ???
+//    override def parse(str: String, indicatorIndex: Map[String, Indicator[_]]) = ???
+//  }
 
   private def getGlobalIndex(micros: Long): Long = micros / (barSize.toMillis * 1000)
 
@@ -174,9 +174,12 @@ trait TimeSeriesMixin { self: Strategy[_] =>
   def series(key: String): TimeSeries = _series(indicatorKey(key))
 
   private def _series(key: String): TimeSeries = {
+    println("KEY", key)
     if (!allSeries.isDefinedAt(key)) {
-      allSeries += (key ->
-        new BaseTimeSeries.SeriesBuilder().withName(key).withMaxBarCount(1000).build())
+      println("NOT DEFINED")
+      val ts = new BaseTimeSeries.SeriesBuilder().withName(key).withMaxBarCount(1000).build()
+      println("NEW SERIES", ts)
+      allSeries += (key -> ts)
     }
     allSeries(key)
   }

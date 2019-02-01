@@ -20,6 +20,7 @@ package object db {
     def data: String
     def bundle: Long
     def seqid: Long
+    def backfill: Option[Long]
   }
 
   object Wrap {
@@ -34,10 +35,10 @@ package object db {
     }
   }
 
-  case class DeltaRow(bundle: Long, seqid: Long, micros: Long, data: String) extends Wrap {
+  case class DeltaRow(bundle: Long, seqid: Long, micros: Long, data: String, backfill: Option[Long]) extends Wrap {
     def isSnap = false
   }
-  case class SnapshotRow(bundle: Long, seqid: Long, micros: Long, data: String) extends Wrap {
+  case class SnapshotRow(bundle: Long, seqid: Long, micros: Long, data: String, backfill: Option[Long]) extends Wrap {
     def isSnap = true
   }
 
@@ -48,6 +49,51 @@ package object db {
   val Backfills = new TableQuery(tag => new Backfills(tag))
 
   val Tables = List(Bundles, Snapshots, Deltas, Backfills)
+
+  implicit class BundleOps(query: TableQuery[Bundles])
+                          (implicit session: SlickSession) {
+    import session.profile.api._
+
+    def forPath(path: DataPath[_]) =
+      query.filter(row => row.source === path.source &&
+        row.topic === path.topic &&
+        row.datatype === path.datatype.name)
+  }
+
+  implicit class BackfillOps(query: TableQuery[Backfills])
+                            (implicit session: SlickSession) {
+    import session.profile.api._
+
+    def forPath(path: DataPath[_]) =
+      query.filter(row => row.source === path.source &&
+        row.topic === path.topic &&
+        row.datatype === path.datatype.name)
+  }
+
+  implicit class SnapshotOps(query: TableQuery[Snapshots])
+                            (implicit session: SlickSession){
+    import session.profile.api._
+
+    def forPath(path: DataPath[_]) =
+      for {
+        backfillId <- Backfills.forPath(path).map(_.id)
+        bundleId <- Bundles.forPath(path).map(_.id)
+        s <- Snapshots if bundleId === s.bundle || backfillId === s.backfill
+      } yield s
+  }
+
+  implicit class DeltaOps(query: TableQuery[Deltas])
+                            (implicit session: SlickSession){
+    import session.profile.api._
+
+    def forPath(path: DataPath[_]) =
+      for {
+        backfillId <- Backfills.forPath(path).map(_.id)
+        bundleId <- Bundles.forPath(path).map(_.id)
+        d <- Deltas if bundleId === d.bundle || backfillId === d.backfill
+      } yield d
+  }
+
 
   def createBundle(path: DataPath[_])(implicit session: SlickSession): Future[Long] = {
     import session.profile.api._

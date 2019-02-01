@@ -8,15 +8,18 @@ import flashbot.core.VarState.ops._
 import flashbot.models.api.{DataOverride, DataSelection}
 import flashbot.models.core.Portfolio
 import io.circe.generic.semiauto._
+import io.circe.parser._
 
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
+import TradeWriter._
+import io.circe.{Decoder, Encoder}
 
-class TradeWriter extends Strategy {
+import scala.language.postfixOps
 
-  override type Params = TradeWriter.Params
+class TradeWriter extends Strategy[Params] {
 
-  def decodeParams = TradeWriter.Params.de
+  def decodeParams(paramsStr: String) = decode[Params](paramsStr).toTry
 
   def title = "Trade Writer"
 
@@ -29,7 +32,7 @@ class TradeWriter extends Strategy {
   }
 
   override def resolveMarketData[T](selection: DataSelection[T], dataServer: ActorRef,
-                                    dataOverrides: Seq[DataOverride[_]])
+                                    dataOverrides: Seq[DataOverride[Any]])
                                    (implicit mat: Materializer, ec: ExecutionContext) = {
     Future.successful(Source(params.trades.toList)
       .throttle(1, 200 millis)
@@ -43,7 +46,7 @@ class TradeWriter extends Strategy {
 object TradeWriter {
   case class Params(trades: Seq[Trade])
   object Params {
-    implicit def de = deriveDecoder[Params]
-    implicit def en = deriveEncoder[Params]
+    implicit def de: Decoder[Params] = deriveDecoder[Params]
+    implicit def en: Encoder[Params] = deriveEncoder[Params]
   }
 }

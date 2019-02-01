@@ -62,7 +62,7 @@ abstract class DataSource {
     */
   def backfillPage[T](topic: String, datatype: DataType[T], cursor: Option[String])
                      (implicit ctx: ActorContext, mat: ActorMaterializer)
-      : Future[(Seq[(Long, T)], Option[(String, Duration)])] =
+      : Future[(Seq[(Long, T)], Option[(String, FiniteDuration)])] =
     Future.failed(new NotImplementedError("This data source does not support backfills."))
 
   /**
@@ -72,6 +72,8 @@ abstract class DataSource {
     * Warning: Do not use this yet. Custom data types are not fully supported at this time.
     */
   def types: Seq[DataType[_]] = Seq.empty
+
+  protected[flashbot] def backfillTickRate: Int = 1
 }
 
 object DataSource {

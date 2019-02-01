@@ -11,7 +11,7 @@ case class BackfillRow(id: Long, source: String, topic: String, datatype: String
                        cursor: Option[String], nextPageAt: Option[Timestamp],
                        claimedBy: Option[String], claimedAt: Option[Timestamp]) {
   def path: DataPath[_] = DataPath(source, topic, DataType(datatype))
-  def bundle: Long = -id
+  def bundle: Long = Long.MaxValue - id
 }
 
 class Backfills(tag: Tag) extends Table[BackfillRow](tag, "backfills") {
@@ -28,5 +28,5 @@ class Backfills(tag: Tag) extends Table[BackfillRow](tag, "backfills") {
     (id, source, topic, datatype, cursor, nextPageAt, claimedBy, claimedAt) <>
       (BackfillRow.tupled, BackfillRow.unapply)
 
-  def pk = index("pk_backfills", (source, topic, datatype), unique = true)
+  def pk = index("pk_backfills", (source, topic, datatype))
 }

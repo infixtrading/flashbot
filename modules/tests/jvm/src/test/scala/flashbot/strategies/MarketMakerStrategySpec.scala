@@ -9,7 +9,7 @@ import akka.stream.scaladsl.Source
 import io.circe.syntax._
 import flashbot.client.FlashbotClient
 import flashbot.core.MarketData.BaseMarketData
-import flashbot.core.{FlashbotConfig, MarketData, TimeSeriesTap, TradingEngine}
+import flashbot.core._
 import flashbot.models.api.DataOverride
 import flashbot.models.core.{Candle, Portfolio, TimeRange}
 
@@ -35,7 +35,7 @@ class MarketMakerStrategySpec extends FlatSpec with Matchers {
     val engine = system.actorOf(TradingEngine.props("market-maker", config))
     val client = new FlashbotClient(engine)
 
-    val params = MarketMakerParams("coinbase", "btc_usd", "sma7", 10, .2, "1m", .1)
+    val params = MarketMakerParams("coinbase/btc_usd", "candles_1m", "sma7", 10, .2, .1)
     val portfolio = Portfolio.empty
       .withAssetBalance("coinbase/btc", 5.0)
       .withAssetBalance("coinbase/usd", 2000)

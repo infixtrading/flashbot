@@ -30,7 +30,7 @@ abstract class Exchange {
   def quoteAssetPrecision(pair: Instrument): Int
   def lotSize(pair: Instrument): Option[Double] = None
 
-  def round(instrument: Instrument)(size: FixedSize): FixedSize =
+  def round(instrument: Instrument)(size: FixedSize[Double]): FixedSize[Double] =
     if (size.security == instrument.security.get)
       size.map(roundBase(instrument))
     else if (size.security == instrument.settledIn)
