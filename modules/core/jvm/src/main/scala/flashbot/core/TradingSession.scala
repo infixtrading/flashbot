@@ -25,7 +25,7 @@ object TradingSession {
 
   def closeActionForOrderId(actions: ActionQueue, ids: IdManager, id: String): ActionQueue =
     actions match {
-      case ActionQueue(Some(action), _) if ids.actualIdForTargetId(action.targetId) == id =>
+      case ActionQueue(Some(action), _) if ids.actualIdForTargetId(action.targetId).contains(id) =>
         actions.closeActive
       case _ => actions
     }

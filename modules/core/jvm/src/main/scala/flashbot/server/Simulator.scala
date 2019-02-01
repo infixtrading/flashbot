@@ -40,6 +40,7 @@ class Simulator(base: Exchange, latencyMicros: Long = 0) extends Exchange {
         (Seq[Order.Fill], Seq[OrderEvent], Seq[ExchangeError]) = {
     var fills = Seq.empty[Order.Fill]
     var events = Seq.empty[OrderEvent]
+    var errors = Seq.empty[ExchangeError]
 
     // Update the current time, based on the time of the incoming market data.
     currentTimeMicros = math.max(data.map(_.micros).getOrElse(0L), currentTimeMicros)
@@ -57,30 +58,44 @@ class Simulator(base: Exchange, latencyMicros: Long = 0) extends Exchange {
                 * fully filled, the remainder is placed on the resting order book.
                 */
               case LimitOrderRequest(clientOid, side, product, size, price, postOnly) =>
-                if (!depths.isDefinedAt(product)) {
-                  throw new RuntimeException("Aggregate order books are required to simulate " +
-                    "limit orders.")
-                }
-
                 val immediateFills =
-                  Ladder.ladderFillOrder(depths(product), side, Some(size), None, Some(price))
-                  .map { case (fillPrice, fillQuantity) =>
-                    Fill(clientOid, Some(clientOid), takerFee, product, fillPrice, fillQuantity,
-                      evTime, Taker, side)
+                  if (depths.isDefinedAt(product))
+                    Ladder.ladderFillOrder(depths(product), side, Some(size), None, Some(price))
+                      .map { case (fillPrice, fillQuantity) =>
+                        Fill(clientOid, Some(clientOid), takerFee, product, fillPrice, fillQuantity,
+                          evTime, Taker, side)
+                      }
+                  else if (prices.isDefinedAt(product)) {
+                    side match {
+                      case Buy if price >= prices(product) =>
+                        Seq(Fill(clientOid, Some(clientOid), takerFee, product, prices(product),
+                          size, evTime, Taker, side))
+                      case Sell if price <= prices(product) =>
+                        Seq(Fill(clientOid, Some(clientOid), takerFee, product, prices(product),
+                          size, evTime, Taker, side))
+                      case _ => Seq()
+                    }
+                  } else {
+                    throw new RuntimeException(s"Not enough data to simulate limit orders for $product.")
                   }
-                fills ++= immediateFills
 
-                events :+= OrderReceived(clientOid, product, Some(clientOid), Order.LimitOrder)
-
-                // Either complete or open the limit order
-                val remainingSize = size - immediateFills.map(_.size).sum
-                if (remainingSize > 0) {
-                  myOrders = myOrders + (product.symbol ->
-                    myOrders.getOrElse(product, OrderBook())
-                      .open(clientOid, price, remainingSize, side))
-                  events :+= OrderOpen(clientOid, product, price, remainingSize, side)
+                if (immediateFills.nonEmpty && postOnly) {
+                  errors :+= OrderRejected(PostOnlyConstraint)
                 } else {
-                  events :+= OrderDone(clientOid, product, side, Filled, Some(price), Some(0))
+                  fills ++= immediateFills
+
+                  events :+= OrderReceived(clientOid, product, Some(clientOid), Order.LimitOrder)
+
+                  // Either complete or open the limit order
+                  val remainingSize = size - immediateFills.map(_.size).sum
+                  if (remainingSize > 0) {
+                    myOrders = myOrders + (product.symbol ->
+                      myOrders.getOrElse(product, OrderBook())
+                        .open(clientOid, price, remainingSize, side))
+                    events :+= OrderOpen(clientOid, product, price, remainingSize, side)
+                  } else {
+                    events :+= OrderDone(clientOid, product, side, Filled, Some(price), Some(0))
+                  }
                 }
 
               /**
@@ -209,7 +224,7 @@ class Simulator(base: Exchange, latencyMicros: Long = 0) extends Exchange {
       case _ =>
     }
 
-    (fills, events, Seq.empty)
+    (fills, events, errors)
   }
 
   override def order(req: OrderRequest): Future[ExchangeResponse] = {

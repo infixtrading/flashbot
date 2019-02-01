@@ -304,6 +304,11 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
 
           // TODO: Add support for logging errors in the Report.
           for (err <- errors) {
+            err match {
+              case OrderRejected(reason) =>
+                session.actionQueues = session.actionQueues.updated(ex.get,
+                  session.actionQueues(ex.get).closeActive)
+            }
             strategy.handleEvent(ExchangeErrorEvent(err))
           }
 
@@ -467,8 +472,10 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
                   case action @ CancelLimitOrder(targetId) =>
                     session.orderManagers += (exName ->
                       session.orderManagers(exName).initCancelOrder(targetId))
-                    exchanges(exName)._cancel(
-                      session.orderManagers(exName).ids.actualIdForTargetId(targetId), targetId.instrument)
+                    // May not exist if order was rejected.
+                    val actualOpt = session.orderManagers(exName).ids.actualIdForTargetId(targetId)
+                    if (actualOpt.isDefined)
+                      exchanges(exName)._cancel(actualOpt.get , targetId.instrument)
                 }
               case _ =>
             }

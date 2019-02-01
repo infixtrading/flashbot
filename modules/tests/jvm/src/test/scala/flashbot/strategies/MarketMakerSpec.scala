@@ -21,15 +21,15 @@ import scala.concurrent.Await
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.language.postfixOps
 
-class MarketMakerStrategySpec extends FlatSpec with Matchers {
+class MarketMakerSpec extends FlatSpec with Matchers {
 
-  "MarketMakerStrategy" should "be profitable in a sideways market" in {
+  "MarketMaker" should "be profitable in a sideways market" in {
     val timeRange = TimeRange.build(Instant.now, "2d")
     val candles: Source[MarketData[Candle], NotUsed] = TimeSeriesTap
       .prices(1000, 0, 0.04, timeRange, 10 seconds)
       .via(TimeSeriesTap.aggregateCandles(1 minute))
       .zipWithIndex
-      .map { case (c, i) => BaseMarketData(c, "coinbase/btc_usd/candles_1h", c.micros, 1, i) }
+      .map { case (c, i) => BaseMarketData(c, "coinbase/btc_usd/candles_1m", c.micros, 1, i) }
 
     implicit val config = FlashbotConfig.load()
     implicit val system = ActorSystem(config.systemName, config.conf)
@@ -37,18 +37,23 @@ class MarketMakerStrategySpec extends FlatSpec with Matchers {
     val engine = system.actorOf(TradingEngine.props("market-maker", config))
     val client = new FlashbotClient(engine)
 
-//    val params = MarketMakerParams("coinbase/btc_usd", "candles_1m", "sma7", 10, .2, .1)
-//    val portfolio = Portfolio.empty
-//      .withAssetBalance("coinbase/btc", 5.0)
-//      .withAssetBalance("coinbase/usd", 2000)
-//
-//    val data = Seq(
-//      DataOverride("coinbase/btc_usd/candles_1m", candles)
-//    )
-//
-//    val report = client.backtest("market_maker", params.asJson, portfolio, 1 minute, timeRange, data)
-//
-//    println(report.timeSeries.keySet)
+    val params = MarketMakerParams("coinbase/btc_usd", "candles_1m", "sma7", 10, .1, .2)
+    val portfolio = Portfolio.empty
+      .withAssetBalance("coinbase/btc", 5.0)
+      .withAssetBalance("coinbase/usd", 2000)
+
+    val data = Seq(DataOverride("coinbase/btc_usd/candles_1m", candles))
+
+    val report = client.backtest("market_maker", params.asJson, portfolio, 1 minute, timeRange, data)
+
+    println(report.timeSeries.keySet)
+
+    val prices = report.timeSeries("local.price.coinbase.btc_usd").map(_.close)
+    val fairPrices = report.timeSeries("local.indicator.fair_price_sma7").map(_.close)
+    val equity = report.timeSeries("local.indicator.equity").map(_.close)
+    (prices zip fairPrices zip equity).foreach(println)
+
+    println(report.trades)
 
     Await.ready(for {
       _ <- system.terminate()

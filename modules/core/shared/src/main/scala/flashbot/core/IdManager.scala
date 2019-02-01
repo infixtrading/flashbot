@@ -22,5 +22,5 @@ case class IdManager(clientToTarget: Map[String, TargetId] = Map.empty,
     actualToTarget = actualToTarget - actualId
   )
 
-  def actualIdForTargetId(targetId: TargetId): String = targetToActual(targetId)
+  def actualIdForTargetId(targetId: TargetId): Option[String] = targetToActual.get(targetId)
 }

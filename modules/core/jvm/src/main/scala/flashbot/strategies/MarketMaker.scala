@@ -89,42 +89,57 @@ class MarketMaker extends Strategy[MarketMakerParams] with TimeSeriesMixin {
     Future.successful(extraPaths :+ path)
   }
 
-  var tickSize: Option[Double] = None
+  override def handleEvent(event: StrategyEvent)
+                          (implicit ctx: TradingSession) = event match {
+    case ExchangeErrorEvent(error) =>
+      println(error)
+    case _ =>
+  }
 
-  override def handleData(md: MarketData[_])(implicit ctx: TradingSession) = md.data match {
+  override def handleData(md: MarketData[_])(implicit ctx: TradingSession) = {
 
-    /**
-      * Record the last trade price when a trade comes in. This has two effects:
-      *
-      *   1. Provides updated source data for the indicators which depend on the
-      *      price time series.
-      *
-      *   2. Writes the time series to the trading session report, which makes it
-      *      available for analysis and graphing.
-      */
-    case trade: Trade =>
-      recordTrade(params.market, md.micros, trade.price, Some(trade.size))
+    implicit val instruments = ctx.instruments
+    implicit val prices = ctx.getPrices
 
-    /**
-      * Same as with trades, record the candle OHLC to the report and update the
-      * price time series with `recordCandle`. Also submit quotes, approximating
-      * the current best ask and bid as the close price.
-      */
-    case candle: Candle =>
-      recordCandle(params.market, candle)
-      submitQuotes(md, candle.close, candle.close)
+    val equity = ctx.getPortfolio.equity()
 
-    /**
-      * Calculate and submit the intended quotes when there is new OrderBook data.
-      */
-    case book: OrderBook =>
-      // Calculate the best ask price in the book. We will not bid above it.
-      val bestAskPrice = book.asks.index.head._1
+    recordIndicator("equity", md.micros, equity.num)
 
-      // Calculate the best bid price in the book. We will not ask below it.
-      val bestBidPrice = book.bids.index.head._1
+    md.data match {
 
-      submitQuotes(md, bestAskPrice, bestBidPrice)
+      /**
+        * Record the last trade price when a trade comes in. This has two effects:
+        *
+        *   1. Provides updated source data for the indicators which depend on the
+        *      price time series.
+        *
+        *   2. Writes the time series to the trading session report, which makes it
+        *      available for analysis and graphing.
+        */
+      case trade: Trade =>
+        recordTrade(params.market, md.micros, trade.price, Some(trade.size))
+
+      /**
+        * Same as with trades, record the candle OHLC to the report and update the
+        * price time series with `recordCandle`. Also submit quotes, approximating
+        * the current best ask and bid as the close price.
+        */
+      case candle: Candle =>
+        recordCandle(params.market, candle)
+        submitQuotes(md, candle.close, candle.close)
+
+      /**
+        * Calculate and submit the intended quotes when there is new OrderBook data.
+        */
+      case book: OrderBook =>
+        // Calculate the best ask price in the book. We will not bid above it.
+        val bestAskPrice = book.asks.index.head._1
+
+        // Calculate the best bid price in the book. We will not ask below it.
+        val bestBidPrice = book.bids.index.head._1
+
+        submitQuotes(md, bestAskPrice, bestBidPrice)
+    }
   }
 
   /**

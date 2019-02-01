@@ -90,8 +90,8 @@ class FlashbotClient(engine: ActorRef, skipTouch: Boolean = false) {
   def backtestAsync(strategy: String, params: Json, initialPortfolio: Portfolio,
                     interval: FiniteDuration = 1 day, timeRange: TimeRange = TimeRange(0),
                     dataOverrides: Seq[DataOverride[_]] = Seq.empty): Future[Report] =
-    req[Report](BacktestQuery(strategy, params, timeRange, initialPortfolio,
-      Some(interval), None, dataOverrides))
+    req[ReportResponse](BacktestQuery(strategy, params, timeRange, initialPortfolio,
+      Some(interval), None, dataOverrides)).map(_.report)
 
   def backtest(strategy: String, params: Json, initialPortfolio: Portfolio,
                interval: FiniteDuration = 1 day, timeRange: TimeRange = TimeRange(0),
