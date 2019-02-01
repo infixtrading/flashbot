@@ -1,4 +1,4 @@
-package sources
+package flashbot.sources
 import akka.NotUsed
 import akka.actor.ActorContext
 import akka.stream.ActorMaterializer

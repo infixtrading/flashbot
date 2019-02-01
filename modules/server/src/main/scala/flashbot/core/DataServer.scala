@@ -258,9 +258,8 @@ class DataServer(dbConfig: Config,
     */
   def historicalDataExists[T](path: DataPath[T]): Future[Boolean] =
     slickSession.db.run(for {
-      numBackfills <- Backfills.forPath(path).size.result
       numBundles <- Bundles.forPath(path).size.result
-    } yield numBackfills + numBundles > 0)
+    } yield numBundles > 0)
 
   /**
     * Builds a stream of data from the persisted snapshots and deltas.

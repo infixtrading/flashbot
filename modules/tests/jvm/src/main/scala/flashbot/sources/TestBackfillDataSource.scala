@@ -1,4 +1,4 @@
-package sources
+package flashbot.sources
 
 import akka.NotUsed
 import akka.actor.ActorContext
@@ -20,6 +20,7 @@ object TestBackfillDataSource {
     Trade(i.toString, nowMicros + i * MicrosPerMinute, i, i, if (i % 2 == 0) Up else Down)
   }
 
+  val backfillRate = 10
   val batchSize = 40
 
   // Find earliest snapshot that is outside of the retention period. Then delete all
@@ -59,6 +60,7 @@ class TestBackfillDataSourceA extends DataSource {
       if (isDone) None else Some((page.last.id, 20 millis)))
     )
   }
+  override protected[flashbot] def backfillTickRate: Int = TestBackfillDataSource.backfillRate
 }
 
 class TestBackfillDataSourceB extends DataSource {
@@ -80,7 +82,7 @@ class TestBackfillDataSourceB extends DataSource {
     println(s"Backfill request B for $topic/$datatype with cursor $cursor")
 
     cursor match {
-      case Some(historicalTradesB.head.id) =>
+      case Some(id) if id == historicalTradesB.head.id =>
         return Future.failed(new RuntimeException(s"Simulating exception at ${cursor.get}"))
       case _ =>
     }
@@ -94,6 +96,8 @@ class TestBackfillDataSourceB extends DataSource {
       Some((page.last.id, 20 millis)))
     )
   }
+
+  override protected[flashbot] def backfillTickRate: Int = TestBackfillDataSource.backfillRate
 }
 class TestBackfillDataSourceC extends DataSource {
   import TestBackfillDataSource._
@@ -118,6 +122,7 @@ class TestBackfillDataSourceC extends DataSource {
       Some((page.last.id, 20 millis)))
     )
   }
+  override protected[flashbot] def backfillTickRate: Int = TestBackfillDataSource.backfillRate
 }
 
 

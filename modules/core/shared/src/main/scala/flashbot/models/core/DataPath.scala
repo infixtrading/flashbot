@@ -47,6 +47,8 @@ object DataPath {
       DataPath(srcKey, topic, DataType.parse(dataTypeStr).get.asInstanceOf[DataType[T]])
   }
 
+  def apply[T](str: String): DataPath[T] = parse(str)
+
   def wildcard: DataPath[Any] = DataPath("*", "*", AnyType)
 
   implicit def dataPathToString[T](path: DataPath[T]): String =

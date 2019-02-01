@@ -10,6 +10,7 @@ import akka.stream.scaladsl.{Keep, Sink, Source}
 import akka.testkit.{ImplicitSender, TestKit}
 import akka.util.Timeout
 import flashbot.models.api.{DataSelection, DataStreamReq}
+import flashbot.db._
 import com.typesafe.config.ConfigFactory
 import flashbot.core.FlashbotConfig.{DataSourceConfig, IngestConfig}
 import flashbot.core._
@@ -17,7 +18,7 @@ import flashbot.models.core.Ladder
 import org.scalatest.concurrent.{Eventually, IntegrationPatience}
 import org.scalatest.time.{Millis, Seconds, Span}
 import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpecLike}
-import sources.TestBackfillDataSource
+import flashbot.sources.TestBackfillDataSource
 import util.TestDB
 
 import scala.concurrent.Await
@@ -42,7 +43,7 @@ class DataServerSpec extends WordSpecLike with Matchers with Eventually {
       implicit val fbConfig = FlashbotConfig.load()
       val dataserver = system.actorOf(Props(new DataServer(fbConfig.db,
         // Ingests from a stream that is configured to send data for about 3 seconds.
-        Map("bitfinex" -> DataSourceConfig("sources.TestDataSource",
+        Map("bitfinex" -> DataSourceConfig("flashbot.sources.TestDataSource",
           Some(Seq("btc_usd")), Some(Seq("trades")))),
         fbConfig.exchanges,
         IngestConfig(Seq("bitfinex/btc_usd/trades"), Seq(), Seq(Seq()))
@@ -80,7 +81,7 @@ class DataServerSpec extends WordSpecLike with Matchers with Eventually {
       // Create data server actor.
       implicit val fbConfig = FlashbotConfig.load()
       val dataserver = system.actorOf(Props(new DataServer(fbConfig.db,
-        Map("bitfinex" -> DataSourceConfig("sources.TestLadderDataSource",
+        Map("bitfinex" -> DataSourceConfig("flashbot.sources.TestLadderDataSource",
           Some(Seq("btc_usd")), Some(Seq("ladder")))),
         fbConfig.exchanges,
         IngestConfig(Seq("bitfinex/btc_usd/ladder"), Seq(), Seq(Seq()))
@@ -134,7 +135,7 @@ class DataServerSpec extends WordSpecLike with Matchers with Eventually {
             "bitfinex" -> DataSourceConfig(dataSourceName,
               Some(Seq("btc_usd")), Some(Seq("trades")))))
 
-        implicit val system = ActorSystem("system1", config.conf)
+        implicit val system = ActorSystem(config.systemName, config.conf)
         val dataServer = system.actorOf(DataServer.props(config))
 
         implicit val mat = ActorMaterializer()
@@ -151,24 +152,44 @@ class DataServerSpec extends WordSpecLike with Matchers with Eventually {
         implicit val patienceConfig =
           PatienceConfig(timeout = scaled(Span(8, Seconds)), interval = scaled(Span(500, Millis)))
 
-        eventually {
-          assert(fetchTrades())
+        try {
+          eventually {
+            assert(fetchTrades())
+          }
+        } catch {
+          case err: Throwable =>
+            implicit val slickSession = SlickSession.forConfig(config.db)
+            import slickSession.profile.api._
+            val backfills = Await.result(slickSession.db.run(Backfills.result), timeout.duration)
+            val bundles = Await.result(slickSession.db.run(Bundles.result), timeout.duration)
+            val snapshots = Await.result(slickSession.db.run(Snapshots.sortBy(x => (x.bundle, x.seqid)).result), timeout.duration)
+            val deltas = Await.result(slickSession.db.run(Deltas.sortBy(x => (x.bundle, x.seqid)).result), timeout.duration)
+            println("BACKFILLS")
+            backfills.foreach(println)
+            println("BUNDLES")
+            bundles.foreach(println)
+            println("SNAPSHOTS")
+            snapshots.foreach(println)
+            println("DELTAS")
+            deltas.foreach(println)
+
+            throw err
         }
 
         Await.ready(system.terminate(), 10 seconds)
       }
 
-      runDataServer("sources.TestBackfillDataSourceA", fetched => {
+      runDataServer("flashbot.sources.TestBackfillDataSourceA", fetched => {
         fetched.map(_.data) shouldEqual (historicalTradesA ++ liveTradesA)
       })
 
-      runDataServer("sources.TestBackfillDataSourceB", fetched => {
+      runDataServer("flashbot.sources.TestBackfillDataSourceB", fetched => {
         fetched.map(_.data) shouldEqual
           ((historicalTradesA ++ liveTradesA) ++
             (historicalTradesB ++ liveTradesB))
       })
 
-      runDataServer("sources.TestBackfillDataSourceC", fetched => {
+      runDataServer("flashbot.sources.TestBackfillDataSourceC", fetched => {
         fetched.map(_.data) shouldEqual allTradesAfterRetention
       })
 

@@ -7,15 +7,14 @@ import flashbot.models.core.DataPath
 import slick.lifted.Tag
 import slick.jdbc.PostgresProfile.api._
 
-case class BackfillRow(id: Long, source: String, topic: String, datatype: String,
+case class BackfillRow(bundle: Long, source: String, topic: String, datatype: String,
                        cursor: Option[String], nextPageAt: Option[Timestamp],
                        claimedBy: Option[String], claimedAt: Option[Timestamp]) {
   def path: DataPath[_] = DataPath(source, topic, DataType(datatype))
-  def bundle: Long = Long.MaxValue - id
 }
 
-class Backfills(tag: Tag) extends Table[BackfillRow](tag, "backfills") {
-  def id = column[Long]("id", O.PrimaryKey, O.AutoInc)
+class Backfills(tag: Tag) extends Table[BackfillRow](tag, "flashbot_backfills") {
+  def bundle = column[Long]("bundle", O.PrimaryKey)
   def source = column[String]("source")
   def topic = column[String]("topic")
   def datatype = column[String]("datatype")
@@ -25,7 +24,7 @@ class Backfills(tag: Tag) extends Table[BackfillRow](tag, "backfills") {
   def claimedAt = column[Option[Timestamp]]("claimed_at")
 
   override def * =
-    (id, source, topic, datatype, cursor, nextPageAt, claimedBy, claimedAt) <>
+    (bundle, source, topic, datatype, cursor, nextPageAt, claimedBy, claimedAt) <>
       (BackfillRow.tupled, BackfillRow.unapply)
 
   def pk = index("pk_backfills", (source, topic, datatype))

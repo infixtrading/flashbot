@@ -44,6 +44,10 @@ object FlashbotConfig {
       backfillMatchers.exists(_.matches(s"$src/*/*")))
     def filterSources(sources: Set[String]) =
       filterIngestSources(sources) ++ filterBackfillSources(sources)
+
+    def retentionFor(path: DataPath[_]): Option[FiniteDuration] =
+      retention.find(record => DataPath(record.head).matches(path))
+        .map(record => time.parseDuration(record.last))
   }
 
   @ConfiguredJsonCodec(decodeOnly = true)

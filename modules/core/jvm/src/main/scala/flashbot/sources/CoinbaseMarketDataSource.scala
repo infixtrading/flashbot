@@ -258,7 +258,7 @@ class CoinbaseMarketDataSource extends DataSource {
 
   override def backfillPage[T](topic: String, datatype: DataType[T], cursorStr: Option[String])
                               (implicit ctx: ActorContext, mat: ActorMaterializer)
-      : Future[(Seq[(Long, T)], Option[(String, Duration)])] = datatype match {
+      : Future[(Seq[(Long, T)], Option[(String, FiniteDuration)])] = datatype match {
     case TradesType =>
       implicit val ec = ctx.dispatcher
       val cursor = cursorStr.map(decode[BackfillCursor](_).right.get)

@@ -11,6 +11,7 @@ import flashbot.models.core.DataPath
 import slick.lifted.TableQuery
 
 import scala.concurrent.Future
+import scala.concurrent.ExecutionContext.Implicits.global
 
 package object db {
 
@@ -35,10 +36,12 @@ package object db {
     }
   }
 
-  case class DeltaRow(bundle: Long, seqid: Long, micros: Long, data: String, backfill: Option[Long]) extends Wrap {
+  case class DeltaRow(id: Long, bundle: Long, seqid: Long, micros: Long,
+                      data: String, backfill: Option[Long]) extends Wrap {
     def isSnap = false
   }
-  case class SnapshotRow(bundle: Long, seqid: Long, micros: Long, data: String, backfill: Option[Long]) extends Wrap {
+  case class SnapshotRow(id: Long, bundle: Long, seqid: Long, micros: Long,
+                         data: String, backfill: Option[Long]) extends Wrap {
     def isSnap = true
   }
 
@@ -76,9 +79,8 @@ package object db {
 
     def forPath(path: DataPath[_]) =
       for {
-        backfillId <- Backfills.forPath(path).map(_.id)
         bundleId <- Bundles.forPath(path).map(_.id)
-        s <- Snapshots if bundleId === s.bundle || backfillId === s.backfill
+        s <- Snapshots if bundleId === s.bundle
       } yield s
   }
 
@@ -88,28 +90,16 @@ package object db {
 
     def forPath(path: DataPath[_]) =
       for {
-        backfillId <- Backfills.forPath(path).map(_.id)
         bundleId <- Bundles.forPath(path).map(_.id)
-        d <- Deltas if bundleId === d.bundle || backfillId === d.backfill
+        d <- Deltas if bundleId === d.bundle
       } yield d
   }
 
 
-  def createBundle(path: DataPath[_])(implicit session: SlickSession): Future[Long] = {
+  def createBundles(path: DataPath[_])(implicit session: SlickSession): Future[(Long, Long)] = {
     import session.profile.api._
     val item = BundleRow(0l, path.source, path.topic, path.datatype.toString)
-    session.db.run((Bundles returning Bundles.map(_.id)) += item)
+    session.db.run((Bundles returning Bundles.map(_.id)) ++= Seq(item, item))
+      .map(ids => (ids.head, ids.last))
   }
-
-  def streamBundle[T](id: Long, fromMicros: Long)
-                     (implicit fmt: DeltaFmtJson[T]): Source[T, NotUsed] = ???
-
-//  def ingestItemsAsync[T](bundleId: Long, items: Seq[((Long, T), Long)])
-//                         (implicit session: SlickSession, fmt: DeltaFmtJson[T]): Future[Long] = {
-//    import session.profile.api._
-//    var deltas = Seq.empty[(Long, Long, Long, String)]
-//    var snaps = Seq.empty[(Long, Long, Long, String)]
-//    for (((micros, item), index) <- items) {
-//    }
-//  }
 }

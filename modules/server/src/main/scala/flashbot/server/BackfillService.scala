@@ -47,7 +47,7 @@ import scala.util.{Failure, Random, Success}
   *   4. Release the lock by unclaiming the record, and setting the `cursor` and `nextPageAt`
   *      columns according to whether the persistence function said this backfill is complete.
   */
-class BackfillService[T](path: DataPath[T], dataSource: DataSource,
+class BackfillService[T](bundleId: Long, path: DataPath[T], dataSource: DataSource,
                          retention: Option[FiniteDuration])
                         (implicit session: SlickSession) extends Actor with ActorLogging {
   import session.profile.api._
@@ -61,7 +61,7 @@ class BackfillService[T](path: DataPath[T], dataSource: DataSource,
   val instanceId = UUID.randomUUID().toString
 
   // If a claim is held for more than 10 seconds, something is probably wrong. Expire it.
-  val ClaimTTL = 10 seconds
+  val ClaimTTL = 10 * 1000 / dataSource.backfillTickRate millis
 
   // Every few seconds send a BackfillTick event to self.
   system.scheduler.schedule(0 millis, (2000 / dataSource.backfillTickRate) millis) (Future {
@@ -72,10 +72,13 @@ class BackfillService[T](path: DataPath[T], dataSource: DataSource,
   })
 
   // Create a new row
-  var newBackfillId = Await.result(session.db.run(
-    (Backfills returning Backfills.map(_.id)) +=
-      BackfillRow(0, path.source, path.topic, path.datatype, None,
+  val insertedBackfills = Await.result(session.db.run(
+    Backfills +=
+      BackfillRow(bundleId, path.source, path.topic, path.datatype, None,
         Some(Timestamp.from(Instant.EPOCH)), None, None)), 5 seconds)
+  if (insertedBackfills == 0) {
+    throw new RuntimeException(s"Unable to create backfill row $bundleId")
+  }
 
   def claimedBackfill = Backfills.forPath(path).filter(_.claimedBy === instanceId)
 
@@ -86,7 +89,7 @@ class BackfillService[T](path: DataPath[T], dataSource: DataSource,
     .filter(_.claimedAt.isEmpty)
     // It is not complete and is not currently throttled.
     .filter(_.nextPageAt < now)
-    .sortBy(_.id.desc)
+    .sortBy(_.bundle.desc)
 
   override def receive = {
     case BackfillTick =>
@@ -105,7 +108,7 @@ class BackfillService[T](path: DataPath[T], dataSource: DataSource,
         }
       }
 
-      val hasClaimedOpt = session.db.run(for {
+      val hasClaimedOpt = session.db.run((for {
         // First, perform some global clean-up. Ensure that all stale locks are released.
         numExpired <- Backfills
           .filter(_.claimedAt < Timestamp.from(now.minusMillis(ClaimTTL.toMillis)))
@@ -114,8 +117,11 @@ class BackfillService[T](path: DataPath[T], dataSource: DataSource,
         _ = { if (numExpired > 0) log.warning("Expired {} backfill claims", numExpired) }
 
         // Next, try to claim the next available backfill.
-        claimed <- availableBackfills(nowts)
-          .take(1)
+        // Gotta do this in two steps due to a bug in Slick:
+        // https://github.com/slick/slick/issues/1672
+        idToClaim <- availableBackfills(nowts).map(_.bundle).forUpdate.result.headOption
+        claimed <- Backfills
+          .filter(_.bundle === idToClaim)
           .map(bf => (bf.claimedBy, bf.claimedAt))
           .update(Some(instanceId), Some(nowts))
           .map {
@@ -124,7 +130,7 @@ class BackfillService[T](path: DataPath[T], dataSource: DataSource,
             // Unable to claim for whatever reason. Ignore.
             case 0 => false
           }
-      } yield claimed)
+      } yield claimed).transactionally)
 
       hasClaimedOpt.onComplete {
         case Success(true) =>
@@ -195,8 +201,8 @@ class BackfillService[T](path: DataPath[T], dataSource: DataSource,
       // Insert the snapshot
       _ <- data.headOption.map {
         case (micros, item) => Snapshots +=
-          SnapshotRow(claim.bundle, seqIdStart, micros,
-            item.asJson.pretty(Printer.noSpaces), Some(claim.id))
+          SnapshotRow(0, claim.bundle, seqIdStart, micros,
+            item.asJson.pretty(Printer.noSpaces), Some(claim.bundle))
       }.getOrElse(DBIO.successful(0))
 
       // Build and insert the deltas
@@ -205,8 +211,8 @@ class BackfillService[T](path: DataPath[T], dataSource: DataSource,
           case ((None, _), ((_, item), i)) => (Some(item), None)
           case ((Some(prev), _), ((micros, item), i)) =>
             val delta = fmt.diff(prev, item)
-            val deltaRow = DeltaRow(claim.bundle, seqIdStart + i, micros,
-              delta.asJson.pretty(Printer.noSpaces), Some(claim.id))
+            val deltaRow = DeltaRow(0, claim.bundle, seqIdStart + i, micros,
+              delta.asJson.pretty(Printer.noSpaces), Some(claim.bundle))
             (Some(item), Some(deltaRow))
         }.collect {
           case (_, Some(deltaRow)) => deltaRow
@@ -253,7 +259,7 @@ class BackfillService[T](path: DataPath[T], dataSource: DataSource,
   def deleteOldData(duration: FiniteDuration, now: Instant): Future[Int] = {
     session.db.run(for {
       // Find the most recent snapshot that falls outside of the retention period.
-      snap <- Snapshots
+      lastOutdatedSnap <- Snapshots
         .forPath(path)
         .sortBy(x => (x.bundle.desc, x.seqid.desc))
         .filter(x => x.micros < now.toEpochMilli * 1000 - duration.toMicros)
@@ -261,18 +267,25 @@ class BackfillService[T](path: DataPath[T], dataSource: DataSource,
 
       // Delete all snapshots and deltas that have either a smaller bundle id than
       // the snapshot we found, or the same bundle id, but lower sequence number.
-      deletedSnaps: Int <- Snapshots
-        .forPath(path)
-        .filter(x => x.bundle < snap.map(_.bundle) ||
-          (x.bundle === snap.map(_.bundle) && x.seqid < snap.map(_.seqid)))
-        .delete
+      // We do the inner query because delete queries may not use joins in slick.
+      deletedSnaps: Int <- (Snapshots filter { snap =>
+        snap.id in Snapshots
+          .forPath(path)
+          .filter(x => x.bundle < lastOutdatedSnap.map(_.bundle) ||
+            (x.bundle === lastOutdatedSnap.map(_.bundle) &&
+              x.seqid < lastOutdatedSnap.map(_.seqid)))
+          .map(_.id)
+      }).delete
 
       // Same with deltas.
-      deletedDeltas: Int <- Deltas
-        .forPath(path)
-        .filter(x => x.bundle < snap.map(_.bundle) ||
-            (x.bundle === snap.map(_.bundle) && x.seqid < snap.map(_.seqid)))
-        .delete
+      deletedDeltas: Int <- (Deltas filter { delta =>
+        delta.id in Deltas
+          .forPath(path)
+          .filter(x => x.bundle < lastOutdatedSnap.map(_.bundle) ||
+            (x.bundle === lastOutdatedSnap.map(_.bundle) &&
+              x.seqid < lastOutdatedSnap.map(_.seqid)))
+          .map(_.id)
+      }).delete
 
     } yield deletedSnaps + deletedDeltas)
   }

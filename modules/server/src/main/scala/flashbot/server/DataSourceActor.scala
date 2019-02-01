@@ -198,26 +198,25 @@ class DataSourceActor(session: SlickSession,
                 sources.foreach {
                   case (topic, source) =>
                     val path = DataPath(srcKey, topic, dataType)
-                    createBundle(path) onComplete {
+                    createBundles(path) onComplete {
                       case Failure(err) =>
                         self ! Err(err)
-                      case Success(bundleId) =>
+                      case Success((backfillBundleId, ingestBundleId)) =>
                         log.info(s"Ingesting $path")
 
-                        // Also start two backfill services for each matching path.
-                        // One to resume previous backfills, and one to create a new backfill
-                        // starting with the most recent data..
+                        // Start a backfill service for ingesting historical data and deleting data
+                        // that's older than the retention period.
                         if (ingestConfig.backfillMatchers.exists(_.matches(path))) {
                           log.debug(s"Launching BackfillService for {}", path)
-                          context.actorOf(Props(new BackfillService(session, path, dataSource, isResume = true)))
-                          context.actorOf(Props(new BackfillService(session, path, dataSource, isResume = false)))
+                          context.actorOf(Props(new BackfillService(backfillBundleId, path, dataSource,
+                            ingestConfig.retentionFor(path))))
                         } else {
                           log.debug("Skipping backfill for {}", path)
                         }
 
                         // Save bundle id for this path.
                         bundleIndex += (path.toString ->
-                          (bundleIndex.getOrElse(path, Seq.empty[Long]) :+ bundleId))
+                          (bundleIndex.getOrElse(path, Seq.empty[Long]) :+ ingestBundleId))
 
                         subscriptions += (path.toString -> Set.empty[ActorRef])
 
@@ -230,7 +229,7 @@ class DataSourceActor(session: SlickSession,
                           // Buffer items.
                           .alsoTo(Sink.foreach {
                             case ((micros, item), seqId) =>
-                              self ! BaseMarketData(item, path, micros, bundleId, seqId)
+                              self ! BaseMarketData(item, path, micros, ingestBundleId, seqId)
                           })
                           // Scan to determine the deltas and snapshots to write on every iteration.
                           .scan[Option[ScanState]](None) {
@@ -251,24 +250,29 @@ class DataSourceActor(session: SlickSession,
                           .mapAsync(10) { states: Seq[ScanState] =>
 
                             for {
-                              // Save the deltas
-                              a <- session.db.run(Deltas ++= states.filter(_.delta.isDefined)
-                                .map(state => DeltaRow(bundleId, state.seqId, state.micros,
-                                  fmt.deltaEn(state.delta.get).pretty(Printer.noSpaces), None)))
-                              // Save the snapshots
-                              b <- session.db.run(Snapshots ++= states
-                                .filter(_.snapshot.isDefined).map(state =>
-                                  {
-                                    println(state.seqId, state.micros)
-                                    SnapshotRow(bundleId, state.seqId, state.micros,
-                                      fmt.modelEn(state.item).pretty(Printer.noSpaces), None)
-                                  }))
+                              (a, b, d) <- session.db.run((for {
+                                // Save the deltas
+                                a <- Deltas ++= states.filter(_.delta.isDefined)
+                                  .map(state => DeltaRow(0, ingestBundleId, state.seqId, state.micros,
+                                    fmt.deltaEn(state.delta.get).pretty(Printer.noSpaces), None))
+                                // Save the snapshots
+                                b <- Snapshots ++= states
+                                  .filter(_.snapshot.isDefined).map(state => {
+                                  SnapshotRow(0, ingestBundleId, state.seqId, state.micros,
+                                    fmt.modelEn(state.item).pretty(Printer.noSpaces), None)
+                                })
+                                // Delete snapshots from the future. Backfill related edge case.
+                                d <- Snapshots
+                                  .filter(_.bundle === backfillBundleId)
+                                  .filter(_.micros >= states.headOption.map(_.micros))
+                                  .delete
+                              } yield (a, b, d)).transactionally)
                               _ = log.debug("Saved {} deltas and {} snapshots for {}", a, b, path)
                             } yield states.last.seqId
                           }
                           // Clear ingested items from buffer.
                           .runWith(Sink.foreach { lastIngestedSeqId =>
-                            self ! DataIngested(bundleId, lastIngestedSeqId)
+                            self ! DataIngested(ingestBundleId, lastIngestedSeqId)
                           })
                           // When the source is terminated, we "close" the bundle. Once a bundle is
                           // closed, we will never be able to add more data to it since a bundle id
