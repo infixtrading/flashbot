@@ -6,11 +6,12 @@ import java.util.concurrent.ConcurrentLinkedQueue
 import flashbot.models.core.FixedSize
 import flashbot.models.core.Order.Fill
 import flashbot.models.core._
+import flashbot.util.time
 import io.circe.Json
 
 import scala.concurrent.{ExecutionContext, Future}
 import scala.math.BigDecimal.RoundingMode.HALF_DOWN
-import scala.util.{Failure, Success}
+import scala.util.{Failure, Success, Try}
 
 abstract class Exchange {
 
@@ -49,39 +50,55 @@ abstract class Exchange {
     handleResponse(cancel(id, instrument))
   }
 
+  protected[flashbot] def syntheticCurrentMicros: Option[Long] = None
+
   private def handleResponse(fut: Future[ExchangeResponse]): Unit = {
-    fut onComplete {
-      case Success(RequestOk) => // Ignore successful responses
+
+    // Simply tick on successful responses, so that the action queue can make progress.
+    // On error, use the `error` function which saves the error to internal state (to be
+    // collected by the session on the next run) and also calls `tick()`.
+    val handler: PartialFunction[Try[ExchangeResponse], Unit] = {
+      case Success(RequestOk) =>
+        tick(syntheticCurrentMicros.getOrElse(time.currentTimeMicros))
       case Success(RequestFailed(cause: ExchangeError)) =>
         error(cause)
       case Failure(err) =>
         error(InternalError(err))
     }
+
+    if (fut.isCompleted) {
+      // Ensure that the tick occurs immediately if the future is instantly complete.
+      // This is required for the tick queue to work properly in backtest mode.
+      handler(fut.value.get)
+    } else {
+      // Otherwise, handle asynchronously.
+      fut andThen handler
+    }
   }
 
-  private var tick: () => Unit = () => {
+  protected[flashbot] var tick: Long => Unit = (nowMicros: Long) => {
     throw new RuntimeException("The default tick function should never be called")
   }
-  protected[flashbot] def setTickFn(fn: () => Unit): Unit = {
+  protected[flashbot] def setTickFn(fn: Long => Unit): Unit = {
     tick = fn
   }
 
   private val fills = new ConcurrentLinkedQueue[Fill]()
   def fill(f: Fill): Unit = {
     fills.add(f)
-    tick()
+    tick(syntheticCurrentMicros.getOrElse(time.currentTimeMicros))
   }
 
   private val events = new ConcurrentLinkedQueue[OrderEvent]()
   def event(e: OrderEvent): Unit = {
     events.add(e)
-    tick()
+    tick(syntheticCurrentMicros.getOrElse(time.currentTimeMicros))
   }
 
   private val errors = new ConcurrentLinkedQueue[ExchangeError]()
   private def error(err: ExchangeError): Unit = {
     errors.add(err)
-    tick()
+    tick(syntheticCurrentMicros.getOrElse(time.currentTimeMicros))
   }
 
   private def collectQueue[T](queue: ConcurrentLinkedQueue[T]): Seq[T] = {
@@ -99,7 +116,8 @@ abstract class Exchange {
     * the given trading session.
     */
   protected[flashbot] def collect(session: TradingSession,
-                                  data: Option[MarketData[_]]): (Seq[Fill], Seq[OrderEvent], Seq[ExchangeError]) =
+                                  data: Option[MarketData[_]],
+                                  tick: Option[Tick]): (Seq[Fill], Seq[OrderEvent], Seq[ExchangeError]) =
     (collectQueue(fills), collectQueue(events), collectQueue(errors))
 
   private var jsonParams: Option[Json] = _

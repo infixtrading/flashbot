@@ -20,7 +20,7 @@ sealed trait ExchangeError {
   def message: String
 }
 
-case class OrderRejected(reason: RejectedReason) extends ExchangeError {
+case class OrderRejected(request: OrderRequest, reason: RejectedReason) extends ExchangeError {
   override def message = reason.message
 }
 

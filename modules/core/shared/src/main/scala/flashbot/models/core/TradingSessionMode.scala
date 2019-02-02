@@ -20,17 +20,22 @@ sealed trait TradingSessionMode {
     case Paper(x) if x.length == 0 => "paper"
     case Paper(x) => "paper:" + time.printDuration(x)
   }
+
+  def isBacktest: Boolean
 }
 case class Backtest(range: TimeRange) extends TradingSessionMode {
   override def timeRange(now: Instant) = range
   override def lookback = 0 seconds
+  override def isBacktest = true
 }
 case class Paper(lookback: FiniteDuration = 0 seconds) extends TradingSessionMode {
   override def timeRange(now: Instant) = TimeRange.build(now, lookback)
+  override def isBacktest = false
 }
 case object Live extends TradingSessionMode {
   override def timeRange(now: Instant) = TimeRange.build(now, "now")
   override def lookback = 0 seconds
+  override def isBacktest = false
 }
 
 object TradingSessionMode {

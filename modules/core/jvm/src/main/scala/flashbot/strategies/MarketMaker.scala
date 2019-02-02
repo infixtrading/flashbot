@@ -32,6 +32,7 @@ import scala.language.implicitConversions
 case class MarketMakerParams(market: MarketParam,
                              datatype: DataTypeParam,
                              fairPriceIndicator: FairValueParam,
+                             indicatorBarCount: Int,
                              layersCount: Int,
                              layerSpacing: Double,
                              quoteSize: Double)
@@ -40,7 +41,7 @@ case class MarketMakerParams(market: MarketParam,
 class FairValueParam(val value: String) extends AnyVal
     with SchemaParam[FairValueParam, String] {
   override def schema(implicit loader: SessionLoader) =
-    json.Schema.enum(Set(VWAP, SMA_7, SMA_14))
+    json.Schema.enum(Set(VWAP, SMA))
 }
 object FairValueParam {
   implicit def build(str: String): FairValueParam = new FairValueParam(str)
@@ -61,9 +62,8 @@ class MarketMaker extends Strategy[MarketMakerParams] with TimeSeriesMixin {
   // constructor is called.
   lazy val closePrice = new ClosePriceIndicator(prices(params.market))
   lazy val fairPriceIndicator = params.fairPriceIndicator.value match {
-    case VWAP => new VWAPIndicator(prices(params.market), 7)
-    case SMA_7 => new SMAIndicator(closePrice, 7)
-    case SMA_14 => new SMAIndicator(closePrice, 14)
+    case VWAP => new VWAPIndicator(prices(params.market), params.indicatorBarCount)
+    case SMA => new SMAIndicator(closePrice, params.indicatorBarCount)
   }
 
   override def decodeParams(paramsStr: String) = decode[MarketMakerParams](paramsStr).toTry
@@ -92,11 +92,11 @@ class MarketMaker extends Strategy[MarketMakerParams] with TimeSeriesMixin {
   override def handleEvent(event: StrategyEvent)
                           (implicit ctx: TradingSession) = event match {
     case ExchangeErrorEvent(error) =>
-      println(error)
+//      println(error)
     case _ =>
   }
 
-  override def handleData(md: MarketData[_])(implicit ctx: TradingSession) = {
+  override def handleData(md: MarketData[_])(implicit ctx: TradingSession): Unit = {
 
     implicit val instruments = ctx.instruments
     implicit val prices = ctx.getPrices
@@ -165,10 +165,10 @@ class MarketMaker extends Strategy[MarketMakerParams] with TimeSeriesMixin {
       // Calculate the target ask price for the `i`th level.
       val targetAskPrice: Double = fairPrice + (i * params.layerSpacing)
 
-      // Declare the ask order if the target ask price is above the best bid.
+      // Declare the ask orders.
       limitOrder(
         market = params.market,
-        size = (params.quoteSize, instrument.quote),
+        size = (-params.quoteSize, instrument.quote),
         price = targetAskPrice,
         key = s"ask_$i",
         postOnly = true
@@ -177,17 +177,19 @@ class MarketMaker extends Strategy[MarketMakerParams] with TimeSeriesMixin {
       // Calculate the target bid price for the `i`th level.
       val targetBidPrice: Double = fairPrice - (i * params.layerSpacing)
 
-      // Declare the limit order if the target bid price is below the best ask.
-      if (targetBidPrice < bestAsk) {
-        limitOrder(params.market, FixedSize(params.quoteSize, instrument.quote), targetBidPrice,
-          s"bid_$i", postOnly = true)
-      }
+      // Declare the bid orders.
+      limitOrder(
+        market = params.market,
+        size = (params.quoteSize, instrument.quote),
+        price = targetBidPrice,
+        key = s"bid_$i",
+        postOnly = true
+      )
     }
   }
 }
 
 object MarketMaker {
   val VWAP = "vwap"
-  val SMA_7 = "sma7"
-  val SMA_14 = "sma14"
+  val SMA = "sma"
 }

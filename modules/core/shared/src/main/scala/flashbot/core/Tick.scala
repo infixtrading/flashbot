@@ -1,4 +1,10 @@
 package flashbot.core
 
-case class Tick(events: Seq[Any] = Seq.empty, exchange: Option[String] = None)
+case class Tick(events: Seq[Any],
+                exchange: Option[String],
+                micros: Long)
+
+object Tick {
+  implicit val ordering: Ordering[Tick] = Ordering.by(_.micros)
+}
 

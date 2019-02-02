@@ -174,11 +174,8 @@ trait TimeSeriesMixin { self: Strategy[_] =>
   def series(key: String): TimeSeries = _series(indicatorKey(key))
 
   private def _series(key: String): TimeSeries = {
-    println("KEY", key)
     if (!allSeries.isDefinedAt(key)) {
-      println("NOT DEFINED")
       val ts = new BaseTimeSeries.SeriesBuilder().withName(key).withMaxBarCount(1000).build()
-      println("NEW SERIES", ts)
       allSeries += (key -> ts)
     }
     allSeries(key)

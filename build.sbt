@@ -387,7 +387,7 @@ lazy val core = coreBase.jvm.settings(
     "com.vmunier" %% "scalajs-scripts" % "1.1.2",
     "com.github.inamik.text.tables" % "inamik-text-tables" % "0.8",
     "com.lihaoyi" %% "fansi" % "0.2.5",
-    "de.sciss" %% "fingertree" % "1.5.2",
+    "de.sciss" %% "fingertree" % "1.5.4",
     "com.twitter" %% "chill-akka" % "0.9.3",
     
     // For Java support

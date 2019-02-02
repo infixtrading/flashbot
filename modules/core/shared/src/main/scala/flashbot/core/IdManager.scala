@@ -11,6 +11,8 @@ case class IdManager(clientToTarget: Map[String, TargetId] = Map.empty,
   def initCreateOrderId(targetId: TargetId, clientId: String): IdManager =
     copy(clientToTarget = clientToTarget + (clientId -> targetId))
 
+  def orderRejected(clientId: String): IdManager = copy(clientToTarget - clientId)
+
   def receivedOrderId(clientId: String, actualId: String): IdManager = copy(
     targetToActual = targetToActual + (clientToTarget(clientId) -> actualId),
     actualToTarget = actualToTarget + (actualId -> clientToTarget(clientId)),

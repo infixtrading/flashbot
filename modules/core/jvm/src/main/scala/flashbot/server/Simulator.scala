@@ -16,7 +16,8 @@ class Simulator(base: Exchange, latencyMicros: Long = 0) extends Exchange {
 
   override implicit val ec = scala.concurrent.ExecutionContext.global
 
-  private var currentTimeMicros: Long = 0
+  private var _syntheticCurrentMicros: Option[Long] = None
+  override protected[flashbot] def syntheticCurrentMicros: Option[Long] = _syntheticCurrentMicros
 
   sealed trait APIRequest {
     def requestTime: Long
@@ -36,18 +37,20 @@ class Simulator(base: Exchange, latencyMicros: Long = 0) extends Exchange {
   override def takerFee: Double = base.takerFee
 
   override def collect(session: TradingSession,
-                       data: Option[MarketData[_]]):
+                       data: Option[MarketData[_]],
+                       tick: Option[Tick]):
         (Seq[Order.Fill], Seq[OrderEvent], Seq[ExchangeError]) = {
     var fills = Seq.empty[Order.Fill]
     var events = Seq.empty[OrderEvent]
     var errors = Seq.empty[ExchangeError]
 
     // Update the current time, based on the time of the incoming market data.
-    currentTimeMicros = math.max(data.map(_.micros).getOrElse(0L), currentTimeMicros)
+    val incomingTime = data.map(_.micros).getOrElse(tick.get.micros)
+    _syntheticCurrentMicros = Some(math.max(incomingTime, syntheticCurrentMicros.getOrElse(0L)))
 
     // Dequeue and process API requests that have passed the latency threshold
     while (apiRequestQueue.headOption
-        .exists(_.requestTime + latencyMicros <= currentTimeMicros)) {
+        .exists(_.requestTime + latencyMicros <= syntheticCurrentMicros.get)) {
       apiRequestQueue.dequeue match {
         case (r: APIRequest, rest) =>
           val evTime = r.requestTime + latencyMicros
@@ -57,7 +60,7 @@ class Simulator(base: Exchange, latencyMicros: Long = 0) extends Exchange {
                 * Limit orders may be filled (fully or partially) immediately. If not immediately
                 * fully filled, the remainder is placed on the resting order book.
                 */
-              case LimitOrderRequest(clientOid, side, product, size, price, postOnly) =>
+              case req @ LimitOrderRequest(clientOid, side, product, size, price, postOnly) =>
                 val immediateFills =
                   if (depths.isDefinedAt(product))
                     Ladder.ladderFillOrder(depths(product), side, Some(size), None, Some(price))
@@ -67,10 +70,10 @@ class Simulator(base: Exchange, latencyMicros: Long = 0) extends Exchange {
                       }
                   else if (prices.isDefinedAt(product)) {
                     side match {
-                      case Buy if price >= prices(product) =>
+                      case Buy if price > prices(product) =>
                         Seq(Fill(clientOid, Some(clientOid), takerFee, product, prices(product),
                           size, evTime, Taker, side))
-                      case Sell if price <= prices(product) =>
+                      case Sell if price < prices(product) =>
                         Seq(Fill(clientOid, Some(clientOid), takerFee, product, prices(product),
                           size, evTime, Taker, side))
                       case _ => Seq()
@@ -80,7 +83,7 @@ class Simulator(base: Exchange, latencyMicros: Long = 0) extends Exchange {
                   }
 
                 if (immediateFills.nonEmpty && postOnly) {
-                  errors :+= OrderRejected(PostOnlyConstraint)
+                  errors :+= OrderRejected(req, PostOnlyConstraint)
                 } else {
                   fills ++= immediateFills
 
@@ -201,13 +204,14 @@ class Simulator(base: Exchange, latencyMicros: Long = 0) extends Exchange {
         * When candle data comes in, we check if the high has crossed over any of our ask
         * orders or if the low has crossed any of our bids. If so, fill those orders.
         */
-      case Some(Candle(micros, open, high, low, close, volume)) =>
+      case Some(candle @ Candle(micros, open, high, low, close, volume)) =>
         val topic = data.get.topic
         if (myOrders.isDefinedAt(topic)) {
-          val matchedAsks: Stream[Order] =
-            myOrders(topic).asks.index.toStream.takeWhile(_._1 < high).flatMap(_._2)
-          val matchedBids: Stream[Order] =
-            myOrders(topic).bids.index.toStream.takeWhile(_._1 > low).flatMap(_._2)
+          val matchedAsks: Iterable[Order] =
+            myOrders(topic).asks.index.takeWhile(_._1 < high).flatMap(_._2)
+          val matchedBids: Iterable[Order] =
+            myOrders(topic).bids.index.takeWhile(_._1 > low).flatMap(_._2)
+
           (matchedAsks ++ matchedBids).foreach { order =>
             // Remove order from private book
             myOrders = myOrders + (topic -> myOrders(topic).done(order.id))
@@ -228,12 +232,14 @@ class Simulator(base: Exchange, latencyMicros: Long = 0) extends Exchange {
   }
 
   override def order(req: OrderRequest): Future[ExchangeResponse] = {
-    apiRequestQueue = apiRequestQueue.enqueue(OrderReq(currentTimeMicros, req))
+//    println(s"ordering: $req")
+    apiRequestQueue = apiRequestQueue.enqueue(OrderReq(syntheticCurrentMicros.get, req))
     Future.successful(RequestOk)
   }
 
   override def cancel(id: String, pair: Instrument): Future[ExchangeResponse] = {
-    apiRequestQueue = apiRequestQueue.enqueue(CancelReq(currentTimeMicros, id, pair))
+//    println(s"cancelling: $id")
+    apiRequestQueue = apiRequestQueue.enqueue(CancelReq(syntheticCurrentMicros.get, id, pair))
     Future.successful(RequestOk)
   }
 

@@ -144,4 +144,11 @@ case class TargetManager(instruments: InstrumentIndex,
       ids = ids.orderIdComplete(actualId)
     )
   }
+
+  def orderRejected(clientId: String): TargetManager = {
+    copy(
+      mountedTargets = mountedTargets - ids.clientToTarget(clientId),
+      ids = ids.orderRejected(clientId)
+    )
+  }
 }
