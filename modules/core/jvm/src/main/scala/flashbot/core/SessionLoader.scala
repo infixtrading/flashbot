@@ -4,13 +4,15 @@ import akka.actor.{ActorRef, ActorSystem}
 import akka.stream.Materializer
 import akka.util.Timeout
 import flashbot.core.FlashbotConfig.ExchangeConfig
+import flashbot.server.StrategyInfo
 
-import scala.concurrent.ExecutionContext
+import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration._
 import scala.language.postfixOps
 import scala.util.{Failure, Success, Try}
 
-class SessionLoader(getExchangeConfigs: () => Map[String, ExchangeConfig], dataServer: ActorRef)
+class SessionLoader(getExchangeConfigs: () => Map[String, ExchangeConfig],
+                    dataServer: ActorRef, strategyClassNames: Map[String, String])
                    (implicit val ec: ExecutionContext, val mat: Materializer) {
   implicit val timeout = Timeout(10 seconds)
 
@@ -54,4 +56,13 @@ class SessionLoader(getExchangeConfigs: () => Map[String, ExchangeConfig], dataS
           s"subclass of flashbot.core.Strategy", err))
       case err => Failure(err)
     }
+
+  protected[flashbot] def strategyInfo(className: String): Future[StrategyInfo] =
+    loadNewStrategy(className).get.info(this)
+
+  protected[flashbot] def allStrategyInfos: Future[Map[String, StrategyInfo]] = {
+    val (keys, classNames) = strategyClassNames.toSeq.unzip
+    Future.sequence(classNames.map(strategyInfo))
+      .map(keys zip _).map(_.toMap)
+  }
 }

@@ -34,7 +34,7 @@ abstract class JavaStrategy[P] extends Strategy[P] with TimeSeriesMixin {
   def jDecodeParams(paramsStr: String): P
 
   final override def info(loader: SessionLoader) =
-    JavaUtils.fromJava(jInfo(loader).thenApply[Option[StrategyInfo]](info => Option[StrategyInfo](info)))
+    JavaUtils.fromJava(jInfo(loader).thenApply[StrategyInfo](info => info))
 
   def jInfo(loader: SessionLoader): CompletableFuture[StrategyInfo] =
     CompletableFuture.completedFuture(null)

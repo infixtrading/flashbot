@@ -47,7 +47,7 @@ abstract class Strategy[P] {
     *               context in which the session is being run. E.g. the available exchanges.
     * @return a future of an optional [[StrategyInfo]]. Defaults to `None`.
     */
-  def info(loader: SessionLoader): Future[Option[StrategyInfo]] = Future.successful(None)
+  def info(loader: SessionLoader): Future[StrategyInfo] = Future.successful(StrategyInfo())
 
   /**
     * During initialization, strategies subscribe to any number of data sets, all of which must be

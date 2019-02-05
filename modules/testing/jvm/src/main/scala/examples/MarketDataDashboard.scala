@@ -15,7 +15,7 @@ object MarketDataDashboard extends App {
   val config = FlashbotConfig.load()
 
   // Create the actor system and trading engine
-  implicit val system = ActorSystem("example-system", config.conf)
+  implicit val system = ActorSystem(config.systemName, config.conf)
   implicit val materializer = ActorMaterializer()
   val engine = system.actorOf(TradingEngine.props("example-engine"))
 

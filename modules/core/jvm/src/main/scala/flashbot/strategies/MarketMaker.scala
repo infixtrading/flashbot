@@ -10,7 +10,9 @@ import org.ta4j.core.indicators.helpers.ClosePriceIndicator
 import org.ta4j.core.indicators.volume.VWAPIndicator
 import MarketMaker._
 import flashbot.core.DataType.{OrderBookType, TradesType}
+import flashbot.server.StrategyInfo
 import io.circe.{Decoder, Encoder}
+import com.github.andyglow.jsonschema.AsCirce._
 
 import scala.concurrent.Future
 import scala.language.implicitConversions
@@ -67,6 +69,10 @@ class MarketMaker extends Strategy[MarketMakerParams] with TimeSeriesMixin {
   }
 
   override def decodeParams(paramsStr: String) = decode[MarketMakerParams](paramsStr).toTry
+
+  override def info(loader: SessionLoader) =
+    Future.successful(StrategyInfo(Some(
+      json.Json.schema[MarketMakerParams].asCirce().noSpaces)))
 
   /**
     * On initialization, we use the `market` and `datatype` parameters build a sequence of

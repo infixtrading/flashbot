@@ -5,6 +5,6 @@ package flashbot.server
 /**
   * Description of a strategy.
   *
-  * @param schema the JSON Schema describing params and their constraints.
+  * @param jsonSchema the JSON Schema describing params and their constraints.
   */
-case class StrategyInfo(schema: String)
+case class StrategyInfo(jsonSchema: Option[String] = None)

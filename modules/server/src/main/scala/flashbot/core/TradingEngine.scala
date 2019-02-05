@@ -29,6 +29,7 @@ import io.circe.syntax._
 import scala.collection.immutable
 import scala.concurrent._
 import scala.concurrent.duration._
+import scala.language.postfixOps
 import scala.util.{Failure, Success}
 
 /**
@@ -89,10 +90,18 @@ class TradingEngine(engineId: String,
   log.info("TradingEngine '{}' started at {}", engineId, bootRsp.micros)
   bootEvents.foreach(log.debug("Boot event: {}", _))
 
+  implicit val loader = new SessionLoader(
+    getExchangeConfigs, dataServer, strategyClassNames: Map[String, String])
+
   // Start the Grafana data source server if the dataSourcePort is defined.
   if (grafana.dataSourcePort.isDefined) {
     Http().bindAndHandle(GrafanaServer.routes(new FlashbotClient(self, skipTouch = true)),
       "localhost", grafana.dataSourcePort.get)
+  }
+
+  // Start the Grafana manageer if the API key is defined.
+  if (grafana.apiKey.isDefined) {
+    context.actorOf(Props(new GrafanaManager(grafana.host, grafana.apiKey.get, loader)))
   }
 
   self ! BootEvents(bootEvents)
@@ -111,7 +120,6 @@ class TradingEngine(engineId: String,
   }
 
   def startEngine: Future[(EngineStarted, Seq[TradingEngineEvent])] = {
-    implicit val loader = new SessionLoader(getExchangeConfigs, dataServer)
     log.debug("Starting engine")
     for {
       fetchedPortfolio <- Future.sequence(getExchangeConfigs().keys.map(name =>
