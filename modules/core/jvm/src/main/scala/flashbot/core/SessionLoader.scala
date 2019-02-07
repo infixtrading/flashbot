@@ -19,8 +19,11 @@ class SessionLoader(getExchangeConfigs: () => Map[String, ExchangeConfig],
   def exchanges: Set[String] = getExchangeConfigs().keySet
 
   protected[flashbot] def loadNewExchange(name: String)
-                                       (implicit system: ActorSystem,
-                                        mat: Materializer): Try[Exchange] = {
+                                         (implicit system: ActorSystem,
+                                          mat: Materializer): Try[Exchange] = {
+
+    println("LOADING EXCHANGE", name)
+
     val config = getExchangeConfigs().get(name)
     if (config.isEmpty) {
       return Failure(new RuntimeException(s"Exchange $name not found"))

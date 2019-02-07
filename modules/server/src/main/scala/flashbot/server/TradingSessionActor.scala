@@ -106,7 +106,8 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
     val now = Instant.ofEpochMilli(sessionMicros / 1000)
 
     // Create the session loader
-    val sessionLoader: SessionLoader = new SessionLoader(getExchangeConfigs, dataServer)
+    val sessionLoader: SessionLoader =
+      new SessionLoader(getExchangeConfigs, dataServer, strategyClassNames)
 
     val initialPortfolio = portfolioRef.getPortfolio
 

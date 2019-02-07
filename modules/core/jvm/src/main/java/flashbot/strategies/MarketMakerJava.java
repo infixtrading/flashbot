@@ -12,13 +12,15 @@ import flashbot.core.*;
 import flashbot.models.core.*;
 import flashbot.server.StrategyInfo;
 import flashbot.util.JavaUtils;
+import scala.Some;
 
 import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.function.Supplier;
 
-public class MarketMakerJava extends JavaStrategy<MarketMakerJava.MarketMakerJavaParams> {
+public class MarketMakerJava
+        extends JavaStrategy<MarketMakerJava.MarketMakerJavaParams> {
 
     class MarketMakerJavaParams {
         @JsonSchemaInject(jsonSupplierViaLookup = "market")
@@ -71,7 +73,7 @@ public class MarketMakerJava extends JavaStrategy<MarketMakerJava.MarketMakerJav
         } catch (JsonProcessingException e) {
             e.printStackTrace();
         }
-        return CompletableFuture.completedFuture(new StrategyInfo(schemaStr));
+        return CompletableFuture.completedFuture(new StrategyInfo(new Some<>(schemaStr)));
     }
 
     @Override

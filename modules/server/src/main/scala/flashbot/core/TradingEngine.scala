@@ -84,14 +84,16 @@ class TradingEngine(engineId: String,
   val getExchangeConfigs = () => exchangeConfigs.map {
     case (name, _) => name -> configForExchange(name).get
   }
+
+  // Must be instantiated above the call to `startEngine`.
+  implicit val loader = new SessionLoader(
+    getExchangeConfigs, dataServer, strategyClassNames: Map[String, String])
+
   val (bootRsp: EngineStarted, bootEvents: Seq[TradingEngineEvent]) =
     Await.result(startEngine, timeout.duration)
 
   log.info("TradingEngine '{}' started at {}", engineId, bootRsp.micros)
   bootEvents.foreach(log.debug("Boot event: {}", _))
-
-  implicit val loader = new SessionLoader(
-    getExchangeConfigs, dataServer, strategyClassNames: Map[String, String])
 
   // Start the Grafana data source server if the dataSourcePort is defined.
   if (grafana.dataSourcePort.isDefined) {
@@ -324,7 +326,7 @@ class TradingEngine(engineId: String,
         sender ! StrategiesResponse(strategyClassNames.keys.map(StrategyResponse).toList)
 
       case StrategyInfoQuery(name) =>
-        val sessionLoader = new SessionLoader(getExchangeConfigs, dataServer)
+        val sessionLoader = new SessionLoader(getExchangeConfigs, dataServer, strategyClassNames)
         (for {
           className <- strategyClassNames.get(name)
             .toFut(new IllegalArgumentException(s"Unknown strategy $name"))
@@ -361,7 +363,7 @@ class TradingEngine(engineId: String,
         *       just the params?
         */
       case SyncExchanges =>
-        implicit val loader = new SessionLoader(getExchangeConfigs, dataServer)
+        implicit val loader = new SessionLoader(getExchangeConfigs, dataServer, strategyClassNames)
         Future.sequence(getExchangeConfigs().keys.map(name => fetchPortfolio(name).transform {
           case Success(value) => Success(Some(value))
           case Failure(_) => Success(None)
@@ -386,7 +388,7 @@ class TradingEngine(engineId: String,
         * this exchange from the global portfolio if we were not able to fetch.
         */
       case SyncExchange(name) =>
-        implicit val loader = new SessionLoader(getExchangeConfigs, dataServer)
+        implicit val loader = new SessionLoader(getExchangeConfigs, dataServer, strategyClassNames)
         fetchPortfolio(name)
           // Set in-memory state
           .transform {

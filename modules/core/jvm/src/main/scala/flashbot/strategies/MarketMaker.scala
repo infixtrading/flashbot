@@ -31,25 +31,13 @@ import scala.language.implicitConversions
   * @param quoteSize the size of each limit order.
   */
 @JsonCodec
-case class MarketMakerParams(market: MarketParam,
-                             datatype: DataTypeParam,
-                             fairPriceIndicator: FairValueParam,
+case class MarketMakerParams(market: Market,
+                             datatype: String,
+                             fairPriceIndicator: String,
                              indicatorBarCount: Int,
                              layersCount: Int,
                              layerSpacing: Double,
                              quoteSize: Double)
-
-// Custom parameter type
-class FairValueParam(val value: String) extends AnyVal
-    with SchemaParam[FairValueParam, String] {
-  override def schema(implicit loader: SessionLoader) =
-    json.Schema.enum(Set(VWAP, SMA))
-}
-object FairValueParam {
-  implicit def build(str: String): FairValueParam = new FairValueParam(str)
-  implicit def decoder: Decoder[FairValueParam] = Decoder.decodeString.map(x => x)
-  implicit def encoder: Encoder[FairValueParam] = Encoder.encodeString.contramap(_.value)
-}
 
 /**
   * An example market making strategy. It layers a number of asks and bids on each
@@ -63,7 +51,7 @@ class MarketMaker extends Strategy[MarketMakerParams] with TimeSeriesMixin {
   // These values are lazy because `params` isn't initialized at the time that the
   // constructor is called.
   lazy val closePrice = new ClosePriceIndicator(prices(params.market))
-  lazy val fairPriceIndicator = params.fairPriceIndicator.value match {
+  lazy val fairPriceIndicator = params.fairPriceIndicator match {
     case VWAP => new VWAPIndicator(prices(params.market), params.indicatorBarCount)
     case SMA => new SMAIndicator(closePrice, params.indicatorBarCount)
   }
@@ -87,8 +75,7 @@ class MarketMaker extends Strategy[MarketMakerParams] with TimeSeriesMixin {
     * @return the list of DataPaths which we're subscribing to.
     */
   override def initialize(portfolio: Portfolio, loader: SessionLoader) = {
-    val path = DataPath(params.market.exchange, params.market.symbol,
-        DataType(params.datatype.value))
+    val path = DataPath(params.market.exchange, params.market.symbol, DataType(params.datatype))
     val extraPaths =
       if (path.datatype == OrderBookType) Seq(path.withType(TradesType))
       else Seq.empty
@@ -98,7 +85,7 @@ class MarketMaker extends Strategy[MarketMakerParams] with TimeSeriesMixin {
   override def handleEvent(event: StrategyEvent)
                           (implicit ctx: TradingSession) = event match {
     case ExchangeErrorEvent(error) =>
-//      println(error)
+      println(error)
     case _ =>
   }
 
@@ -163,7 +150,7 @@ class MarketMaker extends Strategy[MarketMakerParams] with TimeSeriesMixin {
 
     // Record the computed fair price value to a time series so that it's available
     // on dashboards.
-    recordIndicator(s"fair_price_${params.fairPriceIndicator.value}", md.micros, fairPrice)
+    recordIndicator(s"fair_price_${params.fairPriceIndicator}", md.micros, fairPrice)
 
     // Declare at most `layersCount` number of quotes on each side.
     val instrument = ctx.instruments(params.market)

@@ -18,6 +18,5 @@ case class BotsResponse(bots: Seq[BotResponse]) extends BuiltInResponse
 case class BotSessionsResponse(id: String, sessions: Seq[TradingSessionState]) extends BuiltInResponse
 case class StrategyResponse(name: String) extends BuiltInResponse
 case class StrategiesResponse(strats: Seq[StrategyResponse]) extends BuiltInResponse
-case class StrategyInfoResponse(title: String, key: String,
-                                info: Option[StrategyInfo]) extends BuiltInResponse
+case class StrategyInfoResponse(title: String, key: String, info: StrategyInfo) extends BuiltInResponse
 case class PortfolioResponse(portfolio: Portfolio) extends BuiltInResponse
