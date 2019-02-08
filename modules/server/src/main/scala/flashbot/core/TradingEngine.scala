@@ -339,7 +339,7 @@ class TradingEngine(engineId: String,
         * Generate and respond with a [[NetworkSource]] of the [[Report]] for the specified bot.
         */
       case SubscribeToReport(botId) =>
-        (for {
+        val fut1 = for {
           bot <- state.bots.get(botId).toFut(
             new IllegalArgumentException(s"Unknown bot $botId"))
           session <- bot.sessions.lastOption.toFut(
@@ -348,11 +348,16 @@ class TradingEngine(engineId: String,
             .actorRef[Report](Int.MaxValue, OverflowStrategy.fail)
             .preMaterialize()
           _ = {
-            ref ! session.report
             subscriptions += (botId -> (subscriptions.getOrElse(botId, Set.empty) + ref))
+            ref ! session.report
           }
-          compressedSrc <- NetworkSource.build(src)
-        } yield compressedSrc) pipeTo sender
+        } yield src
+
+        // Await here because there isn't anything that should actually take time in the
+        // `fut1`, BUT we don't want race conditions between the subscriptions and the
+        // initial report.
+        val src = Await.result(fut1, 5 seconds)
+        NetworkSource.build(src) pipeTo sender
 
       /**
         * For all configured exchanges, try to fetch the portfolio. Swallow future failures here

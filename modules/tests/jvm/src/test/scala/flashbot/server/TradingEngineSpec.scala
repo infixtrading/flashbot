@@ -148,10 +148,16 @@ class TradingEngineSpec extends WordSpecLike
         .map(_.values("last_trade").value.asInstanceOf[Trade])
 
       // Collect the stream into a seq.
-      val reportTrades = Await.result(reportTradeSrc.runWith(Sink.seq), 30 seconds).dropRight(1)
+      val reportTrades = Await.result(
+        reportTradeSrc.runWith(Sink.seq), 30 seconds
+      ).dropRight(1)
+
+//      println(trades)
+//      println(reportTrades)
 
       // Verify that the data in the report stream is the expected list of trades.
       val a = trades.drop(trades.size - reportTrades.size)
+//      println("FIRST TRADE", reportTrades.head)
       reportTrades shouldEqual a
 
       // Also check that it was reverted to disabled state after the data stream completed.

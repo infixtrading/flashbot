@@ -28,7 +28,7 @@ class TradeWriter extends Strategy[Params] {
 
   def handleData(data: MarketData[_])(implicit ctx: TradingSession) = data.data match {
     case trade: Trade =>
-      "last_trade".set(trade)
+      "last_trade" set trade
   }
 
   override def resolveMarketData[T](selection: DataSelection[T], dataServer: ActorRef,
