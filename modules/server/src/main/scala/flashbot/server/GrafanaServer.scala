@@ -15,11 +15,13 @@ import flashbot.util.time._
 import flashbot.util._
 import io.circe._
 import io.circe.syntax._
+import io.circe.parser._
 import io.circe.generic.auto._
 import io.circe.generic.JsonCodec
 import io.circe.generic.extras._
 import de.heikoseeberger.akkahttpcirce.ErrorAccumulatingCirceSupport._
 import flashbot.client.FlashbotClient
+import flashbot.models.api.TakeLast
 import flashbot.models.core.{Candle, DataPath, Ladder, TimeRange}
 
 import scala.collection.SortedMap
@@ -27,6 +29,7 @@ import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.language.postfixOps
+import scala.util.Failure
 
 object GrafanaServer {
 
@@ -71,7 +74,6 @@ object GrafanaServer {
   @ConfiguredJsonCodec case class Column(text: String, @JsonKey("type") Type: String,
                                          sort: Boolean = false, desc: Boolean = false)
 
-
   sealed trait DataSeries
 
   implicit val en: Encoder[DataSeries] = Encoder.encodeJsonObject.contramap {
@@ -97,7 +99,11 @@ object GrafanaServer {
 
   @JsonCodec case class TagValReq(key: String)
 
+  @JsonCodec case class Metric(key: String, market: Option[String], strategy: Option[String],
+                               params: Option[Json], bot: Option[String])
+
   def pathFromFilters(filters: Seq[Filter]): DataPath[_] = {
+    println("FILTERS", filters)
     val filterMap = filters.filter(_.operator == "=").map(f => f.key -> f.value).toMap
     DataPath(
       filterMap.getOrElse("source", "*"),
@@ -123,32 +129,42 @@ object GrafanaServer {
         val toMillis = body.range.end / 1000
 
         val dataSetsFut = Future.sequence(body.targets.toIterator.map[Future[DataSeries]] { target =>
-          target.target match {
+          decode[Metric](target.target).toTry match {
+            case scala.util.Success(Metric(key, marketOpt, strategyOpt, paramsOpt, botOpt)) =>
+              key match {
+                case "trades" =>
+                  println("Trades query", body)
+                  val path = DataPath.wildcard.withType(TradesType).withMarket(marketOpt.get)
+                  for {
+                    streamSrc <- client.historicalMarketDataAsync[Trade](path,
+                      Some(Instant.ofEpochMilli(fromMillis)),
+                      Some(Instant.ofEpochMilli(toMillis)),
+//                      None
+                      Some(TakeLast(body.maxDataPoints.toInt))
+                    )
+                    tradeMDs <- streamSrc.runWith(Sink.seq)
+                    _ = println("TRADE COUNT", tradeMDs.size)
+                  } yield buildTable(tradeMDs.reverse.map(_.asJsonObject), TradeCols)
 
-            case "trades" =>
-              for {
-                streamSrc <- client.historicalMarketDataAsync[Trade](
-                  pathFromFilters(body.adhocFilters).withType(TradesType),
-                  Some(Instant.ofEpochMilli(fromMillis)),
-                  Some(Instant.ofEpochMilli(toMillis)))
-                tradeMDs <- streamSrc.runWith(Sink.seq)
-              } yield buildTable(tradeMDs.reverse.take(body.maxDataPoints.toInt).map(_.asJsonObject), TradeCols)
+                case "orderbook" =>
+                  val path = DataPath.wildcard.withType(LadderType(Some(10))).withMarket(marketOpt.get)
+                  for {
+                    streamSrc <- client.pollingMarketDataAsync[Ladder](path)
+                    ladder <- streamSrc.runWith(Sink.head)
+                  } yield buildTable(
+                    ladder.data.asks.map(_.asJsonObject(askEncoder)).toSeq ++
+                      ladder.data.bids.map(_.asJsonObject(bidEncoder)).toSeq,
+                    LadderCols)
 
-            case "orderbook" =>
-              for {
-                streamSrc <- client.pollingMarketDataAsync[Ladder](
-                  pathFromFilters(body.adhocFilters).withType(LadderType(Some(10))))
-                ladder <- streamSrc.runWith(Sink.head)
-              } yield buildTable(
-                ladder.data.asks.map(_.asJsonObject(askEncoder)).toSeq ++
-                  ladder.data.bids.map(_.asJsonObject(bidEncoder)).toSeq,
-                LadderCols)
-
-            case "price" =>
-              val path = pathFromFilters(body.adhocFilters).withType(TradesType)
-              client.pricesAsync(path, body.range, body.intervalMs millis)
-                .map(buildSeries("price", s"local.${path.source}.${path.topic}", _))
+                case "price" =>
+                  val path = DataPath.wildcard.withType(TradesType).withMarket(marketOpt.get)
+                  println("PRICE QUERY", path, body)
+                  client.pricesAsync(path, body.range, body.intervalMs millis)
+                    .map(buildSeries("price", s"local.${path.source}.${path.topic}", _))
+              }
+            case Failure(exception) => Future.failed(exception)
           }
+
         })
 
         onSuccess(dataSetsFut) { dataSets =>

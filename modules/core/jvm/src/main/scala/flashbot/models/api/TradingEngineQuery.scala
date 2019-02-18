@@ -54,11 +54,23 @@ case class PriceQuery(path: DataPath[_], range: TimeRange, interval: FiniteDurat
 
 sealed trait StreamRequest[T]
 
+sealed trait TakeLimit {
+  def limit: Int
+}
+case class TakeFirst(limit: Int) extends TakeLimit
+case class TakeLast(limit: Int) extends TakeLimit
+
+object TakeLimit {
+  def default: TakeLimit = TakeFirst(Int.MaxValue)
+}
+
 /**
   * Request a data stream source from the cluster. Returns a [[flashbot.server.CompressedSourceRef]]
   * if the sender is remote and just a Source[ MarketData[_] ] if the sender is local.
   */
-case class DataStreamReq[T](selection: DataSelection[T]) extends StreamRequest[T] with TradingEngineQuery
+case class DataStreamReq[T](selection: DataSelection[T],
+                            takeLimit: TakeLimit = TakeLimit.default)
+  extends StreamRequest[T] with TradingEngineQuery
 
 /**
   * Used to request data from a DataSourceActor.

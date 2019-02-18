@@ -72,10 +72,11 @@ object FlashbotConfig {
   }
 
   @ConfiguredJsonCodec(decodeOnly = true)
-  case class GrafanaConfig(dataSourcePort: Option[Int], host: String, apiKey: Option[String])
+  case class GrafanaConfig(dataSource: Boolean, dataSourcePort: Int,
+                           host: String, apiKey: Option[String])
 
   @ConfiguredJsonCodec(decodeOnly = true)
-  case class DataSourceConfig(`class`: String, topics: Option[Seq[String]], datatypes: Option[Seq[String]])
+  case class DataSourceConfig(`class`: String, datatypes: Option[Seq[String]])
 
 
 

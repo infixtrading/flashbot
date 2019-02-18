@@ -33,17 +33,17 @@ abstract class JavaStrategy[P] extends Strategy[P] with TimeSeriesMixin {
   @throws(classOf[IOException])
   def jDecodeParams(paramsStr: String): P
 
-  final override def info(loader: SessionLoader) =
+  final override def info(loader: EngineLoader) =
     JavaUtils.fromJava(jInfo(loader).thenApply[StrategyInfo](info => info))
 
-  def jInfo(loader: SessionLoader): CompletableFuture[StrategyInfo] =
+  def jInfo(loader: EngineLoader): CompletableFuture[StrategyInfo] =
     CompletableFuture.completedFuture(null)
 
-  final override def initialize(portfolio: Portfolio, loader: SessionLoader): Future[Seq[DataPath[Any]]] =
+  final override def initialize(portfolio: Portfolio, loader: EngineLoader): Future[Seq[DataPath[Any]]] =
     JavaUtils.fromJava[Seq[DataPath[Any]]](
       jInitialize(portfolio, loader).thenApply[Seq[DataPath[Any]]](paths => paths.asScala))
 
-  def jInitialize(portfolio: Portfolio, loader: SessionLoader)
+  def jInitialize(portfolio: Portfolio, loader: EngineLoader)
     : CompletableFuture[java.util.List[DataPath[Any]]]
 
   final override def handleData(data: MarketData[_])(implicit ctx: TradingSession) = jHandleData(data)

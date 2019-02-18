@@ -1,6 +1,7 @@
 package flashbot.sources
 
 import java.net.URI
+import java.time.Instant
 import java.util.concurrent.Executors
 
 import akka.NotUsed
@@ -44,7 +45,6 @@ class CoinbaseMarketDataSource extends DataSource {
   implicit val okHttpBackend = OkHttpFutureBackend()(blockingEc)
 
   override def scheduleIngest(topics: Set[String], dataType: String) = {
-    println("Scheduling")
     IngestGroup(topics, 0 seconds)
   }
 
@@ -258,7 +258,7 @@ class CoinbaseMarketDataSource extends DataSource {
 
   override def backfillPage[T](topic: String, datatype: DataType[T], cursorStr: Option[String])
                               (implicit ctx: ActorContext, mat: ActorMaterializer)
-      : Future[(Seq[(Long, T)], Option[(String, FiniteDuration)])] = datatype match {
+      : Future[(Vector[(Long, T)], Option[(String, FiniteDuration)])] = datatype match {
     case TradesType =>
       implicit val ec = ctx.dispatcher
       val cursor = cursorStr.map(decode[BackfillCursor](_).right.get)
@@ -271,11 +271,12 @@ class CoinbaseMarketDataSource extends DataSource {
       sttp.get(uri).send().flatMap { rsp =>
         val nextCbAfterOpt = rsp.headers.toMap.get("cb-after").filterNot(_.isEmpty)
         rsp.body match {
-          case Left(err) => Future.failed(new RuntimeException(s"Error in Coinbase backfill: $err"))
+          case Left(err) =>
+            Future.failed(new RuntimeException(s"Error in Coinbase backfill: $err"))
           case Right(bodyStr) => Future.fromTry(decode[Seq[CoinbaseTrade]](bodyStr).toTry)
 
             // When you reach the end, it looks like they just return a list of the same trade.
-            .map(_.toStream.dropDuplicates(Ordering.by(_.trade_id)))
+            .map(_.toStream.dropDuplicates(Ordering.by(_.trade_id)).toVector)
 
             // Filter out any overlapping trades with prev page.
             .map(_.dropWhile(_.trade_id >=
@@ -285,6 +286,7 @@ class CoinbaseMarketDataSource extends DataSource {
             .map { trades =>
               val nextCursorOpt = for {
                 nextCbAfter <- nextCbAfterOpt
+                // This sets the cursor to None if `trades` is empty.
                 lastTrade <- trades.lastOption
               } yield BackfillCursor(nextCbAfter, lastTrade.trade_id.toString)
 

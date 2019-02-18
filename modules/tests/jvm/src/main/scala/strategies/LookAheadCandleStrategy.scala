@@ -7,7 +7,7 @@ import akka.stream.scaladsl.{Keep, Sink, Source}
 import flashbot.core.DataType.CandlesType
 import flashbot.core.Instrument.CurrencyPair
 import flashbot.core.MarketData.BaseMarketData
-import flashbot.core.{SessionLoader, _}
+import flashbot.core.{EngineLoader, _}
 import flashbot.models.api.{DataOverride, DataSelection, OrderTarget}
 import flashbot.models.core._
 import io.circe.{Decoder, Encoder}
@@ -74,7 +74,7 @@ class LookAheadCandleStrategy extends Strategy[LookaheadParams]
     * Example strategy that looks ahead by one variable. The strategy must be defined in terms of
     * confidences of the lookahead prediction.
     */
-  override def initialize(portfolio: Portfolio, loader: SessionLoader) = {
+  override def initialize(portfolio: Portfolio, loader: EngineLoader) = {
     import loader._
     Future {
 //      staticData = dataSeqs

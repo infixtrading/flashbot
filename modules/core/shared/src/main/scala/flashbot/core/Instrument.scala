@@ -38,8 +38,9 @@ trait Instrument {
 
 object Instrument {
 
-  case class CurrencyPair(base: String, quote: String) extends Instrument {
+  case class CurrencyPair(base: String, quote: String) extends Instrument with Labelled {
     override def symbol = s"${base}_$quote"
+    override def label = s"$base/$quote".toUpperCase
     override def settledIn = quote
     override def security = Some(base)
     override def markPrice(prices: PriceIndex) = prices(this)
@@ -89,6 +90,13 @@ object Instrument {
 
     implicit class CurrencyPairOps(product: String) {
       def pair: CurrencyPair = CurrencyPair(product)
+    }
+
+    def parse(string: String): Option[CurrencyPair] = try {
+      Some(CurrencyPair(string))
+    } catch {
+      case err: Throwable =>
+        None
     }
   }
 

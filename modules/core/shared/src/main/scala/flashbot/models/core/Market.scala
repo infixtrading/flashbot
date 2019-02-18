@@ -1,13 +1,21 @@
 package flashbot.models.core
 
+import flashbot.core.Labelled
+import flashbot.core.Instrument.CurrencyPair
 import io.circe._
 import io.circe.generic.semiauto._
 
 import scala.language.implicitConversions
 
-case class Market(exchange: String, symbol: String) {
+case class Market(exchange: String, symbol: String) extends Labelled {
   override def toString = s"$exchange/$symbol"
+  override def label = {
+    val ex = exchange.capitalize
+    val sym = CurrencyPair.parse(symbol).map(_.label).getOrElse(symbol)
+    s"$ex: $sym"
+  }
 }
+
 object Market {
 
   implicit def apply(str: String): Market = parse(str)

@@ -31,7 +31,7 @@ public class MarketMakerJava
         }
     }
 
-    private SessionLoader infoLoader;
+    private EngineLoader infoLoader;
 
     private Supplier<JsonNode> marketSupplier = () -> {
         ObjectMapper mapper = new ObjectMapper();
@@ -53,7 +53,7 @@ public class MarketMakerJava
     }
 
     @Override
-    public CompletableFuture<StrategyInfo> jInfo(SessionLoader loader) {
+    public CompletableFuture<StrategyInfo> jInfo(EngineLoader loader) {
         infoLoader = loader;
         ObjectMapper mapper = new ObjectMapper();
         JsonSchemaConfig config = JsonSchemaConfig.create(false, Optional.empty(), true, true, false,
@@ -77,7 +77,7 @@ public class MarketMakerJava
     }
 
     @Override
-    public CompletableFuture<List<DataPath<Object>>> jInitialize(Portfolio portfolio, SessionLoader loader) {
+    public CompletableFuture<List<DataPath<Object>>> jInitialize(Portfolio portfolio, EngineLoader loader) {
 //        return CompletableFuture.completedFuture(Arrays.asList(
 //                new DataPath<>("", "", DataType.apply("trades")),
 //                new DataPath<>(params().exchange, params()., DataType.apply("candles_1m"))

@@ -1,7 +1,5 @@
 package flashbot.server
 
-//import io.circe.Json
-
 /**
   * Description of a strategy.
   *

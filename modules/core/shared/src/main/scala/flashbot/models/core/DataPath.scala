@@ -34,11 +34,15 @@ case class DataPath[+T](source: String, topic: String, datatype: DataType[T]) {
 
   def withType[D](dt: DataType[D]): DataPath[D] = copy(datatype = dt)
 
+  def withMarket(market: Market): DataPath[T] =
+    copy(source = market.exchange, topic = market.symbol)
+
   // Returns this path as the type of the pattern path if it matches.
   def filter[F](pattern: DataPath[F]): Option[DataPath[F]] =
     if (_matches(pattern)) Some(this.asInstanceOf[DataPath[F]])
     else None
 
+  def market: Market = Market(source, topic)
 }
 
 object DataPath {

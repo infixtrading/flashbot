@@ -122,7 +122,8 @@ class FlashbotClient(engine: ActorRef, skipTouch: Boolean = false) {
     */
   def historicalMarketDataAsync[T](path: DataPath[T],
                                    from: Option[Instant] = None,
-                                   to: Option[Instant] = None)
+                                   to: Option[Instant] = None,
+                                   limit: Option[TakeLimit] = None)
       : Future[Source[MarketData[T], NotUsed]] = {
 
     def singleStream[D](p: DataPath[D]): Future[Source[MarketData[D], NotUsed]] = {
@@ -130,9 +131,10 @@ class FlashbotClient(engine: ActorRef, skipTouch: Boolean = false) {
       req[StreamResponse[MarketData[D]]](DataStreamReq(
         DataSelection(p,
           from.map(_.toEpochMilli * 1000).orElse[Long](Some(0)),
-          to.map(_.toEpochMilli * 1000).orElse[Long](Some(Long.MaxValue)))))
-        .map(_.toSource)
-        .recoverLadder(p, singleStream[OrderBook](p.withType(OrderBookType)))
+          to.map(_.toEpochMilli * 1000).orElse[Long](Some(Long.MaxValue))),
+        limit.getOrElse(TakeLimit.default)))
+          .map(_.toSource)
+          .recoverLadder(p, singleStream[OrderBook](p.withType(OrderBookType)))
     }
 
     // If the path is not a pattern, request it.

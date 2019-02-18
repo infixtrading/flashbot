@@ -106,8 +106,8 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
     val now = Instant.ofEpochMilli(sessionMicros / 1000)
 
     // Create the session loader
-    val sessionLoader: SessionLoader =
-      new SessionLoader(getExchangeConfigs, dataServer, strategyClassNames)
+    val loader: EngineLoader =
+      new EngineLoader(getExchangeConfigs, dataServer, strategyClassNames)
 
     val initialPortfolio = portfolioRef.getPortfolio
 
@@ -123,7 +123,7 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
 
     // Load a new instance of an exchange.
     def loadExchange(name: String): Try[Exchange] =
-      sessionLoader.loadNewExchange(name)
+      loader.loadNewExchange(name)
         .map(plainInstance => {
           // Wrap it in our Simulator if necessary.
           val instance = if (mode == Live) plainInstance else new Simulator(plainInstance)
@@ -146,7 +146,7 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
       _ = { log.debug("Found strategy class") }
 
       // Load the strategy
-      rawStrategy <- Future.fromTry[Strategy[P]](sessionLoader.loadNewStrategy[P](strategyClassName))
+      rawStrategy <- Future.fromTry[Strategy[P]](loader.loadNewStrategy[P](strategyClassName))
 
       strategy <- for {
         // Decode the params
@@ -163,7 +163,7 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
       } yield rawStrategy
 
       // Initialize the strategy and collect data paths
-      paths <- strategy.initialize(initialPortfolio, sessionLoader)
+      paths <- strategy.initialize(initialPortfolio, loader)
 
       // Load the exchanges
       exchangeNames: Set[String] = paths.toSet[DataPath[_]].map(_.source)

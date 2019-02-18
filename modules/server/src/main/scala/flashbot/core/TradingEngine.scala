@@ -86,7 +86,7 @@ class TradingEngine(engineId: String,
   }
 
   // Must be instantiated above the call to `startEngine`.
-  implicit val loader = new SessionLoader(
+  implicit val loader = new EngineLoader(
     getExchangeConfigs, dataServer, strategyClassNames: Map[String, String])
 
   val (bootRsp: EngineStarted, bootEvents: Seq[TradingEngineEvent]) =
@@ -96,14 +96,15 @@ class TradingEngine(engineId: String,
   bootEvents.foreach(log.debug("Boot event: {}", _))
 
   // Start the Grafana data source server if the dataSourcePort is defined.
-  if (grafana.dataSourcePort.isDefined) {
+  if (grafana.dataSource) {
     Http().bindAndHandle(GrafanaServer.routes(new FlashbotClient(self, skipTouch = true)),
-      "localhost", grafana.dataSourcePort.get)
+      "localhost", grafana.dataSourcePort)
   }
 
   // Start the Grafana manageer if the API key is defined.
   if (grafana.apiKey.isDefined) {
-    context.actorOf(Props(new GrafanaManager(grafana.host, grafana.apiKey.get, loader)))
+    context.actorOf(Props(new GrafanaManager(grafana.host, grafana.apiKey.get,
+      grafana.dataSourcePort, loader)))
   }
 
   self ! BootEvents(bootEvents)
@@ -326,13 +327,12 @@ class TradingEngine(engineId: String,
         sender ! StrategiesResponse(strategyClassNames.keys.map(StrategyResponse).toList)
 
       case StrategyInfoQuery(name) =>
-        val sessionLoader = new SessionLoader(getExchangeConfigs, dataServer, strategyClassNames)
         (for {
           className <- strategyClassNames.get(name)
             .toFut(new IllegalArgumentException(s"Unknown strategy $name"))
-          strategy <- Future.fromTry(sessionLoader.loadNewStrategy(className))
+          strategy <- Future.fromTry(loader.loadNewStrategy(className))
           title = strategy.title
-          info <- strategy.info(sessionLoader)
+          info <- strategy.info(loader)
         } yield StrategyInfoResponse(title, name, info)) pipeTo sender
 
       /**
@@ -368,7 +368,6 @@ class TradingEngine(engineId: String,
         *       just the params?
         */
       case SyncExchanges =>
-        implicit val loader = new SessionLoader(getExchangeConfigs, dataServer, strategyClassNames)
         Future.sequence(getExchangeConfigs().keys.map(name => fetchPortfolio(name).transform {
           case Success(value) => Success(Some(value))
           case Failure(_) => Success(None)
@@ -393,7 +392,6 @@ class TradingEngine(engineId: String,
         * this exchange from the global portfolio if we were not able to fetch.
         */
       case SyncExchange(name) =>
-        implicit val loader = new SessionLoader(getExchangeConfigs, dataServer, strategyClassNames)
         fetchPortfolio(name)
           // Set in-memory state
           .transform {
@@ -689,7 +687,7 @@ class TradingEngine(engineId: String,
   /**
     * Fetch portfolio data for one exchange.
     */
-  private def fetchPortfolio(name: String)(implicit loader: SessionLoader): Future[Portfolio] =
+  private def fetchPortfolio(name: String): Future[Portfolio] =
     for {
       exchange <- loader.loadNewExchange(name).toFut
       portfolio <- exchange.fetchPortfolio

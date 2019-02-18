@@ -47,7 +47,7 @@ abstract class Strategy[P] {
     *               context in which the session is being run. E.g. the available exchanges.
     * @return a future of an optional [[StrategyInfo]]. Defaults to `None`.
     */
-  def info(loader: SessionLoader): Future[StrategyInfo] = Future.successful(StrategyInfo())
+  def info(loader: EngineLoader): Future[StrategyInfo] = Future.successful(StrategyInfo())
 
   /**
     * During initialization, strategies subscribe to any number of data sets, all of which must be
@@ -60,7 +60,7 @@ abstract class Strategy[P] {
     * @param loader an object that can be used to load various types of information about the
     *               context in which the session is being run. E.g. the available exchanges.
     */
-  def initialize(portfolio: Portfolio, loader: SessionLoader): Future[Seq[DataPath[Any]]]
+  def initialize(portfolio: Portfolio, loader: EngineLoader): Future[Seq[DataPath[Any]]]
 
   /**
     * Receives the streaming market data that was subscribed to in the [[initialize]] method.

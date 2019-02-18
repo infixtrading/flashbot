@@ -41,9 +41,7 @@ import scala.util.{Failure, Random, Success}
   *   1. Claim the most recent available backfill. Available means: unclaimed and a
   *      `nextPageAt` value in the past.
   *   2. Fetch the data at the current cursor.
-  *   3. Persist the data with a bundle id of `Long.MaxValue - id` and correct `seqid`s.
-  *      This also lets us know if we should continue the backfill based on whether this
-  *      data is past the retention period or if it overlaps with a previous backfill.
+  *   3. Persist the data with the given bundle id, backfill id, and correct `seqid`s.
   *   4. Release the lock by unclaiming the record, and setting the `cursor` and `nextPageAt`
   *      columns according to whether the persistence function said this backfill is complete.
   */
@@ -174,15 +172,16 @@ class BackfillService[T](bundleId: Long, path: DataPath[T], dataSource: DataSour
             s"Backfill data out of order. It must be in reverse chronological order."))
         else DBIO.successful(rspData.reverse)
 
-      (dataStartMicros, dataEndMicros) = (data.headOption.map(_._1), data.lastOption.map(_._1))
 
       // Find if there is any overlap with this page and existing data. If there is,
-      // still insert the data, but don't continue backfilling.
+      // still insert the data, but don't continue backfilling. Use a 1 second grace period
+      // because exchanges don't have perfect time.
+      dataStartMicros = data.headOption.map(_._1 + 1000 * 1000)
       overlapSnaps <- Snapshots.forPath(path)
-        .filter(x => x.micros > dataStartMicros && x.micros <= dataEndMicros)
+        .filter(x => x.micros > dataStartMicros && x.bundle < claim.bundle)
         .size.result
       overlapDeltas <- Deltas.forPath(path)
-        .filter(x => x.micros > dataStartMicros && x.micros <= dataEndMicros)
+        .filter(x => x.micros > dataStartMicros && x.bundle < claim.bundle)
         .size.result
       overlapItems = overlapSnaps + overlapDeltas
 
@@ -245,6 +244,8 @@ class BackfillService[T](bundleId: Long, path: DataPath[T], dataSource: DataSour
         // is complete.
         case _ =>
           log.info(s"Backfill of {} has completed.", path)
+//          log.debug("Next cursor: {}. Overlapping snaps: {}. Overlap deltas: {}",
+//            nextCursorOpt, overlapSnaps, overlapDeltas)
           claimedBackfill
             .map(bf => (bf.claimedBy, bf.claimedAt, bf.cursor, bf.nextPageAt))
             .update(None, None, None, None)

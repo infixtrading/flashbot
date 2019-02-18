@@ -3,7 +3,7 @@ import akka.actor.ActorRef
 import akka.stream.Materializer
 import akka.stream.scaladsl.Source
 import flashbot.core.MarketData.BaseMarketData
-import flashbot.core.{SessionLoader, _}
+import flashbot.core.{EngineLoader, _}
 import flashbot.core.VarState.ops._
 import flashbot.models.api.{DataOverride, DataSelection}
 import flashbot.models.core.Portfolio
@@ -23,7 +23,7 @@ class TradeWriter extends Strategy[Params] {
 
   def title = "Trade Writer"
 
-  def initialize(portfolio: Portfolio, loader: SessionLoader) =
+  def initialize(portfolio: Portfolio, loader: EngineLoader) =
     Future.successful(Seq("bitfinex/btc_usd/trades"))
 
   def handleData(data: MarketData[_])(implicit ctx: TradingSession) = data.data match {

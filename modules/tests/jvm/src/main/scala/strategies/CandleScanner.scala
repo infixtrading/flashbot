@@ -4,7 +4,7 @@ import akka.actor.ActorRef
 import akka.stream.Materializer
 import akka.stream.scaladsl.Source
 import flashbot.core.MarketData.BaseMarketData
-import flashbot.core.{SessionLoader, _}
+import flashbot.core.{EngineLoader, _}
 import flashbot.models.api.{DataOverride, DataSelection}
 import flashbot.models.core.{Candle, Portfolio}
 import io.circe.generic.auto._
@@ -22,7 +22,7 @@ class CandleScanner extends Strategy[CandleScannerParams] {
 
   override def title = "Candle Scanner"
 
-  override def initialize(portfolio: Portfolio, loader: SessionLoader) = {
+  override def initialize(portfolio: Portfolio, loader: EngineLoader) = {
     Future.successful(Seq("bitfinex/btc_usd/candles_1d"))
   }
 

@@ -14,9 +14,7 @@ import scala.language.postfixOps
 abstract class DataSource {
 
   /**
-    * This exists so that we don't have to hard-code all of the topics that exists for a
-    * data source. Exchanges add/remove markets all the time, so this method requests the
-    * current topics and merges them with the hard-coded configured ones.
+    * All available topics for this data source.
     */
   def discoverTopics(exchangeConfig: Option[ExchangeConfig])
                     (implicit ctx: ActorContext, mat: ActorMaterializer): Future[Set[String]] =
@@ -62,7 +60,7 @@ abstract class DataSource {
     */
   def backfillPage[T](topic: String, datatype: DataType[T], cursor: Option[String])
                      (implicit ctx: ActorContext, mat: ActorMaterializer)
-      : Future[(Seq[(Long, T)], Option[(String, FiniteDuration)])] =
+      : Future[(Vector[(Long, T)], Option[(String, FiniteDuration)])] =
     Future.failed(new NotImplementedError("This data source does not support backfills."))
 
   /**

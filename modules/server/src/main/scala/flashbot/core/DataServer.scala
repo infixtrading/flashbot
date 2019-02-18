@@ -150,17 +150,17 @@ class DataServer(dbConfig: Config,
     case MarketDataIndexQuery =>
       slickSession.db.run(for {
         bundles <- Bundles.result
-        backfills <- Backfills.result
-        index = bundles.map(b => b.id -> b.path) ++ backfills.map(b => b.bundle -> b.path)
+//        backfills <- Backfills.result
+        index = bundles.map(b => b.id -> b.path)
+//        ++ backfills.map(b => b.bundle -> b.path)
       } yield index.toMap) pipeTo sender
 
     /**
       * A data stream is constructed out of two parts: A historical stream, and a live component.
       * These two streams are concatenated, deduped, and returned.
       */
-    case DataStreamReq(DataSelection(anyPath, from, to)) =>
+    case DataStreamReq(DataSelection(anyPath, from, to), takeLimit) =>
       val nowMicros = time.currentTimeMicros
-      val isLive = to.isEmpty
       log.debug("Received data stream request for path {} ({} to {})", anyPath,
         from.map(x => Instant.ofEpochMilli(x / 1000)),
         to.map(x => Instant.ofEpochMilli(x / 1000)))
@@ -168,39 +168,48 @@ class DataServer(dbConfig: Config,
         implicit val fmt: DeltaFmtJson[T] = path.fmt
         val src: Future[Source[MarketData[T], NotUsed]] = for {
           // Validate selection and build the live stream response.
-          live <- (from, to) match {
+          live <- (from, to, takeLimit) match {
             // Match on validation failures first.
-            case (None, Some(_)) => Future.failed(
+            case (None, Some(_), _) => Future.failed(
               new IllegalArgumentException("Non-polling requests must specify a 'from' value."))
-            case (Some(f), None) if f > nowMicros => Future.failed(
+            case (Some(f), None, _) if f > nowMicros => Future.failed(
               new IllegalArgumentException("'from' value of polling request must be less than " +
                 "the current time."))
-            case (Some(f), Some(t)) if f > t => Future.failed(
+            case (Some(f), Some(t), _) if f > t => Future.failed(
               new IllegalArgumentException("'from' must be less than or equal to 'to'"))
 
+            // Polling requests can't use TakeLast.
+            case (_, None, TakeLast(_)) => Future.failed(
+              new IllegalArgumentException("Polling requests must use TakeFirst(_)"))
+
             // If it's a valid polling request, search all data servers for a live stream.
-            case (_, None) =>
+            case (_, None, _) =>
               log.debug("Searching for live stream")
               searchForLiveStream[T](path, self :: remoteDataServers.values.toList)
                 .flatMap(_.toFut(LiveDataNotFound(path)))
                 .map(_.toSource)
 
             // If it's not a polling request, we use an empty stream instead.
-            case (_, _) => Future.successful(Source.empty)
+            case (_, _, _) => Future.successful(Source.empty)
           }
 
           _ = { log.debug("Found live stream") }
 
           // Build the historical stream.
           historical <- from
-            .map(buildHistoricalStreamOpt[T](path, _, to.getOrElse(Long.MaxValue))
+            .map(buildHistoricalStreamOpt[T](path, _, to.getOrElse(Long.MaxValue), takeLimit)
               .flatMap(_.toFut(HistoricalDataNotFound(path))))
             // If `from` is none, the historical part of the stream is empty.
             .getOrElse[Future[Source[MarketData[T], NotUsed]]](Future.successful(Source.empty))
 
           _ = { log.debug("Built historical stream") }
 
-        } yield historical.concat(live).via(dropUnordered(MarketData.orderBySequence[T]))
+          joined = historical.concat(live).via(dropUnordered(MarketData.orderBySequence[T]))
+
+        } yield takeLimit match {
+          case TakeFirst(limit) => joined.take(limit)
+          case _ => joined
+        }
 
         src.flatMap(StreamResponse.build[MarketData[T]](_, sender))
       }
@@ -266,10 +275,14 @@ class DataServer(dbConfig: Config,
     *
     * @param fromMicros inclusive start time in epoch micros.
     * @param toMicros exclusive end time in epoch micros.
+    * @param takeLimit the max number of the first or last elements to return.
     */
-  def buildHistoricalStream[T](path: DataPath[T], fromMicros: Long, toMicros: Long)
-      : Source[MarketData[T], NotUsed] = {
+  def buildHistoricalStream[T](path: DataPath[T], fromMicros: Long, toMicros: Long,
+                               takeLimit: TakeLimit)
+      : Future[Source[MarketData[T], NotUsed]] = {
     implicit val fmt: DeltaFmtJson[T] = path.fmt
+    import scala.collection.mutable
+
     val lookbackFromMicros = fromMicros - DataSourceActor.SnapshotInterval.toMicros
     log.debug("Building historical stream")
 
@@ -287,7 +300,7 @@ class DataServer(dbConfig: Config,
         .result)
       .map(_.asInstanceOf[Wrap])
 
-    snapshots.mergeSorted[Wrap, NotUsed](deltas)(Wrap.ordering)
+    val src = snapshots.mergeSorted[Wrap, NotUsed](deltas)(Wrap.ordering)
       .scan[Option[MarketData[T]]](None) {
       /**
         * Base case.
@@ -332,13 +345,40 @@ class DataServer(dbConfig: Config,
       .collect { case Some(value) => value }
       .via(deDupeBy(md => (md.bundle, md.seqid)))
       .dropWhile(_.micros < fromMicros)
+
+    takeLimit match {
+      /**
+        * If ascending, we use reactive streaming fully. Once `limit` number of items
+        * are taken, the stream will cancel, which will cancel the DB stream.
+        */
+      case TakeFirst(limit) => Future.successful(src.take(limit))
+
+      /**
+        * Unlike for ascending, reactive streaming do all the work for descending. We
+        * collect the stream into a buffer and then return it as a stream.
+        */
+      case TakeLast(limit) =>
+        val buffer = new mutable.ArrayBuffer[MarketData[T]]()
+        for {
+          _ <- src.runForeach(md => {
+            buffer += md
+            if (buffer.size > limit) {
+              buffer.remove(0)
+            }
+          })
+        } yield Source(buffer.toStream)
+    }
   }
 
-  def buildHistoricalStreamOpt[T](path: DataPath[T], fromMicros: Long, toMicros: Long)
+  def buildHistoricalStreamOpt[T](path: DataPath[T], fromMicros: Long, toMicros: Long,
+                                  takeLimit: TakeLimit)
       : Future[Option[Source[MarketData[T], NotUsed]]] =
-    for { dataExists <- historicalDataExists(path) } yield
-      if (dataExists) Some(buildHistoricalStream(path, fromMicros, toMicros))
-      else None
+    for {
+      dataExists <- historicalDataExists(path)
+      ret <-
+        if (dataExists) buildHistoricalStream(path, fromMicros, toMicros, takeLimit).map(Some(_))
+        else Future.successful(None)
+    } yield ret
 
   /**
     * Asynchronous linear search over all servers for a live data stream for the given path.

@@ -3,7 +3,10 @@ package flashbot.core
 import akka.actor.{ActorRef, ActorSystem}
 import akka.stream.Materializer
 import akka.util.Timeout
+import akka.pattern.ask
 import flashbot.core.FlashbotConfig.ExchangeConfig
+import flashbot.models.api.MarketDataIndexQuery
+import flashbot.models.core.{DataPath, Market}
 import flashbot.server.StrategyInfo
 
 import scala.concurrent.{ExecutionContext, Future}
@@ -11,18 +14,21 @@ import scala.concurrent.duration._
 import scala.language.postfixOps
 import scala.util.{Failure, Success, Try}
 
-class SessionLoader(getExchangeConfigs: () => Map[String, ExchangeConfig],
-                    dataServer: ActorRef, strategyClassNames: Map[String, String])
-                   (implicit val ec: ExecutionContext, val mat: Materializer) {
+class EngineLoader(getExchangeConfigs: () => Map[String, ExchangeConfig],
+                   dataServer: ActorRef, strategyClassNames: Map[String, String])
+                  (implicit val ec: ExecutionContext, val mat: Materializer) {
   implicit val timeout = Timeout(10 seconds)
 
   def exchanges: Set[String] = getExchangeConfigs().keySet
 
+  def markets: Future[Set[Market]] = for {
+    index: Map[Long, DataPath[Any]] <-
+      (dataServer ? MarketDataIndexQuery).mapTo[Map[Long, DataPath[Any]]]
+  } yield index.values.map(_.market).toSet
+
   protected[flashbot] def loadNewExchange(name: String)
                                          (implicit system: ActorSystem,
                                           mat: Materializer): Try[Exchange] = {
-
-    println("LOADING EXCHANGE", name)
 
     val config = getExchangeConfigs().get(name)
     if (config.isEmpty) {

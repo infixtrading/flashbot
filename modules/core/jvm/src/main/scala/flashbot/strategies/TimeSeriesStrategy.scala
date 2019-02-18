@@ -17,7 +17,7 @@ class TimeSeriesStrategy extends Strategy[Params] with TimeSeriesMixin {
 
   override def decodeParams(paramsStr: String) = decode[Params](paramsStr).toTry
 
-  override def initialize(portfolio: Portfolio, loader: SessionLoader): Future[Seq[DataPath[_]]] =
+  override def initialize(portfolio: Portfolio, loader: EngineLoader): Future[Seq[DataPath[_]]] =
     Future.successful(Seq(params.path))
 
   override def handleData(marketData: MarketData[_])(implicit ctx: TradingSession) = marketData.data match {

@@ -1,6 +1,6 @@
 package flashbot.strategies
 
-import flashbot.core.{SessionLoader, Strategy, _}
+import flashbot.core.{EngineLoader, Strategy, _}
 import flashbot.models.core._
 import flashbot.models.core.FixedSize._
 import io.circe.generic.JsonCodec
@@ -58,7 +58,7 @@ class MarketMaker extends Strategy[MarketMakerParams] with TimeSeriesMixin {
 
   override def decodeParams(paramsStr: String) = decode[MarketMakerParams](paramsStr).toTry
 
-  override def info(loader: SessionLoader) =
+  override def info(loader: EngineLoader) =
     Future.successful(StrategyInfo(Some(
       json.Json.schema[MarketMakerParams].asCirce().noSpaces)))
 
@@ -74,7 +74,7 @@ class MarketMaker extends Strategy[MarketMakerParams] with TimeSeriesMixin {
     * @param loader object that provides asynchronous access to various system information.
     * @return the list of DataPaths which we're subscribing to.
     */
-  override def initialize(portfolio: Portfolio, loader: SessionLoader) = {
+  override def initialize(portfolio: Portfolio, loader: EngineLoader) = {
     val path = DataPath(params.market.exchange, params.market.symbol, DataType(params.datatype))
     val extraPaths =
       if (path.datatype == OrderBookType) Seq(path.withType(TradesType))
