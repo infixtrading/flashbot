@@ -24,10 +24,10 @@ trait Instrument {
 
   def markPrice(prices: PriceIndex): Double = prices(symbol)
 
-  def PNL(amount: Double, entryPrice: Double, exitPrice: Double): Double = {
-    if (security.get == base && settledIn == quote) amount * (exitPrice - entryPrice)
-    else throw new RuntimeException(s"Can't calculate default PNL for $this")
-  }
+//  def PNL(amount: Double, entryPrice: Double, exitPrice: Double): Double = {
+//    if (security.get == base && settledIn == quote) amount * (exitPrice - entryPrice)
+//    else throw new RuntimeException(s"Can't calculate default PNL for $this")
+//  }
 
   def settle(exchange: String, fill: Fill, portfolio: Portfolio): Portfolio
 
@@ -115,8 +115,16 @@ object Instrument {
   }
 
   trait Derivative extends Instrument {
+    /**
+      * The value of one unit of this contract in terms of the settlement asset.
+      */
+    def contractValue(price: Double): Double
+
+    def pnl(size: Long, entryPrice: Double, exitPrice: Double): Double
+
     override def canShort = true
   }
+
   trait FuturesContract extends Derivative {
     override def settle(exchange: String, fill: Fill, portfolio: Portfolio) = {
       throw new NotImplementedError()

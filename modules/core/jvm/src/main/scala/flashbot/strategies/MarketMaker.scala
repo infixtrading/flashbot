@@ -10,9 +10,9 @@ import org.ta4j.core.indicators.helpers.ClosePriceIndicator
 import org.ta4j.core.indicators.volume.VWAPIndicator
 import MarketMaker._
 import flashbot.core.DataType.{OrderBookType, TradesType}
-import flashbot.server.StrategyInfo
 import io.circe.{Decoder, Encoder}
 import com.github.andyglow.jsonschema.AsCirce._
+import flashbot.core.Layout._
 
 import scala.concurrent.Future
 import scala.language.implicitConversions
@@ -59,8 +59,10 @@ class MarketMaker extends Strategy[MarketMakerParams] with TimeSeriesMixin {
   override def decodeParams(paramsStr: String) = decode[MarketMakerParams](paramsStr).toTry
 
   override def info(loader: EngineLoader) =
-    Future.successful(StrategyInfo(Some(
-      json.Json.schema[MarketMakerParams].asCirce().noSpaces)))
+    Future.successful(defaultInfo
+      .withSchema(json.Json.schema[MarketMakerParams].asCirce().noSpaces)
+      .withLayout(defaultInfo.layout.addRow(Row()))
+    )
 
   /**
     * On initialization, we use the `market` and `datatype` parameters build a sequence of
@@ -96,7 +98,7 @@ class MarketMaker extends Strategy[MarketMakerParams] with TimeSeriesMixin {
 
     val equity = ctx.getPortfolio.equity()
 
-    recordIndicator("equity", md.micros, equity.num)
+    recordTimeSeries("equity", md.micros, equity.num)
 
     md.data match {
 
@@ -150,7 +152,7 @@ class MarketMaker extends Strategy[MarketMakerParams] with TimeSeriesMixin {
 
     // Record the computed fair price value to a time series so that it's available
     // on dashboards.
-    recordIndicator(s"fair_price_${params.fairPriceIndicator}", md.micros, fairPrice)
+    recordTimeSeries(s"fair_price_${params.fairPriceIndicator}", md.micros, fairPrice)
 
     // Declare at most `layersCount` number of quotes on each side.
     val instrument = ctx.instruments(params.market)

@@ -10,7 +10,6 @@ import com.kjetland.jackson.jsonSchema.JsonSchemaGenerator;
 import com.kjetland.jackson.jsonSchema.annotations.JsonSchemaInject;
 import flashbot.core.*;
 import flashbot.models.core.*;
-import flashbot.server.StrategyInfo;
 import flashbot.util.JavaUtils;
 import scala.Some;
 
@@ -73,6 +72,10 @@ public class MarketMakerJava
         } catch (JsonProcessingException e) {
             e.printStackTrace();
         }
+
+        Layout l = defaultInfo().layout().addQuery("foo", "bar", "car",
+                q -> q.setPrimary(true));
+
         return CompletableFuture.completedFuture(new StrategyInfo(new Some<>(schemaStr)));
     }
 

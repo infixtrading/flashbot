@@ -82,7 +82,7 @@ case class TradingEngineState(bots: Map[String, BotState] = Map.empty,
 
       case PositionUpdated(botId, market, position) =>
         copy(bots = bots + (botId -> bots(botId).updateLastSession(session => session.copy(
-          portfolio = session.portfolio.unsafeSetPosition(market, position)
+          portfolio = session.portfolio.setPosition(market, position)
         ))))
 
     }

@@ -12,6 +12,7 @@ import io.circe.parser._
 
 import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration._
+import scala.language.postfixOps
 
 
 case class CandleScannerParams()

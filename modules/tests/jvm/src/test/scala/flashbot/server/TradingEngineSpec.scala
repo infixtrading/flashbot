@@ -245,8 +245,8 @@ class TradingEngineSpec extends WordSpecLike
       val equityCollection = new TimeSeriesCollection()
 
       val priceCollection = new OHLCSeriesCollection()
-//      priceCollection.addSeries(buildCandleSeries(report, "local.equity_usd"))
-//      priceCollection.addSeries(buildCandleSeries(report, "local.eth"))
+//      priceCollection.addSeries(buildCandleSeries(report, "equity_usd"))
+//      priceCollection.addSeries(buildCandleSeries(report, "eth"))
 
 //      val chart = ChartFactory.createCandlestickChart("Look-ahead Report", "Time",
 //        "Price", priceCollection, true)
@@ -294,7 +294,7 @@ class TradingEngineSpec extends WordSpecLike
 //      } yield (bp.micros, bp.balance)
 //
 //      val priceData =
-//        for(price <- report.timeSeries("local.price.bitfinex.eth_usd").dropRight(1))
+//        for(price <- report.timeSeries("price.bitfinex.eth_usd").dropRight(1))
 //        yield (price.micros / 1000, price.close)
 
 //      val mychart = XYLineChart(mydata)

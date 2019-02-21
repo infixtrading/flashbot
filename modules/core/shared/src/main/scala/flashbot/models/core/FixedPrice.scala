@@ -27,13 +27,6 @@ case class FixedPrice[T <: HasSecurity](price: Double, pair: (T, T)) {
     */
   private def _compose(next: FixedPrice[T])(implicit prices: PriceIndex): Option[FixedPrice[T]] =
     if (prices.equiv(quote.security, next.base.security))
-      {
-//        println("===============")
-//        println(s"Composing ${this} -> $next")
-//        println(s"Matched $quote to ${next.base}")
-//        println(s"Using price ${price} * ${next.price} = ${price * next.price} (${base}::${next.quote})")
-//        println("===============")
         Some(FixedPrice(price * next.price, (base, next.quote)))
-      }
     else None
 }

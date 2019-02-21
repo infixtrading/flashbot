@@ -5,30 +5,41 @@ import akka.stream.Materializer
 import akka.util.Timeout
 import akka.pattern.ask
 import flashbot.core.FlashbotConfig.ExchangeConfig
+import flashbot.core.Instrument.CurrencyPair
 import flashbot.models.api.MarketDataIndexQuery
 import flashbot.models.core.{DataPath, Market}
-import flashbot.server.StrategyInfo
 
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.Future
+import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 import scala.language.postfixOps
 import scala.util.{Failure, Success, Try}
 
-class EngineLoader(getExchangeConfigs: () => Map[String, ExchangeConfig],
+/**
+  * Loads miscellaneous data required throughout the system. One EngineLoader
+  * instance exists per TradingEngine instance.
+  */
+class EngineLoader(val getExchangeConfigs: () => Map[String, ExchangeConfig],
                    dataServer: ActorRef, strategyClassNames: Map[String, String])
-                  (implicit val ec: ExecutionContext, val mat: Materializer) {
+                  (implicit system: ActorSystem, mat: Materializer) {
   implicit val timeout = Timeout(10 seconds)
 
   def exchanges: Set[String] = getExchangeConfigs().keySet
+
+  def loadInstruments: Future[InstrumentIndex] = Future.sequence(
+    getExchangeConfigs().map {
+      case (key, config) =>
+        loadNewExchange(key).get.instruments.map(_ ++
+            config.pairs.getOrElse(Seq.empty).map(CurrencyPair(_)).toSet)
+        .map(key -> _)
+    }).map(i => new InstrumentIndex(i.toMap))
 
   def markets: Future[Set[Market]] = for {
     index: Map[Long, DataPath[Any]] <-
       (dataServer ? MarketDataIndexQuery).mapTo[Map[Long, DataPath[Any]]]
   } yield index.values.map(_.market).toSet
 
-  protected[flashbot] def loadNewExchange(name: String)
-                                         (implicit system: ActorSystem,
-                                          mat: Materializer): Try[Exchange] = {
+  protected[flashbot] def loadNewExchange(name: String): Try[Exchange] = {
 
     val config = getExchangeConfigs().get(name)
     if (config.isEmpty) {
@@ -66,8 +77,10 @@ class EngineLoader(getExchangeConfigs: () => Map[String, ExchangeConfig],
       case err => Failure(err)
     }
 
-  protected[flashbot] def strategyInfo(className: String): Future[StrategyInfo] =
-    loadNewStrategy(className).get.info(this)
+  protected[flashbot] def strategyInfo(className: String): Future[StrategyInfo] = {
+    val strategy = loadNewStrategy(className).get
+    strategy.info(this).map(_.copy(title = strategy.title))
+  }
 
   protected[flashbot] def allStrategyInfos: Future[Map[String, StrategyInfo]] = {
     val (keys, classNames) = strategyClassNames.toSeq.unzip

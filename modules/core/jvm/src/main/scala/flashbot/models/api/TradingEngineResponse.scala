@@ -1,8 +1,7 @@
 package flashbot.models.api
 import java.time.Instant
 
-import flashbot.core.Report
-import flashbot.server.StrategyInfo
+import flashbot.core.{Report, StrategyInfo}
 import flashbot.models.core.Portfolio
 
 sealed trait TradingEngineResponse

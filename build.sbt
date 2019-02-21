@@ -53,7 +53,7 @@ lazy val jsonDeps = List(
   "io.circe" %% "circe-parser",
   "io.circe" %% "circe-optics",
   "io.circe" %% "circe-literal",
-  "io.circe" %% "circe-generic-extras"
+  "io.circe" %% "circe-generic-extras",
 ).map(_ % fbCirceVersion)
 
 lazy val dataStores = List(
@@ -144,7 +144,8 @@ lazy val baseSettings = Seq(
   },
   resolvers ++= Seq(
     Resolver.sonatypeRepo("releases"),
-    Resolver.sonatypeRepo("snapshots")
+    Resolver.sonatypeRepo("snapshots"),
+    "releases" at "http://nexus.tundra.com/repository/maven-releases/"
   ),
   (scalastyleSources in Compile) ++= (unmanagedSourceDirectories in Compile).value,
   ivyConfigurations += CompileTime.hide,
@@ -295,13 +296,21 @@ lazy val flashbot = project
   .settings(
     initialCommands in console :=
       """
-        |import scala.concurrent.Future 
+        |import scala.concurrent._ 
         |import scala.concurrent.duration._
+        |import scala.concurrent.ExecutionContext.Implicits.global
+        |import scala.language.postfixOps
         |
         |import akka.actor.ActorSystem
         |import akka.stream.ActorMaterializer
         |
-        |import console.Console
+        |import flashbot.client.FlashbotClient
+        |import flashbot.core._
+        |import flashbot.models._
+        |import flashbot.models.api._
+        |import flashbot.models.core._
+        |
+        |import console.Console._
       """.stripMargin
   )
   .settings(fork in run := true)
@@ -380,6 +389,7 @@ lazy val core = coreBase.jvm.settings(
     "com.github.andyglow" % "scala-jsonschema-core_2.12" % "0.0.8",
     "com.github.andyglow" % "scala-jsonschema-api_2.12" % "0.0.8",
     "com.github.andyglow" % "scala-jsonschema-circe-json_2.12" % "0.0.8",
+    "com.voxsupplychain" %% "json-schema-parser" % "0.12.1",
     "org.jgrapht" % "jgrapht" % "1.3.0",
     "org.jgrapht" % "jgrapht-core" % "1.3.0",
     "org.jgrapht" % "jgrapht-io" % "1.3.0",

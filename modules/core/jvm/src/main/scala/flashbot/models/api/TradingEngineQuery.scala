@@ -18,7 +18,7 @@ case object Ping extends TradingEngineQuery
 case class BacktestQuery(strategyName: String,
                          params: Json,
                          timeRange: TimeRange,
-                         portfolio: Portfolio,
+                         portfolio: String,
                          barSize: Option[FiniteDuration],
                          eventsOut: Option[ActorRef] = None,
                          dataOverrides: Seq[DataOverride[Any]] = Seq.empty) extends TradingEngineQuery

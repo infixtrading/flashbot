@@ -81,13 +81,11 @@ class TradingEngine(engineId: String,
   /**
     * Initialization.
     */
-  val getExchangeConfigs = () => exchangeConfigs.map {
-    case (name, _) => name -> configForExchange(name).get
-  }
 
   // Must be instantiated above the call to `startEngine`.
-  implicit val loader = new EngineLoader(
-    getExchangeConfigs, dataServer, strategyClassNames: Map[String, String])
+  implicit val loader = new EngineLoader(() => exchangeConfigs.map {
+    case (name, _) => name -> configForExchange(name).get
+  }, dataServer, strategyClassNames: Map[String, String])
 
   val (bootRsp: EngineStarted, bootEvents: Seq[TradingEngineEvent]) =
     Await.result(startEngine, timeout.duration)
@@ -125,7 +123,7 @@ class TradingEngine(engineId: String,
   def startEngine: Future[(EngineStarted, Seq[TradingEngineEvent])] = {
     log.debug("Starting engine")
     for {
-      fetchedPortfolio <- Future.sequence(getExchangeConfigs().keys.map(name =>
+      fetchedPortfolio <- Future.sequence(loader.exchanges.map(name =>
           fetchPortfolio(name).transform {
             case Success(value) => Success(Some(value))
             case Failure(err) =>
@@ -368,7 +366,7 @@ class TradingEngine(engineId: String,
         *       just the params?
         */
       case SyncExchanges =>
-        Future.sequence(getExchangeConfigs().keys.map(name => fetchPortfolio(name).transform {
+        Future.sequence(loader.exchanges.map(name => fetchPortfolio(name).transform {
           case Success(value) => Success(Some(value))
           case Failure(_) => Success(None)
         }))
@@ -431,7 +429,7 @@ class TradingEngine(engineId: String,
         else {
           val params = TimeSeriesStrategy.Params(query.path)
           (self ? BacktestQuery("time_series", params.asJson, query.range,
-              Portfolio.empty, Some(query.interval)))
+              "", Some(query.interval)))
             .mapTo[ReportResponse]
             .map(_.report.timeSeries)
         }) pipeTo sender()
@@ -558,8 +556,8 @@ class TradingEngine(engineId: String,
                                   dataOverrides: Seq[DataOverride[_]]): (ActorRef, Future[TradingEngineEvent]) = {
 
     val sessionActor = context.actorOf(Props(new TradingSessionActor(
+      loader,
       strategyClassNames,
-      getExchangeConfigs,
       strategyKey,
       strategyParams,
       mode,
@@ -570,21 +568,18 @@ class TradingEngine(engineId: String,
       dataOverrides
     )))
 
-    val initialPortfolio = portfolioRef.getPortfolio
-
     // Start the session. We are only waiting for an initialization error, or a confirmation
     // that the session was started, so we don't wait for too long.
-    log.debug("Sending start")
     val fut = (sessionActor ? StartSession).map[TradingEngineEvent] {
       case (sessionId: String, micros: Long) =>
         log.debug("Session started")
         SessionStarted(sessionId, botId, strategyKey, strategyParams,
-          mode, micros, initialPortfolio, report)
+          mode, micros, portfolioRef.getPortfolio(None), report)
     } recover {
       case err: Exception =>
         log.error(err, "Error during session init")
         SessionInitializationError(err, botId, strategyKey, strategyParams,
-          mode, initialPortfolio, report)
+          mode, portfolioRef.toString, report)
     }
     (sessionActor, fut)
   }
@@ -608,7 +603,7 @@ class TradingEngine(engineId: String,
             val initialSessionPortfolio =
               state.bots.get(name).flatMap(_.sessions.lastOption.map(_.portfolio))
                 .getOrElse(Portfolio(initialAssets, initialPositions))
-            new PortfolioRef.Isolated(initialSessionPortfolio)
+            new PortfolioRef.Isolated(initialSessionPortfolio.toString)
 
           case Live =>
             // Instantiate an anonymous PortfolioRef which uses the actor state in scope.
@@ -618,7 +613,10 @@ class TradingEngine(engineId: String,
               override def mergePortfolio(partial: Portfolio) = {
                 globalPortfolio.put(globalPortfolio.take().merge(partial))
               }
-              override def getPortfolio = globalPortfolio.get
+              override def getPortfolio(instruments: Option[InstrumentIndex]) =
+                globalPortfolio.get
+
+              override def printPortfolio = globalPortfolio.get.toString
             }
         }
 

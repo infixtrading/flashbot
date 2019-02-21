@@ -11,7 +11,6 @@ import akka.stream.alpakka.slick.javadsl.SlickSession
 import flashbot.core.DataSource
 import flashbot.util.stream._
 import flashbot.db._
-import flashbot.server.BackfillService.BackfillTick
 import flashbot.core.DeltaFmtJson
 import flashbot.models.core.DataPath
 import io.circe.Printer
@@ -28,14 +27,12 @@ import scala.util.{Failure, Random, Success}
 /**
   * Any number of BackfillServices can be run in the cluster concurrently. Due to the
   * locking mechanism, they do not conflict with one another, even if they are assigned
-  * to the same paths. In addition to ingesting data, this actor serves as the data
-  * retention manager by deleting data past the configured retention period.
+  * to the same paths.
   *
   * On initialization:
   *   1. Generate a random id for this actor instance.
   *   2. Create new "unclaimed" and "incomplete" backfill record with a null cursor and
   *      set `nextPageAt` to the epoch.
-  *   3. Schedule a tick every few seconds.
   *
   * On every tick:
   *   1. Claim the most recent available backfill. Available means: unclaimed and a
@@ -44,11 +41,13 @@ import scala.util.{Failure, Random, Success}
   *   3. Persist the data with the given bundle id, backfill id, and correct `seqid`s.
   *   4. Release the lock by unclaiming the record, and setting the `cursor` and `nextPageAt`
   *      columns according to whether the persistence function said this backfill is complete.
+  *   5. Schedule the next tick.
   */
-class BackfillService[T](bundleId: Long, path: DataPath[T], dataSource: DataSource,
-                         retention: Option[FiniteDuration])
+class BackfillService[T](bundleId: Long, path: DataPath[T], dataSource: DataSource)
                         (implicit session: SlickSession) extends Actor with ActorLogging {
   import session.profile.api._
+
+  case object BackfillTick
 
   implicit val system = context.system
   implicit val mat = buildMaterializer()
@@ -57,17 +56,10 @@ class BackfillService[T](bundleId: Long, path: DataPath[T], dataSource: DataSour
   implicit val fmt: DeltaFmtJson[T] = path.fmt[T]
 
   val instanceId = UUID.randomUUID().toString
+  val tickRate = dataSource.backfillTickRate
 
   // If a claim is held for more than 10 seconds, something is probably wrong. Expire it.
-  val ClaimTTL = 10 * 1000 / dataSource.backfillTickRate millis
-
-  // Every few seconds send a BackfillTick event to self.
-  system.scheduler.schedule(0 millis, (2000 / dataSource.backfillTickRate) millis) (Future {
-    blocking {
-      Thread.sleep(random.nextInt(1000 / dataSource.backfillTickRate))
-      self ! BackfillTick
-    }
-  })
+  val ClaimTTL = (10 seconds) / tickRate
 
   // Create a new row
   val insertedBackfills = Await.result(session.db.run(
@@ -78,7 +70,15 @@ class BackfillService[T](bundleId: Long, path: DataPath[T], dataSource: DataSour
     throw new RuntimeException(s"Unable to create backfill row $bundleId")
   }
 
-  def claimedBackfill = Backfills.forPath(path).filter(_.claimedBy === instanceId)
+  // Backfill ticks
+  system.scheduler.schedule(0 millis, (2 seconds) / tickRate)(Future {
+    blocking {
+      Thread.sleep(random.nextInt(5000 / tickRate))
+      self ! BackfillTick
+    }
+  })
+
+  def claimedBackfill = Backfills.filter(_.claimedBy === instanceId)
 
   def availableBackfills(now: Timestamp) = Backfills
     .forPath(path)
@@ -93,18 +93,6 @@ class BackfillService[T](bundleId: Long, path: DataPath[T], dataSource: DataSour
     case BackfillTick =>
       val now = Instant.now()
       val nowts = Timestamp.from(now)
-
-      // Delete data according to retention policy.
-      if (retention.isDefined) {
-        deleteOldData(retention.get, now) onComplete {
-          case Success(0) =>
-          case Success(deletedNum) =>
-            log.info(s"Deleted {} items for path {} according to retention policy ({}).",
-              deletedNum, path, retention.get)
-          case Failure(err) =>
-            log.error(err, "Failed to delete data for retention policy.")
-        }
-      }
 
       val hasClaimedOpt = session.db.run((for {
         // First, perform some global clean-up. Ensure that all stale locks are released.
@@ -156,143 +144,122 @@ class BackfillService[T](bundleId: Long, path: DataPath[T], dataSource: DataSour
 
     log.debug("Running backfill page for {}", path)
 
+    def proceed(claim: BackfillRow, res: (Vector[(Long, T)], Option[(String, FiniteDuration)])) =
+      res match {
+        case (rspData, nextCursorOpt) =>
+          for {
+            // Ensure the data isn't backwards. It can be easy to mess this up.
+            // The first element should be the most recent!
+            data <-
+              if (rspData.size >= 2 && path.datatype.ordering.compare(rspData.head._2, rspData.last._2) < 0)
+                DBIO.failed(new IllegalStateException(
+                  s"Backfill data out of order. It must be in reverse chronological order."))
+              else DBIO.successful(rspData.reverse)
+
+            // Find if there is any overlap with this page and existing data. If there is,
+            // still insert the data, but don't continue backfilling. Use a 1 second grace period
+            // because exchanges don't have perfect time.
+            dataStartMicros = data.headOption.map(_._1 + 1000 * 1000)
+            overlapSnaps <- Snapshots.forPath(path)
+              .filter(x => x.micros > dataStartMicros && x.bundle < claim.bundle)
+              .size.result
+            overlapDeltas <- Deltas.forPath(path)
+              .filter(x => x.micros > dataStartMicros && x.bundle < claim.bundle)
+              .size.result
+            overlapItems = overlapSnaps + overlapDeltas
+
+            _ = log.debug(s"Fetched backfill page ({} items) for path {}", data.size, path)
+
+            // We got some data from the backfill. Let's insert it and schedule the next page.
+            // Find the earliest seqid for this bundle. Only look at snapshots. There should
+            // never be backfill deltas that predate the earliest snapshot.
+            earliestSeqIdOpt <- Snapshots
+              .filter(_.bundle === claim.bundle)
+              .map(_.seqid)
+              .min.result
+            seqIdBound = earliestSeqIdOpt.getOrElse(0L)
+            seqIdStart: Long = seqIdBound - data.size
+
+            // Insert the snapshot
+            _ <- data.headOption.map {
+              case (micros, item) => Snapshots +=
+                SnapshotRow(0, claim.bundle, seqIdStart, micros,
+                  item.asJson.pretty(Printer.noSpaces), Some(claim.bundle))
+            }.getOrElse(DBIO.successful(0))
+
+            // Build and insert the deltas
+            _ <- Deltas ++= data.zipWithIndex.toIterator
+              .scanLeft[(Option[T], Option[DeltaRow])]((None, None)) {
+                case ((None, _), ((_, item), i)) => (Some(item), None)
+                case ((Some(prev), _), ((micros, item), i)) =>
+                  val delta = fmt.diff(prev, item)
+                  val deltaRow = DeltaRow(0, claim.bundle, seqIdStart + i, micros,
+                    delta.asJson.pretty(Printer.noSpaces), Some(claim.bundle))
+                  (Some(item), Some(deltaRow))
+              }.collect {
+                case (_, Some(deltaRow)) => deltaRow
+              }.toSeq
+
+            updatedCount <- (nextCursorOpt, overlapItems) match {
+              // If there is a next cursor AND there are no overlapping items in the current
+              // page, then we can continue backfilling.
+              case (Some((nextCursor, delay)), 0) =>
+                claimedBackfill
+                  .map(bf => (bf.claimedBy, bf.claimedAt, bf.cursor, bf.nextPageAt))
+                  .update(None, None, Some(nextCursor),
+                    Some(Timestamp.from(now.plusMillis(delay.toMillis))))
+
+              // If next cursor is None OR there are overlapping items, then the backfill
+              // is complete.
+              case _ =>
+                log.info(s"Backfill of {} has completed: {}", path, claim)
+                claimedBackfill
+                  .map(bf => (bf.claimedBy, bf.claimedAt, bf.cursor, bf.nextPageAt))
+                  .update(None, None, None, None)
+            }
+
+            _ = updatedCount match {
+              case 1 =>
+                log.debug("Updated backfill metadata for {}", claim)
+              case 0 =>
+                log.error("Failed to release claim {}. This may be caused by the " +
+                  "backfill claim being expired due a hung page.", claim)
+              case x =>
+                log.warning("Released more than one ({}) claim for backfill {}.", x, claim)
+            }
+
+          } yield data
+      }
+
     session.db.run((for {
-      // Fetch the selected claim. The negative of the claim id will be the bundle id.
+      // Fetch the selected claim.
       claim <- claimedBackfill.result.head
 
       // Request the data seq, next cursor, and delay
-      (rspData, nextCursorOpt) <- DBIO.from(
-        dataSource.backfillPage(claim.topic, path.datatype, claim.cursor))
+      // (rspData: Vector[(Long, Any)], nextCursorOpt: Option[(String, FiniteDuration)])
+      rspOpt <- DBIO.from(dataSource
+        .backfillPage(claim.topic, path.datatype, claim.cursor)
+        .transformWith {
+          case Success(x) => Future.successful(Some(x))
+          case Failure(_: UnsupportedOperationException) => Future.successful(None)
+          case Failure(other) => Future.failed(other)
+        })
 
-      // Ensure the data isn't backwards. It can be easy to mess this up.
-      // The first element should be the most recent!
-      data <-
-        if (rspData.size >= 2 && path.datatype.ordering.compare(rspData.head._2, rspData.last._2) < 0)
-          DBIO.failed(new IllegalStateException(
-            s"Backfill data out of order. It must be in reverse chronological order."))
-        else DBIO.successful(rspData.reverse)
-
-
-      // Find if there is any overlap with this page and existing data. If there is,
-      // still insert the data, but don't continue backfilling. Use a 1 second grace period
-      // because exchanges don't have perfect time.
-      dataStartMicros = data.headOption.map(_._1 + 1000 * 1000)
-      overlapSnaps <- Snapshots.forPath(path)
-        .filter(x => x.micros > dataStartMicros && x.bundle < claim.bundle)
-        .size.result
-      overlapDeltas <- Deltas.forPath(path)
-        .filter(x => x.micros > dataStartMicros && x.bundle < claim.bundle)
-        .size.result
-      overlapItems = overlapSnaps + overlapDeltas
-
-      _ = log.debug(s"Fetched backfill page ({} items) for path {}", data.size, path)
-
-      // We got some data from the backfill. Let's insert it and schedule the next page.
-      // Find the earliest seqid for this bundle. Only look at snapshots. There should
-      // never be backfill deltas that predate the earliest snapshot.
-      earliestSeqIdOpt <- Snapshots
-        .filter(_.bundle === claim.bundle)
-        .map(_.seqid)
-        .min.result
-      seqIdBound = earliestSeqIdOpt.getOrElse(0L)
-      seqIdStart: Long = seqIdBound - data.size
-
-      // Insert the snapshot
-      _ <- data.headOption.map {
-        case (micros, item) => Snapshots +=
-          SnapshotRow(0, claim.bundle, seqIdStart, micros,
-            item.asJson.pretty(Printer.noSpaces), Some(claim.bundle))
-      }.getOrElse(DBIO.successful(0))
-
-      // Build and insert the deltas
-      _ <- Deltas ++= data.zipWithIndex.toIterator
-        .scanLeft[(Option[T], Option[DeltaRow])]((None, None)) {
-          case ((None, _), ((_, item), i)) => (Some(item), None)
-          case ((Some(prev), _), ((micros, item), i)) =>
-            val delta = fmt.diff(prev, item)
-            val deltaRow = DeltaRow(0, claim.bundle, seqIdStart + i, micros,
-              delta.asJson.pretty(Printer.noSpaces), Some(claim.bundle))
-            (Some(item), Some(deltaRow))
-        }.collect {
-          case (_, Some(deltaRow)) => deltaRow
-        }.toSeq
-
-      _ <- (nextCursorOpt, overlapItems) match {
-        // If there is a next cursor AND there are no overlapping items in the current
-        // page, then we can continue backfilling.
-        case (Some((nextCursor, delay)), 0) => for {
-          // Update the backfill row. Release the claim. Update the cursor and delay.
-          updatedNum <- claimedBackfill
-            .map(bf => (bf.claimedBy, bf.claimedAt, bf.cursor, bf.nextPageAt))
-            .update(None, None, Some(nextCursor),
-              Some(Timestamp.from(now.plusMillis(delay.toMillis))))
-
-          _ = updatedNum match {
-            // Success
-            case 1 =>
-              log.debug("Updated backfill metadata")
-
-            // This means that the claim was expired before we got a chance to update it.
-            // This fails the transaction and logs an error.
-            case 0 =>
-              log.error("Failed to release claim {}. This may be caused by the " +
-                "backfill claim being expired due a hung page.", claim)
-          }
-        } yield updatedNum
-
-        // If next cursor is None OR there are overlapping items, then the backfill
-        // is complete.
-        case _ =>
-          log.info(s"Backfill of {} has completed.", path)
-//          log.debug("Next cursor: {}. Overlapping snaps: {}. Overlap deltas: {}",
-//            nextCursorOpt, overlapSnaps, overlapDeltas)
-          claimedBackfill
+      // Proceed with backfill, unless the data source threw an UnsupportedOperationException.
+      // In that case, ignore and close the backfill.
+      _ <- rspOpt.map(proceed(claim ,_))
+        .getOrElse(for {
+          x <- claimedBackfill
             .map(bf => (bf.claimedBy, bf.claimedAt, bf.cursor, bf.nextPageAt))
             .update(None, None, None, None)
-      }
+          _ = log.debug(s"Ignoring unimplemented backfill for $path.")
+        } yield x)
 
-    } yield data).transactionally)
+    } yield Unit).transactionally) andThen {
+      case Success(_) =>
+      case Failure(err) =>
+        log.error(err, "Backfill tick error. Stopping backfill instance {}", instanceId)
+        context.stop(self)
+    }
   }
-
-  /**
-    * Returns how many data items were deleted due to the retention policy.
-    */
-  def deleteOldData(duration: FiniteDuration, now: Instant): Future[Int] = {
-    session.db.run(for {
-      // Find the most recent snapshot that falls outside of the retention period.
-      lastOutdatedSnap <- Snapshots
-        .forPath(path)
-        .sortBy(x => (x.bundle.desc, x.seqid.desc))
-        .filter(x => x.micros < now.toEpochMilli * 1000 - duration.toMicros)
-        .result.headOption
-
-      // Delete all snapshots and deltas that have either a smaller bundle id than
-      // the snapshot we found, or the same bundle id, but lower sequence number.
-      // We do the inner query because delete queries may not use joins in slick.
-      deletedSnaps: Int <- (Snapshots filter { snap =>
-        snap.id in Snapshots
-          .forPath(path)
-          .filter(x => x.bundle < lastOutdatedSnap.map(_.bundle) ||
-            (x.bundle === lastOutdatedSnap.map(_.bundle) &&
-              x.seqid < lastOutdatedSnap.map(_.seqid)))
-          .map(_.id)
-      }).delete
-
-      // Same with deltas.
-      deletedDeltas: Int <- (Deltas filter { delta =>
-        delta.id in Deltas
-          .forPath(path)
-          .filter(x => x.bundle < lastOutdatedSnap.map(_.bundle) ||
-            (x.bundle === lastOutdatedSnap.map(_.bundle) &&
-              x.seqid < lastOutdatedSnap.map(_.seqid)))
-          .map(_.id)
-      }).delete
-
-    } yield deletedSnaps + deletedDeltas)
-  }
-
-}
-
-object BackfillService {
-  case object BackfillTick
 }

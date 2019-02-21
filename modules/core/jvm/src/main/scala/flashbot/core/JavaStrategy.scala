@@ -9,7 +9,6 @@ import akka.stream.Materializer
 import akka.stream.scaladsl.Source
 import flashbot.models.api.{DataOverride, DataSelection}
 import flashbot.models.core.{DataPath, Portfolio, StrategyEvent}
-import flashbot.server.StrategyInfo
 import flashbot.util.JavaUtils
 
 import scala.collection.JavaConverters._

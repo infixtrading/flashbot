@@ -9,7 +9,7 @@ import akka.pattern.ask
 import akka.stream.Materializer
 import akka.stream.scaladsl.Source
 import akka.util.Timeout
-import flashbot.server.{StrategyInfo, StreamResponse}
+import flashbot.server.StreamResponse
 import flashbot.models.api.{DataOverride, DataSelection, DataStreamReq, OrderTarget}
 import flashbot.models.core.FixedSize
 import flashbot.models.core._
@@ -28,7 +28,7 @@ import scala.util.Try
   *
   * Documentation: https://github.com/infixtrading/flashbot/wiki/Writing-Custom-Strategies
   */
-abstract class Strategy[P] {
+abstract class Strategy[P] extends DataHandler {
 
   /**
     * The JSON decoder used to create an instance of P when the strategy is loaded.
@@ -47,7 +47,9 @@ abstract class Strategy[P] {
     *               context in which the session is being run. E.g. the available exchanges.
     * @return a future of an optional [[StrategyInfo]]. Defaults to `None`.
     */
-  def info(loader: EngineLoader): Future[StrategyInfo] = Future.successful(StrategyInfo())
+  def info(loader: EngineLoader): Future[StrategyInfo] = Future.successful(defaultInfo)
+
+  final val defaultInfo: StrategyInfo = StrategyInfo()
 
   /**
     * During initialization, strategies subscribe to any number of data sets, all of which must be
@@ -72,6 +74,8 @@ abstract class Strategy[P] {
     * @param ctx the trading session instance
     */
   def handleData(data: MarketData[_])(implicit ctx: TradingSession): Unit
+
+  override def aroundHandleData(data: MarketData[_])(implicit ctx: TradingSession) = handleData(data)
 
   /**
     * Receives and handles events that occur in the system. This method is most commonly used
@@ -243,4 +247,8 @@ abstract class Strategy[P] {
   implicit class AnnotatorOps[T: SchemaAnnotator](schema: json.Schema[T]) {
     def build: Json = implicitly[SchemaAnnotator[T]].annotate(schema)
   }
+}
+
+trait DataHandler {
+  def aroundHandleData(data: MarketData[_])(implicit ctx: TradingSession): Unit
 }

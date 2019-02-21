@@ -39,8 +39,7 @@ class DataServerSpec extends WordSpecLike with Matchers with Eventually {
       // Create data server actor.
       val dataserver = system.actorOf(Props(new DataServer(config.db,
         // Ingests from a stream that is configured to send data for about 3 seconds.
-        Map("bitfinex" -> DataSourceConfig("flashbot.sources.TestDataSource",
-          Some(Seq("btc_usd")), Some(Seq("trades")))),
+        Map("bitfinex" -> DataSourceConfig("flashbot.sources.TestDataSource", Some(Seq("trades")))),
         config.exchanges,
         IngestConfig(Seq("bitfinex/btc_usd/trades"), Seq(), Seq(Seq()))
       )))
@@ -73,8 +72,7 @@ class DataServerSpec extends WordSpecLike with Matchers with Eventually {
 
       // Create data server actor.
       val dataserver = system.actorOf(Props(new DataServer(config.db,
-        Map("bitfinex" -> DataSourceConfig("flashbot.sources.TestLadderDataSource",
-          Some(Seq("btc_usd")), Some(Seq("ladder")))),
+        Map("bitfinex" -> DataSourceConfig("flashbot.sources.TestLadderDataSource", Some(Seq("ladder")))),
         config.exchanges,
         IngestConfig(Seq("bitfinex/btc_usd/ladder"), Seq(), Seq(Seq()))
       )))
@@ -124,8 +122,7 @@ class DataServerSpec extends WordSpecLike with Matchers with Eventually {
 
         val config = _config.copy(
           sources = Map(
-            "bitfinex" -> DataSourceConfig(dataSourceName,
-              Some(Seq("btc_usd")), Some(Seq("trades")))))
+            "bitfinex" -> DataSourceConfig(dataSourceName, Some(Seq("trades")))))
 
         implicit val system = ActorSystem(config.systemName, config.conf)
         val dataServer = system.actorOf(DataServer.props(config))

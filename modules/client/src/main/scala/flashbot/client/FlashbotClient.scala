@@ -87,13 +87,13 @@ class FlashbotClient(engine: ActorRef, skipTouch: Boolean = false) {
              interval: FiniteDuration): Map[String, Vector[Candle]] =
     await(pricesAsync(path, timeRange, interval))
 
-  def backtestAsync(strategy: String, params: Json, initialPortfolio: Portfolio,
+  def backtestAsync(strategy: String, params: Json, initialPortfolio: String,
                     interval: FiniteDuration = 1 day, timeRange: TimeRange = TimeRange(0),
                     dataOverrides: Seq[DataOverride[_]] = Seq.empty): Future[Report] =
     req[ReportResponse](BacktestQuery(strategy, params, timeRange, initialPortfolio,
       Some(interval), None, dataOverrides)).map(_.report)
 
-  def backtest(strategy: String, params: Json, initialPortfolio: Portfolio,
+  def backtest(strategy: String, params: Json, initialPortfolio: String,
                interval: FiniteDuration = 1 day, timeRange: TimeRange = TimeRange(0),
                dataOverrides: Seq[DataOverride[_]] = Seq.empty): Report =
     await(backtestAsync(strategy, params, initialPortfolio, interval, timeRange, dataOverrides))
@@ -113,7 +113,6 @@ class FlashbotClient(engine: ActorRef, skipTouch: Boolean = false) {
   def pollingMarketData[T](path: DataPath[T], lookback: Duration = 0 seconds)
       : Source[MarketData[T], NotUsed] =
     await(pollingMarketDataAsync(path, lookback))
-
 
   /**
     * Returns a non-polling market data stream.
@@ -152,9 +151,10 @@ class FlashbotClient(engine: ActorRef, skipTouch: Boolean = false) {
 
   def historicalMarketData[T](path: DataPath[T],
                               from: Option[Instant] = None,
-                              to: Option[Instant] = None)
+                              to: Option[Instant] = None,
+                              limit: Option[TakeLimit] = None)
       : Source[MarketData[T], NotUsed] =
-    await(historicalMarketDataAsync[T](path, from, to))
+    await(historicalMarketDataAsync[T](path, from, to, limit))
 
   private def req[T](query: Any)(implicit tag: ClassTag[T]): Future[T] =
     (engine ? query).mapTo[T]

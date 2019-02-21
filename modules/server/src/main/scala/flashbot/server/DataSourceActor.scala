@@ -20,6 +20,7 @@ import flashbot.core.{DataType, DeltaFmt, DeltaFmtJson, MarketData}
 import flashbot.models.core.DataPath
 import io.circe.Printer
 
+import scala.collection.concurrent.TrieMap
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
 import scala.language.postfixOps
@@ -76,9 +77,9 @@ class DataSourceActor(session: SlickSession,
 
   var itemBuffers = Map.empty[Long, Vector[MarketData[_]]]
 
-  var subscriptions: Map[String, Set[ActorRef]] = Map.empty
+  var subscriptions = TrieMap.empty[String, Set[ActorRef]]
 
-  var bundleIndex = Map.empty[String, Seq[Long]]
+  var bundleIndex = TrieMap.empty[String, Seq[Long]]
 
   override def postStop() = {
     // Close all subscriptions on stop.
@@ -208,11 +209,16 @@ class DataSourceActor(session: SlickSession,
                         // that's older than the retention period.
                         if (ingestConfig.backfillMatchers.exists(_.matches(path))) {
                           log.debug(s"Launching BackfillService for {}", path)
-                          context.actorOf(Props(new BackfillService(backfillBundleId, path, dataSource,
-                            ingestConfig.retentionFor(path))))
+                          context.actorOf(Props(new BackfillService(backfillBundleId, path, dataSource)))
                         } else {
                           log.debug("Skipping backfill for {}", path)
                         }
+
+                        // Start a retention service for every paths.
+                        log.debug(s"Launching RetentionService for {}", path)
+                        context.actorOf(Props(new RetentionService(path,
+                          ingestConfig.retentionFor(path), dataSource.backfillTickRate)))
+
 
                         // Save bundle id for this path.
                         bundleIndex += (path.toString ->
@@ -327,19 +333,14 @@ class DataSourceActor(session: SlickSession,
      * ===========
      */
     case StreamLiveData(path) =>
-      log.debug("=========================")
-      log.debug("STREAM LIVE DATA: {}", path)
-      log.debug("=========================")
       def buildOptSrc[T](fmt: DeltaFmtJson[T]): Option[Source[MarketData[T], NotUsed]] =
         if (subscriptions.isDefinedAt(path)) {
-          log.debug("SUBSCRIPTION IS DEFINED: {}", path)
           val (ref, src) =
             Source.actorRef[MarketData[T]](Int.MaxValue, OverflowStrategy.fail).preMaterialize()
           subscriptions += (path.toString -> (subscriptions(path) + ref))
           val initialItems: Vector[MarketData[T]] = lookupBundleId(path)
             .flatMap(itemBuffers.get(_).map(_.asInstanceOf[Vector[MarketData[T]]]) )
             .getOrElse(Vector.empty[MarketData[T]])
-          log.debug("INITIAL ITEMS: {}", initialItems)
           Some(Source(initialItems).concat(src))
         } else None
       sender ! buildOptSrc(DeltaFmt.formats(path.datatype))

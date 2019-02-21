@@ -4,6 +4,7 @@ import flashbot.core.PriceIndex._
 import flashbot.models.core.{Account, FixedPrice, Market}
 
 import scala.collection.{concurrent, mutable}
+import scala.language.postfixOps
 
 /**
   * The data structure used to calculate positions, equity, PnL, order sizes, etc... This will

@@ -5,6 +5,7 @@ import akka.stream.ActorMaterializer
 import akka.util.Timeout
 import flashbot.client.FlashbotClient
 import flashbot.core.{DataServer, FlashbotConfig, Trade, TradingEngine}
+import io.prometheus.client.exporter.HTTPServer
 
 import scala.concurrent.Await
 import scala.concurrent.duration._
@@ -14,6 +15,9 @@ object MarketDataDashboard extends App {
 
   // Load config
   val config = FlashbotConfig.load("dashboard")
+
+  // For graphing internal metrics
+  var metricsServer: HTTPServer = new HTTPServer(9322)
 
   // Create the actor system and trading engine
   implicit val system = ActorSystem(config.systemName, config.conf)

@@ -68,9 +68,9 @@ class MarketMakerSpec extends FlatSpec with Matchers {
     val data = Seq(DataOverride("coinbase/btc_usd/candles_1m", candles))
 
     val report = client.backtest("market_maker", params.asJson, portfolio, 1 minute, timeRange, data)
-    val prices = report.timeSeries("local.price.coinbase.btc_usd").map(_.close)
-    val fairPrices = report.timeSeries("local.indicator.fair_price_sma").map(_.close)
-    val equity = report.timeSeries("local.indicator.equity").map(_.close)
+    val prices = report.timeSeries("coinbase.btc_usd").map(_.close)
+    val fairPrices = report.timeSeries("fair_price_sma").map(_.close)
+    val equity = report.timeSeries("equity").map(_.close)
     (prices zip fairPrices zip equity).foreach(println)
 
     report.trades.size shouldEqual 103
@@ -110,9 +110,9 @@ class MarketMakerSpec extends FlatSpec with Matchers {
     val data = Seq(DataOverride("coinbase/btc_usd/candles_1h", candles))
 
     val report = client.backtest("market_maker", params.asJson, portfolio, 1 hour, timeRange, data)
-    val prices = report.timeSeries("local.price.coinbase.btc_usd").map(_.close)
-    val fairPrices = report.timeSeries("local.indicator.fair_price_sma").map(_.close)
-    val equity = report.timeSeries("local.indicator.equity").map(_.close)
+    val prices = report.timeSeries("coinbase.btc_usd").map(_.close)
+    val fairPrices = report.timeSeries("fair_price_sma").map(_.close)
+    val equity = report.timeSeries("equity").map(_.close)
     (prices zip fairPrices zip equity).foreach(println)
 
     println("# trades: ", report.trades.size)

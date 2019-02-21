@@ -13,8 +13,6 @@ import scala.concurrent.Future
 class Bitstamp(implicit val system: ActorSystem,
                val mat: Materializer) extends Exchange {
 
-  override implicit val ec = scala.concurrent.ExecutionContext.global
-
   override def makerFee: Double = .0005
 
   override def takerFee: Double = .0005

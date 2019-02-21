@@ -295,6 +295,9 @@ class CoinbaseMarketDataSource extends DataSource {
             }
         }
       }
+
+    case _ => Future.failed(new UnsupportedOperationException(
+      s"Coinbase backfill not implemented for $datatype."))
   }
 }
 

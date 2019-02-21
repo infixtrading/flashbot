@@ -9,13 +9,12 @@ import flashbot.models.core._
 import flashbot.util.time
 import io.circe.Json
 
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.Future
+import scala.concurrent.ExecutionContext.Implicits.global
 import scala.math.BigDecimal.RoundingMode.HALF_DOWN
 import scala.util.{Failure, Success, Try}
 
 abstract class Exchange {
-
-  implicit val ec: ExecutionContext
 
   // Fees used for simulation
   def makerFee: Double

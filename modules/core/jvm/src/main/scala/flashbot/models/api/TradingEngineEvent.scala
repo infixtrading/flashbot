@@ -21,7 +21,7 @@ case class SessionInitializationError(cause: Exception,
                                       strategyKey: String,
                                       strategyParams: Json,
                                       mode: TradingSessionMode,
-                                      portfolio: Portfolio,
+                                      portfolio: String,
                                       report: Report) extends TradingEngineEvent
 
 case class EngineStarted(micros: Long) extends TradingEngineEvent

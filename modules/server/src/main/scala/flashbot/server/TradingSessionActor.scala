@@ -36,8 +36,8 @@ import scala.util.{Failure, Success, Try}
 
 import de.sciss.fingertree._
 
-class TradingSessionActor(strategyClassNames: Map[String, String],
-                          getExchangeConfigs: () => Map[String, ExchangeConfig],
+class TradingSessionActor(loader: EngineLoader,
+                          strategyClassNames: Map[String, String],
                           strategyKey: String,
                           strategyParams: Json,
                           mode: TradingSessionMode,
@@ -85,7 +85,6 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
   def emitTick(tick: Tick): Unit = {
     if (mode.isBacktest) {
       assert(tick.micros >= 0, "Backtests do not support asynchronous events.")
-//      println("Enqueueing", tick)
       tickQueue += tick
     } else tickRefOpt match {
       case Some(ref) => ref ! tick
@@ -97,23 +96,13 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
 
   def setup[P](): Future[SessionSetup] = {
 
-    val exchangeConfigs = getExchangeConfigs()
+    val exchangeConfigs = loader.getExchangeConfigs()
 
     log.debug("Exchange configs: {}", exchangeConfigs)
 
     // Set the time. Using system time just this once.
     val sessionMicros = currentTimeMicros
     val now = Instant.ofEpochMilli(sessionMicros / 1000)
-
-    // Create the session loader
-    val loader: EngineLoader =
-      new EngineLoader(getExchangeConfigs, dataServer, strategyClassNames)
-
-    val initialPortfolio = portfolioRef.getPortfolio
-
-    // Create default instruments for each currency pair configured for an exchange.
-    def defaultInstruments(exchange: String): Set[Instrument] =
-      exchangeConfigs(exchange).pairs.getOrElse(Seq.empty).map(CurrencyPair(_)).toSet
 
     def dataSelection[T](path: DataPath[T]): DataSelection[T] = mode match {
       case Backtest(range) => DataSelection(path, Some(range.start), Some(range.end))
@@ -162,6 +151,11 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
         _ = rawStrategy.setSessionBarSize(initialReport.barSize)
       } yield rawStrategy
 
+      // Load the instruments.
+      instruments <- loader.loadInstruments
+
+      val initialPortfolio = portfolioRef.getPortfolio(Some(instruments))
+
       // Initialize the strategy and collect data paths
       paths <- strategy.initialize(initialPortfolio, loader)
 
@@ -174,20 +168,6 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
         loadExchange(n).map(n -> _).toFut)).map(_.toMap)
       _ = { log.debug("Loaded exchanges: {}.", exchanges) }
 
-      // Load the instruments.
-      instruments <- Future.sequence(exchanges.map {
-          case (exName, ex) =>
-            // Merge exchange provided instruments with default ones.
-            ex.instruments
-              .map((is: Set[Instrument]) => exName -> (defaultInstruments(exName) ++ is))}
-        )
-        // Filter out any instruments that were not mentioned as a topic
-        // in any of the subscribed data paths.
-        .map(_.toMap.mapValues(_.filter((inst: Instrument) =>
-            paths.map(_.topic).contains(inst.symbol))))
-        // Remove empties.
-        .map(_.filter(_._2.nonEmpty))
-
       // Resolve market data streams.
       streams <- Future.sequence(paths.map(path =>
         strategy.resolveMarketData(dataSelection(path), dataServer, dataOverrides)))
@@ -196,12 +176,11 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
         " {} paths requested by the strategy.", streams.size, paths.size) }
 
     } yield
-      SessionSetup(new InstrumentIndex(instruments), exchanges, strategy,
+      SessionSetup(instruments, exchanges, strategy,
         UUID.randomUUID.toString, streams, sessionMicros, initialPortfolio)
   }
 
   val gaussian = Gaussian(0, 1)
-  var lastEquity = 0d
 
   def runSession(sessionSetup: SessionSetup): String = sessionSetup match {
     case SessionSetup(instruments, exchanges, strategy, sessionId, streams,
@@ -249,8 +228,9 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
 
       def processDataOrTick(session: Session,
                             dataOrTick: Either[MarketData[_], Tick]): Session = {
+
         // Load the portfolio into the session from the PortfolioRef on every scan iteration.
-        val initPortfolio = portfolioRef.getPortfolio
+        val initPortfolio = portfolioRef.getPortfolio(Some(instruments))
         session.portfolio = initPortfolio
 
         // First, setup the event buffer so that we can handle synchronous events.
@@ -290,10 +270,12 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
           .filter(exchanges.isDefinedAt)
         val exchange: Option[Exchange] = ex.map(exchanges(_))
 
-        // If this data has price info attached, emit that price info.
+        // If this data has price info attached, save it to the price index. Also update
+        // the portfolio in case there are any positions that need to be initialized.
         data.map(_.data) match {
           case Some(pd: Priced) =>
             session.prices.setPrice(Market(data.get.source, data.get.topic), pd.price)
+            session.portfolio = session.portfolio.initializePositions(session.prices, session.instruments)
           case _ =>
         }
 
@@ -390,25 +372,25 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
                 portfolio.balance(assetAccount).qty, fill.micros))
             }
 
-            val equity = newPortfolio.equity()(session.prices, instruments).qty
-            lastEquity = equity
+
             // And calculate our equity.
-            session.send(BalanceEvent(Account("all", "equity"), equity, fill.micros))
+//            val equity = newPortfolio.equity()(session.prices, instruments).qty
+//            session.send(BalanceEvent(Account("all", "equity"), equity, fill.micros))
 
             // Return updated portfolio
             newPortfolio
         }
 
-        // Call handleData and catch user errors.
+        // Call aroundHandleData and catch user errors.
         data match {
           case Some(md) =>
             val timer = Metrics.startTimer("handle_data_ms")
             try {
-              strategy.handleData(md)(session)
+              strategy.aroundHandleData(md)(session)
             } catch {
               case e: Throwable =>
                 Metrics.inc("handle_data_error")
-                e.printStackTrace()
+                log.error(e, "Handle data error")
             } finally {
               timer.observeDuration()
             }
@@ -425,8 +407,8 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
           case reportEvent: ReportEvent =>
             val re = reportEvent match {
               case ce: CandleEvent => ce match {
-                case ev: CandleAdd => ev.copy("local." + ev.series)
-                case ev: CandleUpdate => ev.copy("local." + ev.series)
+                case ev: CandleAdd => ev.copy(ev.series)
+                case ev: CandleUpdate => ev.copy(ev.series)
               }
               case otherReportEvent => otherReportEvent
             }
@@ -436,16 +418,6 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
           case target: OrderTarget =>
             session.orderManagers += (target.market.exchange ->
               session.orderManagers(target.market.exchange).submitTarget(target))
-            val queueSize = session.orderManagers(target.market.exchange).targets.size
-//            println(s"Target queue size: ${queueSize}")
-//            println("targets", session.orderManagers(target.market.exchange).targets)
-//            println("mounted targets", session.orderManagers(target.market.exchange).mountedTargets)
-//            println("active action", session.actionQueues(target.market.exchange).active)
-//            println("action queue", session.actionQueues(target.market.exchange).queue)
-            if (queueSize == 21) {
-              println(session.orderManagers(target.market.exchange))
-            }
-
 
           case LogMessage(msg) =>
             log.info(msg)
@@ -465,7 +437,6 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
 
         // Here is where we tell the exchanges to do stuff, like place or cancel orders.
         session.actionQueues.foreach { case (exName, acs) =>
-//          println(s"Action queue: ${acs.active}, ${acs.queue.size}")
           acs match {
             case ActionQueue(None, next +: rest) =>
               session.actionQueues += (exName -> ActionQueue(Some(next), rest))
@@ -541,17 +512,15 @@ class TradingSessionActor(strategyClassNames: Map[String, String],
 
         // Lift-off
         .scan(new Session()) { case (session, dataOrTick) =>
-//          println(s"\nSCAN: $dataOrTick")
           // Dequeue and process ticks while they occur before the current
           // market data item.
           var queueItems = dequeueTicksFor(dataOrTick)
           var tmpSession = session
-//          println("Queue item size: ", queueItems.size)
           while (queueItems.nonEmpty) {
             tmpSession = queueItems.foldLeft(tmpSession)(processDataOrTick)
             queueItems = dequeueTicksFor(dataOrTick)
-//            println("\tQueue item size: ", queueItems.size)
           }
+
           // And finally process the actual stream item.
           processDataOrTick(tmpSession, dataOrTick)
         }

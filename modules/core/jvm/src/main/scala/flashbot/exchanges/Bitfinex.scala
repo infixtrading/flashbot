@@ -11,8 +11,6 @@ import scala.concurrent.Future
 class Bitfinex(implicit val system: ActorSystem,
                val mat: Materializer) extends Exchange {
 
-  override implicit val ec = scala.concurrent.ExecutionContext.global
-
   override def makerFee = .0000
   override def takerFee = .0000
   override def order(req: OrderRequest) = ???
