@@ -8,6 +8,25 @@ Flashbot is a Java and Scala framework for building, simulating, and running rob
 
 Crypto markets are unique in the world of finance because the "playing field is level". I.e. If you have an idea for a high-frequency trading strategy, you don't need to pay millions for infastructure, data, and co-location to get started. But you do still have to write performant software. Flashbot helps with that by providing a simple interface for building complex strategies and a common infrastructure to run them on.
 
+## Here for a code review?
+Check out the following core files (on the branch v1):
+
+*Interfaces*
+* [Strategy.scala](https://github.com/infixtrading/flashbot/blob/v1/modules/core/jvm/src/main/scala/flashbot/core/Strategy.scala)
+* [DataSource.scala](https://github.com/infixtrading/flashbot/blob/v1/modules/core/jvm/src/main/scala/flashbot/core/DataSource.scala)
+* [Exchange.scala](https://github.com/infixtrading/flashbot/blob/v1/modules/core/jvm/src/main/scala/flashbot/core/Exchange.scala)
+
+*Core*
+* [TradingEngine.scala](https://github.com/infixtrading/flashbot/blob/v1/modules/server/src/main/scala/flashbot/core/TradingEngine.scala)
+* [DataSourceActor.scala](https://github.com/infixtrading/flashbot/blob/v1/modules/server/src/main/scala/flashbot/server/DataSourceActor.scala)
+* [BackfillService.scala](https://github.com/infixtrading/flashbot/blob/v1/modules/server/src/main/scala/flashbot/server/BackfillService.scala)
+* [TradingSessionActor.scala](https://github.com/infixtrading/flashbot/blob/v1/modules/server/src/main/scala/flashbot/server/TradingSessionActor.scala)
+* [DataServer.scala](https://github.com/infixtrading/flashbot/blob/v1/modules/server/src/main/scala/flashbot/core/DataServer.scala)
+
+*Sample strategy*
+* [MarketMaker.scala](https://github.com/infixtrading/flashbot/blob/v1/modules/core/jvm/src/main/scala/flashbot/strategies/MarketMaker.scala)
+
+
 ## Features
 * Cross-platform. Windows, Linux, and Mac OS
 * Pluggable strategies, exchanges, and data sources
