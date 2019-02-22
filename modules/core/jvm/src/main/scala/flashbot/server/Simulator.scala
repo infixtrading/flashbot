@@ -14,8 +14,6 @@ import scala.concurrent.Future
   */
 class Simulator(base: Exchange, latencyMicros: Long = 0) extends Exchange {
 
-  override implicit val ec = scala.concurrent.ExecutionContext.global
-
   private var _syntheticCurrentMicros: Option[Long] = None
   override protected[flashbot] def syntheticCurrentMicros: Option[Long] = _syntheticCurrentMicros
 

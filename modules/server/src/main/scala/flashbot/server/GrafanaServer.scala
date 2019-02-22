@@ -21,6 +21,7 @@ import io.circe.generic.JsonCodec
 import io.circe.generic.extras._
 import de.heikoseeberger.akkahttpcirce.ErrorAccumulatingCirceSupport._
 import flashbot.client.FlashbotClient
+import flashbot.core.Report.ValuesMap
 import flashbot.models.api.TakeLast
 import flashbot.models.core._
 
@@ -112,11 +113,11 @@ object GrafanaServer {
 
   def paramsToJson(params: Map[String, ParamValue]): Json = params.foldLeft(JsonObject()) {
     case (obj, (key, ParamValue(value, jsonType, required))) =>
-      def foldParam[T: Decoder: Encoder](filter: T => Boolean = _ => true) =
+      def foldParam[T: Decoder: Encoder](filter: T => Boolean = (x: T) => true) =
         decode[T](value.trim).toOption.filter(filter) match {
           case Some(v) => obj.add(key, v.asJson)
           case None if !required => obj
-          case None => throw new RuntimeException(s"Unable to parse $key value \"$value\" as $jsonType")
+          case None => throw new RuntimeException(s"""Unable to parse $key value "$value" as $jsonType""")
         }
 
       jsonType match {
@@ -201,12 +202,14 @@ object GrafanaServer {
                   val barSize = parseDuration(barSizeOpt.get)
                   val cacheKey = BacktestCacheKey(strategy, paramsToJson(paramsOpt.get),
                     portfolioOpt.get, barSize, body.range)
+
                   getBacktestReport(client, cacheKey).map(report => {
                     if (report.collections.isDefinedAt(key))
-                      Seq(buildTable(report.collections(key).map(_.asJsonObject), List()))
-                    else if (report.values.isDefinedAt(key))
-                      Seq(buildTable(Seq(JsonObject("value" -> report.values(key).asJson)), List()))
-                    else Seq(buildTable(Seq(JsonObject("error" -> "no data".asJson)), List()))
+                      Seq(buildTable(report.collections(key).flatMap(_.asObject), List()))
+                    else if (report.values.isDefinedAt(key)) {
+                      val foo: Json = report.values.asJson(Report.vMapEn).asObject.get(key).get
+                      Seq(buildTable(Seq(JsonObject("value" -> foo)), List()))
+                    } else Seq(buildTable(Seq(JsonObject("error" -> "no data".asJson)), List()))
                   })
 
                 case (_, "trades", _) =>

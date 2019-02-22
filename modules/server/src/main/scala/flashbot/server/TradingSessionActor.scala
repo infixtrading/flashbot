@@ -154,7 +154,7 @@ class TradingSessionActor(loader: EngineLoader,
       // Load the instruments.
       instruments <- loader.loadInstruments
 
-      val initialPortfolio = portfolioRef.getPortfolio(Some(instruments))
+      initialPortfolio = portfolioRef.getPortfolio(Some(instruments))
 
       // Initialize the strategy and collect data paths
       paths <- strategy.initialize(initialPortfolio, loader)

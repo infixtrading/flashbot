@@ -26,8 +26,6 @@ class BitMEX extends Exchange {
     Future.successful(Set(BitMEX.XBTUSD, BitMEX.ETHUSD))
 
   override def fetchPortfolio = ???
-
-  override implicit val ec = _
 }
 
 object BitMEX {

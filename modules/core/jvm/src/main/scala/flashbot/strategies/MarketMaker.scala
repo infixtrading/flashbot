@@ -61,7 +61,6 @@ class MarketMaker extends Strategy[MarketMakerParams] with TimeSeriesMixin {
   override def info(loader: EngineLoader) =
     Future.successful(defaultInfo
       .withSchema(json.Json.schema[MarketMakerParams].asCirce().noSpaces)
-      .withLayout(defaultInfo.layout.addRow(Row()))
     )
 
   /**

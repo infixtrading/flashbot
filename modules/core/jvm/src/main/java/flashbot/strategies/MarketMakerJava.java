@@ -73,10 +73,8 @@ public class MarketMakerJava
             e.printStackTrace();
         }
 
-        Layout l = defaultInfo().layout().addQuery("foo", "bar", "car",
-                q -> q.setPrimary(true));
 
-        return CompletableFuture.completedFuture(new StrategyInfo(new Some<>(schemaStr)));
+        return CompletableFuture.completedFuture(defaultInfo().withSchema(schemaStr));
     }
 
     @Override
