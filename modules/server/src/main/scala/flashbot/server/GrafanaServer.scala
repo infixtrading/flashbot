@@ -196,7 +196,6 @@ object GrafanaServer {
                   val cacheKey = BacktestCacheKey(strategy, paramsToJson(paramsOpt.get),
                     portfolioOpt.get, barSize, body.range)
                   getBacktestReport(client, cacheKey).map(report => {
-                    println("BACKTEST REPORT", report.timeSeries)
                     Seq(buildSeries(key, key, report.timeSeries))
                   })
 

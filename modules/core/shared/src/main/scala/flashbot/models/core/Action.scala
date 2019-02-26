@@ -7,15 +7,22 @@ import scala.collection.immutable.Queue
 
 sealed trait Action {
   def targetId: TargetId
+  def getSize: Option[Double]
 }
 
 object Action {
 
   case class PostMarketOrder(id: String, targetId: TargetId, side: Side,
-                             size: Option[Double], funds: Option[Double]) extends Action
+                             size: Option[Double], funds: Option[Double]) extends Action {
+    override def getSize = size
+  }
   case class PostLimitOrder(id: String, targetId: TargetId, side: Side,
-                            size: Double, price: Double, postOnly: Boolean) extends Action
-  case class CancelLimitOrder(targetId: TargetId) extends Action
+                            size: Double, price: Double, postOnly: Boolean) extends Action {
+    override def getSize = Some(size)
+  }
+  case class CancelLimitOrder(targetId: TargetId) extends Action {
+    override def getSize = None
+  }
 
   case class ActionQueue(active: Option[Action] = None, queue: Queue[Action] = Queue.empty) {
     def enqueue(action: Action): ActionQueue = copy(queue = queue.enqueue(action))
@@ -27,9 +34,4 @@ object Action {
     def isEmpty: Boolean = active.isEmpty && queue.isEmpty
     def nonEmpty: Boolean = !isEmpty
   }
-
-  //  trait ActionResponse
-  //  case object Ok extends ActionResponse
-  //  // TODO: Add more specific failures and handle them (such as rate limit retries)
-  //  case object Fail extends ActionResponse
 }

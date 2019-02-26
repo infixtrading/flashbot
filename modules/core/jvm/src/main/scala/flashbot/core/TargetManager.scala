@@ -44,7 +44,7 @@ case class TargetManager(instruments: InstrumentIndex,
       // expanding the next order target.
       targets.dequeue match {
         case (target, newTargetQueue) =>
-          val actions = target match {
+          val rawActions = target match {
 
             /**
               * Market order target.
@@ -85,7 +85,8 @@ case class TargetManager(instruments: InstrumentIndex,
                   * Existing mounted target is identical to this one. Ignore for idempotency.
                   */
                 case Some(action: PostLimitOrder)
-                  if action.price == price && action.size == size.qty => Nil
+                  if action.price == price && action.size == size.qty
+                    && action.side == size.side && action.postOnly == postOnly => Nil
 
                 /**
                   * Existing mounted target is different than this target. Cancel the previous
@@ -99,6 +100,8 @@ case class TargetManager(instruments: InstrumentIndex,
                 case None => List(post)
               }
           }
+
+          val actions = rawActions.filterNot(_.getSize.contains(0))
 
           // Detect if this target was a no-op, and if there are more targets, recurse.
           // This prevents the target queue from backing up.

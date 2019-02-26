@@ -23,9 +23,6 @@ case class FixedSize[T: Numeric](amount: T, security: String) {
 
 object FixedSize {
 
-//  implicit def mkFixedSize: MkFixedSize[Double] =
-//    (num: Double, security: String) => FixedSize(num, security)
-
   implicit def buildFixedSizeStr(str: String): FixedSize[Double] = {
     val parts = str.trim.split(" ")
     val symbol = parts.tail.mkString("")
@@ -34,8 +31,6 @@ object FixedSize {
 
   implicit def buildFixedSizeFromTuple(tuple: (Double, String)): FixedSize[Double] =
     FixedSize(tuple._1, tuple._2)
-
-//  def numeric[T: Numeric](amount: T, symbol: String): FixedSize[T] = FixedSize[T](amount, symbol)
 
   implicit class ConvertFixedSizeOps[T: Numeric](size: FixedSize[T]) {
     def as(key: AssetKey)(implicit prices: PriceIndex,
