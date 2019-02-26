@@ -33,7 +33,7 @@ abstract class Exchange {
   def round(instrument: Instrument)(size: FixedSize[Double]): FixedSize[Double] =
     if (size.security == instrument.security.get)
       size.map(roundBase(instrument))
-    else if (size.security == instrument.settledIn)
+    else if (size.security == instrument.settledIn.get)
       size.map(roundQuote(instrument))
     else throw new RuntimeException(s"Can't round $size for instrument $instrument")
 
@@ -129,5 +129,7 @@ abstract class Exchange {
     .setScale(quoteAssetPrecision(instrument), HALF_DOWN).doubleValue()
   private def roundBase(instrument: Instrument)(balance: Double): Double = BigDecimal(balance)
     .setScale(baseAssetPrecision(instrument), HALF_DOWN).doubleValue()
+
+  final def params: ExchangeParams = ExchangeParams(makerFee, takerFee)
 }
 

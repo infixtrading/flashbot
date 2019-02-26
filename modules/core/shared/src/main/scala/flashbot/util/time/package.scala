@@ -8,6 +8,7 @@ import io.circe.syntax._
 import java.util.concurrent.TimeUnit.{DAYS, HOURS, MILLISECONDS, MINUTES, SECONDS}
 
 import scala.concurrent.duration.{Duration, FiniteDuration}
+import scala.language.implicitConversions
 import scala.util.matching.Regex
 
 package object time {

@@ -53,6 +53,9 @@ object DataPath {
 
   def apply[T](str: String): DataPath[T] = parse(str)
 
+  def apply[T](market: Market, dataType: DataType[T]): DataPath[T] =
+    DataPath(market.exchange, market.symbol, dataType)
+
   def wildcard: DataPath[Any] = DataPath("*", "*", AnyType)
 
   implicit def dataPathToString[T](path: DataPath[T]): String =

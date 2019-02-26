@@ -11,7 +11,8 @@ trait TradingSession {
   def getPortfolio: Portfolio
   def getActionQueues: Map[String, ActionQueue]
   def getPrices: PriceIndex
-  def instruments: InstrumentIndex
+  def getInstruments: InstrumentIndex
+  def getExchangeParams: Map[String, ExchangeParams]
 }
 
 object TradingSession {

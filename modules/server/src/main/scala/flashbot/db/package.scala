@@ -60,7 +60,7 @@ package object db {
     def forPath(path: DataPath[_]) =
       query.filter(row => row.source === path.source &&
         row.topic === path.topic &&
-        row.datatype === path.datatype.name)
+        row.datatype === path.datatype.toString)
   }
 
   implicit class BackfillOps(query: TableQuery[Backfills])
@@ -70,7 +70,7 @@ package object db {
     def forPath(path: DataPath[_]) =
       query.filter(row => row.source === path.source &&
         row.topic === path.topic &&
-        row.datatype === path.datatype.name)
+        row.datatype === path.datatype.toString)
   }
 
   implicit class SnapshotOps(query: TableQuery[Snapshots])

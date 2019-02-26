@@ -3,31 +3,30 @@ package flashbot.core
 import java.time.{Instant, ZoneOffset, ZonedDateTime}
 
 import flashbot.core.ReportEvent.{CandleAdd, CandleUpdate}
-import flashbot.models.core.{Candle, FixedSize, Market}
+import flashbot.models.core.{Candle, FixedPrice, FixedSize, Market}
 import flashbot.util.time._
+import org.ta4j.core.BaseTimeSeries.SeriesBuilder
+import org.ta4j.core.indicators.AbstractIndicator
 import org.ta4j.core.{Bar, BaseBar, BaseTimeSeries, TimeSeries}
 import org.ta4j.core.indicators.helpers.ClosePriceIndicator
 import org.ta4j.core.num.Num
 
 import scala.concurrent.duration.FiniteDuration
+import scala.language.implicitConversions
 
 trait TimeSeriesMixin extends DataHandler { self: Strategy[_] =>
 
-  def barSize: FiniteDuration = self.sessionBarSize
+  private def barSize: FiniteDuration = self.sessionBarSize
 
   // The number of bars in the duration
-  def barCount(duration: FiniteDuration): Int = (duration.toMicros / barSize.toMicros).toInt
+  private def barCount(duration: FiniteDuration): Int = (duration.toMicros / barSize.toMicros).toInt
 
-  var allSeries: Map[String, TimeSeries] = Map.empty
+  private var allSeries: Map[String, TimeSeries] = Map.empty
 
-  var closePrices: Map[String, ClosePriceIndicator] = Map.empty
+  private var closePriceIndicators: Map[String, ClosePriceIndicator] = Map.empty
 
-  def getPrice(market: Market): FixedSize[Double] = {
-    val key = priceKey(market.exchange, market.symbol)
-    val indicator = closePrices.getOrElse(key, new ClosePriceIndicator(allSeries(key)))
-    val price = indicator.getValue(indicator.getTimeSeries.getEndIndex).doubleValue()
-    FixedSize(price, market.symbol)
-  }
+  def getPrice(market: Market): Double =
+    valueOf(closePrices(market)).doubleValue()
 
   private def getGlobalIndex(micros: Long): Long = micros / (barSize.toMillis * 1000)
 
@@ -141,11 +140,32 @@ trait TimeSeriesMixin extends DataHandler { self: Strategy[_] =>
   }
 
   def priceKey(exchange: String, product: String): String = s"$exchange.$product"
+  def priceKey(market: Market): String = priceKey(market.exchange, market.symbol)
 
-  abstract override def aroundHandleData(data: MarketData[_])(implicit ctx: TradingSession) = {
-    implicit val prices = ctx.getPrices
-    implicit val instruments = ctx.instruments
-    recordTimeSeries("equity", data.micros, ctx.getPortfolio.equity().num)
-    super.aroundHandleData(data)
+  abstract override def aroundHandleData(md: MarketData[_])(implicit ctx: TradingSession) = {
+    md.data match {
+      case trade: Trade =>
+        recordTrade((md.source, md.topic), md.micros, trade.price, Some(trade.size))
+      case priced: Priced =>
+        recordTrade((md.source, md.topic), md.micros, priced.price)
+      case _ =>
+    }
+    recordTimeSeries("equity", md.micros, ctx.getPortfolio.equity().amount)
+    super.aroundHandleData(md)
   }
+
+  def toNum(number: Number): Num = new BaseTimeSeries().numOf(number)
+
+  def valueOf[T](indicator: AbstractIndicator[T]): T =
+    indicator.getValue(indicator.getTimeSeries.getEndIndex)
+
+  def closePrices(market: Market): ClosePriceIndicator = {
+    val key = priceKey(market)
+    val indicator = closePriceIndicators.getOrElse(key,
+      new ClosePriceIndicator(_series(key)))
+    closePriceIndicators += (key -> indicator)
+    indicator
+  }
+
+  def index(market: Market): Int = prices(market).getEndIndex
 }

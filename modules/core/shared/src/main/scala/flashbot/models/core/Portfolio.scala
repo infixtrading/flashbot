@@ -1,21 +1,24 @@
 package flashbot.models.core
 
 import flashbot.core.Instrument.Derivative
-import flashbot.core.{InstrumentIndex, PriceIndex}
+import flashbot.core.{ExchangeParams, InstrumentIndex, PriceIndex}
 import flashbot.models.core.FixedSize._
+import flashbot.models.core.Order.{Buy, Fill, Liquidity, Maker, Sell, Taker}
+import flashbot.util.Margin
 import io.circe.generic.semiauto._
 import io.circe.{Decoder, Encoder}
 
 import scala.collection.immutable.Map
 import scala.language.postfixOps
-
 import scala.util.parsing.combinator.RegexParsers
 
 /**
   * Keeps track of asset balances and positions across all exchanges. Calculates equity and PnL.
   */
 case class Portfolio(assets: Map[Account, Double],
-                     positions: Map[Market, Position]) {
+                     positions: Map[Market, Position],
+                     orders: Map[Market, OrderBook]) {
+  import FixedSize.numericDouble._
 
   def balance(account: Account): Balance = Balance(account, assets.getOrElse(account, 0.0))
   def withAssetBalance(account: Account, balance: Double): Portfolio =
@@ -25,15 +28,140 @@ case class Portfolio(assets: Map[Account, Double],
 
   def balances: Set[Balance] = assets map { case (acc, qty) => Balance(acc, qty) } toSet
 
+  /**
+    * The initial margin/cost of posting an order PLUS fees. This returns the size of
+    * a specific asset that should would be placed on hold or used towards the order
+    * margin by the exchange.
+    */
+  def orderCost(market: Market, size: Double, price: Double, liquidity: Liquidity)
+               (implicit instruments: InstrumentIndex,
+                exchangesParams: Map[String, ExchangeParams]): FixedSize[Double] = {
+    assert(size != 0, "Order size cannot be 0")
+    val fee = liquidity match {
+      case Maker => exchangesParams(market.exchange).makerFee
+      case Taker => exchangesParams(market.exchange).takerFee
+    }
+    instruments(market) match {
+      case _: Derivative =>
+        // For derivatives, the order cost is the difference between the order margin
+        // with the order and without.
+        (withOrder(None, market, size, price).orderMargin(market) -
+          orderMargin(market)) * (1 + fee)
+
+      case _ =>
+        // For non-derivatives, there is no margin.
+        // Order cost for buys = size * price * (1 + fee).
+        if (size > 0)
+          (size * price * (1 + fee)).of(market.settlementAccount)
+
+        // And order cost for asks is just the size of the order:
+        // In order to sell something, you must have it first.
+        // That is your only cost.
+        else
+          size.abs.of(market.securityAccount)
+    }
+  }
+
+  /**
+    * The minimum equity that must be retained to keep all orders open on the given
+    * market. If the current position is short
+    */
+  def orderMargin(market: Market)
+                 (implicit instruments: InstrumentIndex): FixedSize[Double] = {
+    instruments(market) match {
+      case derivative: Derivative =>
+        val position = positions(market)
+        Margin.calcOrderMargin(position.size,
+          position.leverage, orders(market), derivative)
+    }
+  }
+
+  /**
+    * Entry value of positions / leverage + unrealized pnl.
+    */
+  def positionMargin(market: Market)
+                    (implicit instruments: InstrumentIndex,
+                     prices: PriceIndex): FixedSize[Double] = {
+    val instrument = instruments(market).asInstanceOf[Derivative]
+    val position = positions(market)
+    position.initialMargin(instrument).of(market.settlementAccount) + positionPNL(market)
+  }
+
+  /**
+    * Margin Balance = Wallet Balance + Unrealised PNL
+    * Available Balance = Margin Balance - Order Margin - Position Margin
+    */
+  def availableBalance(account: Account)
+                      (implicit instruments: InstrumentIndex,
+                       prices: PriceIndex): FixedSize[Double] = {
+    val walletBalance = balance(account).size
+    val markets = positions.filter(_._1.settlementAccount == account).keys
+    val pnl = markets.map(positionPNL(_)).foldLeft(0d.of(account))(_ + _)
+    val oMargin = markets.map(orderMargin(_)).foldLeft(0d.of(account))(_ + _)
+    val pMargin = markets.map(positionMargin(_)).foldLeft(0d.of(account))(_ + _)
+    walletBalance + pnl - oMargin - pMargin
+  }
+
+  def withOrder(id: Option[String], market: Market,
+                size: Double, price: Double): Portfolio = {
+    val book = orders.getOrElse(market, OrderBook())
+    val side = if (size > 0) Order.Buy else Order.Sell
+    val order = new Order(id.getOrElse(book.genID), side, size.abs, Some(price))
+    copy(orders = orders + (market -> book.open(order)))
+  }
+
+  def withoutOrder(market: Market, id: String): Portfolio = {
+    val order = orders.get(market).flatMap(_.orders.get(id))
+    if (order.isEmpty) this
+    else copy(orders = orders + (market -> orders(market).done(id)))
+  }
+
+  def fillOrder(market: Market, fill: Fill)
+               (implicit instruments: InstrumentIndex,
+                exchangeParams: Map[String, ExchangeParams]): Portfolio = {
+    val size = if (fill.side == Buy) fill.size else -fill.size
+
+    // Derivatives will update realized pnl on fills.
+    if (positions.isDefinedAt(market)) {
+
+      // If this fill is opening a position, update the settlement account with the
+      // realized pnl from the fee.
+      val instrument = instruments(market).asInstanceOf[Derivative]
+      val position = positions(market)
+      val (newPosition, realizedPnl) =
+        position.setSize(position.size + size.toLong, instrument, fill.price)
+      val feeCost = instrument.value(fill.price) * fill.size * fill.fee
+      updateAssetBalance(market.settlementAccount, _ + (realizedPnl - feeCost.amount))
+        .copy(positions = positions + (market -> newPosition))
+
+    } else {
+      val cost = orderCost(market, size, fill.price, fill.liquidity)
+      // Other instruments update balances and account for fees.
+      fill.side match {
+        case Buy =>
+          updateAssetBalance(market.settlementAccount, _ - cost.amount)
+            .updateAssetBalance(market.securityAccount, _ + fill.size)
+        case Sell =>
+          updateAssetBalance(market.settlementAccount,
+              _ + fill.size * fill.price * (1 - fill.fee))
+            .updateAssetBalance(market.securityAccount, _ - cost.amount)
+      }
+    }
+  }
+
   def positionPNL(market: Market)
                  (implicit prices: PriceIndex, instruments: InstrumentIndex): FixedSize[Double] = {
     val position = positions(market)
     instruments(market) match {
       case instrument: Derivative =>
-        val pnlVal = instrument.pnl(position.size, position.entryPrice.get, prices(market))
-        FixedSize(pnlVal, instrument.settledIn)
+        val entryPosition = position.entryPrice.get
+        val price = prices(market)
+        val pnlVal = instrument.pnl(position.size, entryPosition, price)
+        FixedSize(pnlVal, instrument.settledIn.get)
     }
   }
+
+  def leverage(market: Market): Double = positions.get(market).map(_.leverage).getOrElse(1)
 
   /**
     * Positions are uninitialized because price data was unknown at the time that they were
@@ -46,7 +174,7 @@ case class Portfolio(assets: Map[Account, Double],
       case (memo, (market, position)) =>
         prices.get(market).map(price => instruments(market) match {
           case instrument: Derivative =>
-            val account = Account(market.exchange, instrument.settledIn)
+            val account = Account(market.exchange, instrument.settledIn.get)
             val newPosition = position.copy(entryPrice = Some (price) )
             val temp = memo.setPosition (market, newPosition)
               // If there is no balance for the asset which this position is settled in, then infer
@@ -70,33 +198,31 @@ case class Portfolio(assets: Map[Account, Double],
     assetsEquity + PNLs
   }
 
-  def position(market: Market): Option[Position] = positions.get(market)
-
-  def setPositionSize(market: Market, size: Long)
-                     (implicit instruments: InstrumentIndex,
-                      prices: PriceIndex): Portfolio = {
-    instruments(market) match {
-      case instrument: Derivative =>
-        val account = Account(market.exchange, instrument.symbol)
-        val (newPosition, pnl) = positions(market).setSize(size, instrument, prices(market))
-        setPosition(market, newPosition)
-          .withAssetBalance(account, assets(account) + pnl)
-    }
-  }
-
-  def closePosition(market: Market)
-                   (implicit instruments: InstrumentIndex,
-                    prices: PriceIndex): Portfolio =
-    setPositionSize(market, 0)
-
-  def closePositions(markets: Seq[Market])
-                    (implicit instruments: InstrumentIndex,
-                     prices: PriceIndex): Portfolio =
-    markets.foldLeft(this)(_.closePosition(_))
-
-  def closePositions(implicit instruments: InstrumentIndex,
-                     prices: PriceIndex): Portfolio =
-    closePositions(positions.keys.toSeq)
+//  def setPositionSize(market: Market, size: Long)
+//                     (implicit instruments: InstrumentIndex,
+//                      prices: PriceIndex): Portfolio = {
+//    instruments(market) match {
+//      case instrument: Derivative =>
+//        val account = Account(market.exchange, instrument.symbol)
+//        val (newPosition, pnl) = positions(market).setSize(size, instrument, prices(market))
+//        setPosition(market, newPosition)
+//          .withAssetBalance(account, balance(account).qty + pnl)
+//    }
+//  }
+//
+//  def closePosition(market: Market)
+//                   (implicit instruments: InstrumentIndex,
+//                    prices: PriceIndex): Portfolio =
+//    setPositionSize(market, 0)
+//
+//  def closePositions(markets: Seq[Market])
+//                    (implicit instruments: InstrumentIndex,
+//                     prices: PriceIndex): Portfolio =
+//    markets.foldLeft(this)(_.closePosition(_))
+//
+//  def closePositions(implicit instruments: InstrumentIndex,
+//                     prices: PriceIndex): Portfolio =
+//    closePositions(positions.keys.toSeq)
 
   // This is unsafe because it lets you set a new position without updating account
   // balances with the realized PNL that occurs from changing a position size.
@@ -155,9 +281,9 @@ object Portfolio extends RegexParsers {
   implicit val portfolioEn: Encoder[Portfolio] = deriveEncoder
   implicit val portfolioDe: Decoder[Portfolio] = deriveDecoder
 
-  def empty: Portfolio = Portfolio(Map.empty, Map.empty)
+  def empty: Portfolio = Portfolio(Map.empty, Map.empty, Map.empty)
 
-  val key = raw"(.+)/(.+)".r
+  val key = raw"(.+)\.(.+)".r
   val position = raw"(-?[0-9\.]+)(x[0-9\.]+)?(@[0-9\.]+)?".r
 
   object Optional {
@@ -172,7 +298,7 @@ object Portfolio extends RegexParsers {
     * bitmex/xbtusd=-10000x2,bitmex/xbtusd=-10000
     */
   def parse(expr: String)(implicit instruments: InstrumentIndex): Portfolio = {
-    expr.split(",").foldLeft(empty) {
+    expr.split(",").map(_.trim).filterNot(_.isEmpty).foldLeft(empty) {
       case (portfolio, item) => item.split("=").toList match {
         case k@key(exchange, symbol) :: pos :: Nil =>
           (pos, instruments.get(exchange, symbol).isDefined) match {

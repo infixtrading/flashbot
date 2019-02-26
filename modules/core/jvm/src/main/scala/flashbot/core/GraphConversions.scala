@@ -85,7 +85,7 @@ object GraphConversions extends Conversions {
     instruments.byExchange.foreach { case (ex, insts) =>
       insts.foreach { inst =>
         // Add settlement prices. E.g. (bitmex/xbtusd) <-> (bitmex/xbt)
-        val settlementAccount = Account(ex, inst.settledIn)
+        val settlementAccount = Account(ex, inst.settledIn.get)
         val securityAccount = Account(ex, inst.security.get)
         val market = Market(ex, inst.symbol)
         if (prices.get(market).isDefined) {

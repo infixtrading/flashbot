@@ -112,8 +112,8 @@ object GrafanaServer {
                               portfolio: Option[String])
 
   def paramsToJson(params: Map[String, ParamValue]): Json = params.foldLeft(JsonObject()) {
-    case (obj, (key, ParamValue(value, jsonType, required))) =>
-      def foldParam[T: Decoder: Encoder](filter: T => Boolean = (x: T) => true) =
+    case (obj, (key, ParamValue(rawValue, jsonType, required))) =>
+      def foldParam[T: Decoder: Encoder](value: String, filter: T => Boolean = (x: T) => true) =
         decode[T](value.trim).toOption.filter(filter) match {
           case Some(v) => obj.add(key, v.asJson)
           case None if !required => obj
@@ -122,17 +122,17 @@ object GrafanaServer {
 
       jsonType match {
         case "integer" =>
-          foldParam[Long]()
+          foldParam[Long](rawValue)
         case "number" =>
-          foldParam[Double]()
+          foldParam[Double](rawValue)
         case "object" =>
           throw new RuntimeException("Object param types not yet supported by GrafanaServer.")
         case "array" =>
           throw new RuntimeException("Array param types not yet supported by GrafanaServer.")
         case "boolean" =>
-          foldParam[Boolean]()
+          foldParam[Boolean](rawValue)
         case "string" =>
-          foldParam[String](_.nonEmpty)
+          foldParam[String]("\"" + rawValue + "\"")
       }
   }.asJson
 
@@ -195,8 +195,10 @@ object GrafanaServer {
                   val barSize = parseDuration(barSizeOpt.get)
                   val cacheKey = BacktestCacheKey(strategy, paramsToJson(paramsOpt.get),
                     portfolioOpt.get, barSize, body.range)
-                  getBacktestReport(client, cacheKey).map(report =>
-                    Seq(buildSeries(key, key, report.timeSeries)))
+                  getBacktestReport(client, cacheKey).map(report => {
+                    println("BACKTEST REPORT", report.timeSeries)
+                    Seq(buildSeries(key, key, report.timeSeries))
+                  })
 
                 case ("table", _, Some(strategy)) =>
                   val barSize = parseDuration(barSizeOpt.get)

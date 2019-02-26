@@ -1,9 +1,12 @@
 package flashbot.server
 
-import io.circe.{Json, JsonObject}
+import flashbot.core.StrategyInfo
+import flashbot.util.json._
+import io.circe._
 import io.circe.generic.JsonCodec
 import io.circe.parser._
 import io.circe.syntax._
+import io.circe.optics.JsonPath._
 import json.schema.parser.SimpleType.SimpleType
 import json.schema.parser._
 
@@ -55,12 +58,35 @@ object GrafanaDashboard {
 
     def mapPanels(fn: Panel => Panel): Dashboard = copy(panels = panels.map(_.map(fn)))
 
-    def withJsonSchemaTemplates(schemaStr: String): Dashboard = {
-      val schema = JsonSchemaParser.parse(schemaStr).toOption.get
+    val quoteWrap = "\"(.*)\"".r
+    private def trimQuotes(str: String) = str match {
+      case quoteWrap(inner) => inner
+      case other => other
+    }
+
+    def withJsonSchemaTemplates(schemaJson: Json): Dashboard = {
+      val schema = JsonSchemaParser.parse(schemaJson.noNulls).toOption.get
+      println("SCHEMA", schemaJson.spaces2)
       schema.obj.get.properties.value.foldLeft(this) {
         case (dash, (key, prop)) =>
-          dash.withTemplate(mkTemplate(key, label = prop.schema.title)
-            .withOptions(prop.schema.enums.map(_.toString).toSeq:_*))
+          val default = StrategyInfo.default(key).json.getOption(schemaJson)
+            .map(_.noNulls).map(trimQuotes)
+          val defaultSeq = default.map(Seq(_)).getOrElse(Seq.empty)
+          val jsonType: SimpleType = prop.schema.types.head
+          val enums = prop.schema.enums.map(_.nospaces).map(trimQuotes).toSeq
+          val (templateType, options) =
+            if (enums.nonEmpty) ("custom", enums)
+            else jsonType match {
+              case SimpleType.integer => ("custom", (defaultSeq ++ (0 to 25).map(_.toString)).distinct)
+              case SimpleType.boolean => ("custom", Seq("true", "false"))
+              case SimpleType.number => ("textbox", Seq(default.getOrElse("0.0")))
+              case _ => ("textbox", Seq(default.getOrElse("N/A")))
+            }
+          val template = mkTemplate(key, templateType, label = prop.schema.title)
+            .withOptions(options:_*)
+            .withSelected(default.getOrElse(options.head))
+
+          dash.withTemplate(template)
             .mapPanels(_.mapTargets(_.withParam(
               key, prop.schema.types.head.toString, prop.required)))
         }
@@ -91,7 +117,8 @@ object GrafanaDashboard {
                       auto_count: Option[Boolean], auto_min: Option[String]) {
     // Add the option and update the query
     def withOption(option: VariableOption): Template =
-      copy(options = options :+ option, query = options.map(_.value).mkString(","))
+      copy(options = options :+ option,
+        query = (options :+ option).map(_.value).mkString(","))
 
     def withOptions(values: String*): Template =
       values.map(mkOption(_)).foldLeft(this)(_.withOption(_))
@@ -103,22 +130,28 @@ object GrafanaDashboard {
       valueOpt.map(withSelected).getOrElse(this)
 
     def withSelected(value: String): Template = {
-      // Find the option with the given value. It must exist.
-      val idx = options.indexWhere(_.value == value)
-      val opt = options(idx)
-
-      // Set that option to selected = true, and all others to false
-      val newOptions = options.map(_.copy(selected = Some(false)))
-        .updated(idx, opt.copy(selected = Some(true)))
+      // Find the option with the given value.
+      val (newOpts, textOpt) = options.indexWhere(_.value == value) match {
+        case -1 =>
+          (options, None)
+        case idx =>
+          val opt = options(idx)
+          // Set that option to selected = true, and all others to false
+          val newOptions = options.map(_.copy(selected = Some(false)))
+            .updated(idx, opt.copy(selected = Some(true)))
+          (newOptions, Some(opt.text))
+      }
 
       // Also set it as the "current".
-      copy(options = newOptions, current = Some(mkCurrent(value, Some(opt.text))))
+      copy(options = newOpts, current = Some(mkCurrent(value, textOpt)))
     }
 
     def fallbackSelected(value: Option[String]): Template =
       withSelected(selected.orElse(value))
 
     def selected: Option[String] = current.map(_.value)
+
+    def withType(ty: String): Template = copy(`type` = ty)
   }
 
   @JsonCodec
@@ -144,12 +177,16 @@ object GrafanaDashboard {
   @JsonCodec
   case class SeriesOverride(alias: String, yaxis: Option[Int] = None,
                             lines: Option[Boolean] = None, bars: Option[Boolean] = None,
-                            hideTooltip: Option[Boolean] = None) {
+                            hideTooltip: Option[Boolean] = None, linewidth: Option[Int] = None,
+                            fill: Option[Int] = None, color: Option[String] = None) {
     def left: SeriesOverride = copy(yaxis = Some(1))
     def right: SeriesOverride = copy(yaxis = Some(2))
     def asLines: SeriesOverride = copy(lines = Some(true), bars = Some(false))
     def asBars: SeriesOverride = copy(lines = Some(false), bars = Some(true))
     def noTooltip: SeriesOverride = copy(hideTooltip = Some(true))
+    def width(w: Int): SeriesOverride = copy(linewidth = Some(w))
+    def fill(f: Boolean): SeriesOverride = copy(fill = Some(if (f) 1 else 0))
+    def color(c: String): SeriesOverride = copy(color = Some(c))
   }
 
   @JsonCodec
@@ -172,11 +209,13 @@ object GrafanaDashboard {
                    transform: Option[String] = None, seriesOverrides: Option[Seq[SeriesOverride]] = None,
                    yaxes: Option[Seq[Axis]] = None, transparent: Option[Boolean] = None,
                    legend: Option[Legend] = None, collapsed: Option[Boolean] = None,
-                   panels: Option[Seq[Panel]] = None) {
+                   panels: Option[Seq[Panel]] = None, fill: Option[Int] = None) {
     def withTarget(target: Target): Panel = copy(targets = Some(targets.getOrElse(Seq.empty) :+ target))
-    def withSeriesOverride(series: SeriesOverride) =
-      copy(seriesOverrides = Some(seriesOverrides.getOrElse(Seq.empty)
-        .filterNot(_.alias == series.alias) :+ series))
+    def withSeriesOverride(alias: String, updateFn: SeriesOverride => SeriesOverride) = {
+      val overrides = seriesOverrides.getOrElse(Seq.empty)
+      val base = overrides.find(_.alias == alias).getOrElse(SeriesOverride(alias))
+      copy(seriesOverrides = Some(overrides.filterNot(_.alias == alias) :+ updateFn(base)))
+    }
     def withYAxis(axis: Axis): Panel =
       copy(yaxes = Some(yaxes.getOrElse(Seq.empty) :+ axis))
     def setTransparent(value: Boolean): Panel = copy(transparent = Some(value))
@@ -195,21 +234,21 @@ object GrafanaDashboard {
   @JsonCodec
   case class Target(data: String, hide: Boolean, refId: String, target: String, `type`: String,
                     expr: Option[String], format: Option[String], intervalFactor: Option[Int]) {
-    def withField(field: String): Target = withField(field, ("$" + field).asJson)
+    def withField(field: String): Target = withField(field, ("${" + field + ":json}").asJson)
 
     def withField(field: String, value: Json): Target = copy(target =
       decode[JsonObject](target).toOption.getOrElse(JsonObject())
-        .add(field, value).asJson.noSpaces)
+        .add(field, value).asJson.noNulls)
 
     def withParam(name: String, jsonType: String, required: Boolean) = {
       val obj = decode[JsonObject](target).toOption.getOrElse(JsonObject())
       val params = obj("params").flatMap(_.asObject).getOrElse(JsonObject())
       val newParams = params.add(name, JsonObject(
-        "value" -> ("$" + name).asJson,
+        "value" -> ("${" + name + ":json}").asJson,
         "jsonType" -> jsonType.asJson,
         "required" -> required.asJson
       ).asJson)
-      copy(target = obj.add("params", newParams.asJson).asJson.noSpaces)
+      copy(target = obj.add("params", newParams.asJson).asJson.noNulls)
     }
   }
 
@@ -285,18 +324,18 @@ object GrafanaDashboard {
       .withTarget(mkGraphTarget("price")
         .withField("market")
         .withField("bar_size"))
-    .withSeriesOverride(SeriesOverride("price").right)
-    .withSeriesOverride(SeriesOverride("volume").left.asBars.noTooltip)
+    .withSeriesOverride("price", _.right)
+    .withSeriesOverride("volume", _.left.asBars.noTooltip)
     .withYAxis(Axis("locale", show = false, max = Some("4"), min = Some("0")))
     .withYAxis(Axis("locale"))
     .setTransparent(true)
     .hideLegend
 
   def mkTableTarget(key: String): Target = Target(
-    "", hide = false, "A", Json.obj("key" -> key.asJson, "type" -> "table".asJson).noSpaces,
+    "", hide = false, "A", Json.obj("key" -> key.asJson, "type" -> "table".asJson).noNulls,
     "table", Some(""), Some("table"), Some(1))
 
   def mkGraphTarget(key: String): Target = Target(
-    "", hide = false, "A", Json.obj("key" -> key.asJson, "type" -> "time_series".asJson).noSpaces,
+    "", hide = false, "A", Json.obj("key" -> key.asJson, "type" -> "time_series".asJson).noNulls,
     "timeseries", None, None, None)
 }

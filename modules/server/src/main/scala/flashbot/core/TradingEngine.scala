@@ -602,7 +602,7 @@ class TradingEngine(engineId: String,
             // Otherwise, use the initial_assets and initial_positions from the bot config.
             val initialSessionPortfolio =
               state.bots.get(name).flatMap(_.sessions.lastOption.map(_.portfolio))
-                .getOrElse(Portfolio(initialAssets, initialPositions))
+                .getOrElse(Portfolio(initialAssets, initialPositions, Map.empty))
             new PortfolioRef.Isolated(initialSessionPortfolio.toString)
 
           case Live =>
@@ -691,7 +691,7 @@ class TradingEngine(engineId: String,
       portfolio <- exchange.fetchPortfolio
       assets = portfolio._1.map(kv => Account(name, kv._1) -> kv._2)
       positions = portfolio._2.map(kv => Market(name, kv._1) -> kv._2)
-    } yield Portfolio(assets, positions)
+    } yield Portfolio(assets, positions, Map.empty)
 
   private def paramsForExchange(name: String): Option[Json] =
     state.exchanges.get(name).map(_.params).orElse(exchangeConfigs(name).params)

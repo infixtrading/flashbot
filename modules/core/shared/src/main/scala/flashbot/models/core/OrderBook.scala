@@ -9,6 +9,7 @@ import io.circe.syntax._
 import io.circe.{Decoder, Encoder, KeyDecoder, KeyEncoder}
 
 import scala.collection.immutable.{Queue, TreeMap}
+import scala.util.Random
 
 @JsonCodec
 case class OrderBook(orders: Map[String, Order] = Map.empty,
@@ -125,6 +126,15 @@ case class OrderBook(orders: Map[String, Order] = Map.empty,
     * Infers the tick size of the order book by finding the minimum distance between prices.
     */
   def tickSize: Double = ???
+
+  val random = new Random()
+  def genID: String = {
+    var id = random.nextLong().toString
+    while (!orders.isDefinedAt(id)) {
+      id = random.nextLong().toString
+    }
+    id
+  }
 }
 
 object OrderBook {

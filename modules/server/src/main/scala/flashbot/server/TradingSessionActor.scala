@@ -4,37 +4,29 @@ import java.time.Instant
 import java.util.UUID
 
 import akka.NotUsed
-import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem, PoisonPill}
+import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem}
 import akka.stream.scaladsl.{Keep, Sink, Source}
 import akka.stream._
-import akka.pattern.ask
-import akka.util.Timeout
 import breeze.stats.distributions.Gaussian
-import flashbot.core.FlashbotConfig.ExchangeConfig
 import io.circe._
 import io.circe.syntax._
-import flashbot.core.Instrument.CurrencyPair
 import flashbot.util.stream._
 import flashbot.util._
 import flashbot.util.time.currentTimeMicros
 import flashbot.core.{Strategy, _}
-import flashbot.server.TradingSessionActor.{SessionPing, SessionPong, StartSession, StopSession}
 import flashbot.models.api.{DataOverride, DataSelection, LogMessage, OrderTarget}
 import flashbot.models.core.Action._
 import flashbot.models.core._
 import flashbot.core.Report.ReportError
 import flashbot.core.ReportEvent._
-import flashbot.core.Report._
 import flashbot.core.TradingSession._
 
-import scala.collection.immutable.Queue
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 import scala.concurrent.{ExecutionContext, Future, SyncVar}
-import scala.concurrent.duration._
 import scala.util.{Failure, Success, Try}
-
 import de.sciss.fingertree._
+import flashbot.models.core.Order.Buy
 
 class TradingSessionActor(loader: EngineLoader,
                           strategyClassNames: Map[String, String],
@@ -194,15 +186,17 @@ class TradingSessionActor(loader: EngineLoader,
       /**
         * The trading session that we fold market data over.
         */
-      class Session(val instruments: InstrumentIndex = instruments,
+      class Session(protected[server] val instruments: InstrumentIndex = instruments,
                     protected[server] var portfolio: Portfolio = initialPortfolio,
                     protected[server] var prices: PriceIndex = PriceIndex.empty,
                     protected[server] var orderManagers: Map[String, TargetManager] =
-                        instruments.byExchange.mapValues(_ => TargetManager(instruments)),
+                        exchanges.mapValues(_ => TargetManager(instruments)),
                     // Create action queue for every exchange
                     protected[server] var actionQueues: Map[String, ActionQueue] =
-                        instruments.byExchange.mapValues(_ => ActionQueue()),
-                    protected[server] var emittedReportEvents: Seq[ReportEvent] = Seq.empty)
+                        exchanges.mapValues(_ => ActionQueue()),
+                    protected[server] var emittedReportEvents: Seq[ReportEvent] = Seq.empty,
+                    protected[server] val exchangeParams: Map[String, ExchangeParams] =
+                        exchanges.mapValues(_.params))
         extends TradingSession {
 
         override val id: String = sessionId
@@ -220,10 +214,10 @@ class TradingSessionActor(loader: EngineLoader,
         }
 
         override def getPortfolio = portfolio
-
         override def getActionQueues = actionQueues
-
         override def getPrices = prices
+        override def getInstruments = instruments
+        override def getExchangeParams = exchangeParams
       }
 
       def processDataOrTick(session: Session,
@@ -255,7 +249,7 @@ class TradingSessionActor(loader: EngineLoader,
         }
 
         implicit val ctx: TradingSession = session
-        implicit val idx: InstrumentIndex = ctx.instruments
+        implicit val idx: InstrumentIndex = ctx.getInstruments
 
         // Split up `dataOrTick` into two Options
         val (tick, data) = dataOrTick match {
@@ -275,7 +269,7 @@ class TradingSessionActor(loader: EngineLoader,
         data.map(_.data) match {
           case Some(pd: Priced) =>
             session.prices.setPrice(Market(data.get.source, data.get.topic), pd.price)
-            session.portfolio = session.portfolio.initializePositions(session.prices, session.instruments)
+            session.portfolio = session.portfolio.initializePositions(session.prices, session.getInstruments)
           case _ =>
         }
 
@@ -312,9 +306,12 @@ class TradingSessionActor(loader: EngineLoader,
           /**
             * Limit order is opened on the exchange. Close the action that submitted it.
             */
-          case (memo @ (os, as), o @ OrderOpen(id, _, _, _, _)) =>
+          case (memo @ (os, as), o @ OrderOpen(id, product, price, size, side)) =>
             val targetOpt = os(ex.get).ids.actualToTarget.get(id)
+            val market = Market(ex.get, product)
             strategy.handleEvent(OrderTargetEvent(targetOpt, o))
+            session.portfolio = session.portfolio
+              .withOrder(Some(id), market, if (side == Buy) size else -size, price)
             if (targetOpt.isDefined)
               (os.updated(ex.get, os(ex.get).openOrder(o)),
                 as.updated(ex.get, closeActionForOrderId(as(ex.get), os(ex.get).ids, id)))
@@ -325,9 +322,11 @@ class TradingSessionActor(loader: EngineLoader,
             * Disassociate the ids to keep memory bounded in the ids manager. Also close
             * the action for the order id.
             */
-          case (memo @ (os, as), o @ OrderDone(id, _, _, _, _, _)) =>
+          case (memo @ (os, as), o @ OrderDone(id, product, _, _, _, _)) =>
             val targetOpt = os(ex.get).ids.actualToTarget.get(id)
+            val market = Market(ex.get, product)
             strategy.handleEvent(OrderTargetEvent(targetOpt, o))
+            session.portfolio = session.portfolio.withoutOrder(market, id)
             if (targetOpt.isDefined)
               (os.updated(ex.get, os(ex.get).orderComplete(id)),
                 as.updated(ex.get, closeActionForOrderId(as(ex.get), os(ex.get).ids, id)))
@@ -346,9 +345,11 @@ class TradingSessionActor(loader: EngineLoader,
             session.send(CollectionEvent("fill_size", fill.size.asJson))
             session.send(CollectionEvent("gauss", (gaussian.draw() * 10 + 5).asJson))
 
-            // Execute the fill on the portfolio
             val instrument = instruments(ex.get, fill.instrument)
-            val newPortfolio = instrument.settle(ex.get, fill, portfolio)
+            val market = Market(ex.get, instrument.symbol)
+
+            // Execute the fill on the portfolio
+            val newPortfolio = portfolio.fillOrder(market, fill)(instruments, session.exchangeParams)
 
             // Emit a trade event when we see a fill
             session.send(TradeEvent(
@@ -357,12 +358,11 @@ class TradingSessionActor(loader: EngineLoader,
 
             // Emit portfolio info:
             // The settlement account must be an asset
-            val settlementAccount = acc(instrument.settledIn)
+            val settlementAccount = acc(instrument.settledIn.get)
             session.send(BalanceEvent(settlementAccount,
               newPortfolio.balance(settlementAccount).qty, fill.micros))
 
             // The security account may be a position or an asset
-            val market = Market(ex.get, instrument.symbol)
             val position = portfolio.positions.get(market)
             if (position.isDefined) {
               session.send(PositionEvent(market, position.get, fill.micros))
@@ -371,11 +371,6 @@ class TradingSessionActor(loader: EngineLoader,
               session.send(BalanceEvent(assetAccount,
                 portfolio.balance(assetAccount).qty, fill.micros))
             }
-
-
-            // And calculate our equity.
-//            val equity = newPortfolio.equity()(session.prices, instruments).qty
-//            session.send(BalanceEvent(Account("all", "equity"), equity, fill.micros))
 
             // Return updated portfolio
             newPortfolio
@@ -428,7 +423,7 @@ class TradingSessionActor(loader: EngineLoader,
         session.orderManagers.foreach {
           case (exName, om) =>
             om.enqueueActions(exchanges(exName), session.actionQueues(exName))(
-              session.prices, session.instruments) match {
+              session.prices, session.getInstruments) match {
                 case (newOm, newActions) =>
                   session.orderManagers += (exName -> newOm)
                   session.actionQueues += (exName -> newActions)

@@ -63,11 +63,11 @@ class MarketMakerSpec extends FlatSpec with Matchers {
 
     val params = MarketMakerParams("coinbase/btc_usd", "candles_1m", "sma", 4, 10, .5, .2)
     val portfolio = Portfolio.empty
-      .withAssetBalance("coinbase/btc", 5.0)
-      .withAssetBalance("coinbase/usd", 2000)
+      .withAssetBalance("coinbase.btc", 5.0)
+      .withAssetBalance("coinbase.usd", 2000)
     val data = Seq(DataOverride("coinbase/btc_usd/candles_1m", candles))
 
-    val report = client.backtest("market_maker", params.asJson, portfolio, 1 minute, timeRange, data)
+    val report = client.backtest("market_maker", params.asJson, portfolio.toString, 1 minute, timeRange, data)
     val prices = report.timeSeries("coinbase.btc_usd").map(_.close)
     val fairPrices = report.timeSeries("fair_price_sma").map(_.close)
     val equity = report.timeSeries("equity").map(_.close)
@@ -109,7 +109,7 @@ class MarketMakerSpec extends FlatSpec with Matchers {
       .withAssetBalance("coinbase/usd", 2000)
     val data = Seq(DataOverride("coinbase/btc_usd/candles_1h", candles))
 
-    val report = client.backtest("market_maker", params.asJson, portfolio, 1 hour, timeRange, data)
+    val report = client.backtest("market_maker", params.asJson, portfolio.toString, 1 hour, timeRange, data)
     val prices = report.timeSeries("coinbase.btc_usd").map(_.close)
     val fairPrices = report.timeSeries("fair_price_sma").map(_.close)
     val equity = report.timeSeries("equity").map(_.close)

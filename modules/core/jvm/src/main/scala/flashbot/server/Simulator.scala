@@ -154,6 +154,20 @@ class Simulator(base: Exchange, latencyMicros: Long = 0) extends Exchange {
       case _ =>
     }
 
+    def processMatchedOrders(topic: String, micros: Long, orders: Iterable[Order]): Unit = {
+      orders.foreach { order =>
+        // Remove order from private book
+        myOrders = myOrders + (topic -> myOrders(topic).done(order.id))
+
+        // Emit OrderDone event
+        events :+= OrderDone(order.id, topic, order.side, Filled, order.price, Some(0))
+
+        // Emit the fill
+        fills :+= Fill(order.id, Some("t_" + order.id), makerFee, topic, order.price.get,
+          order.amount, micros, Maker, order.side)
+      }
+    }
+
     // Generate fills
     data.map(_.data) match {
       /**
@@ -198,6 +212,18 @@ class Simulator(base: Exchange, latencyMicros: Long = 0) extends Exchange {
           }
         }
 
+      case Some(trade: Trade) if prices.isDefinedAt(data.get.topic) =>
+        val topic = data.get.topic
+        val price = prices(topic)
+        if (myOrders.isDefinedAt(topic)) {
+          val matchedAsks: Iterable[Order] =
+            myOrders(topic).asks.index.takeWhile(_._1 < price).flatMap(_._2)
+          val matchedBids: Iterable[Order] =
+            myOrders(topic).bids.index.takeWhile(_._1 > price).flatMap(_._2)
+
+          processMatchedOrders(topic, data.get.micros, matchedAsks ++ matchedBids)
+        }
+
       /**
         * When candle data comes in, we check if the high has crossed over any of our ask
         * orders or if the low has crossed any of our bids. If so, fill those orders.
@@ -210,17 +236,7 @@ class Simulator(base: Exchange, latencyMicros: Long = 0) extends Exchange {
           val matchedBids: Iterable[Order] =
             myOrders(topic).bids.index.takeWhile(_._1 > low).flatMap(_._2)
 
-          (matchedAsks ++ matchedBids).foreach { order =>
-            // Remove order from private book
-            myOrders = myOrders + (topic -> myOrders(topic).done(order.id))
-
-            // Emit OrderDone event
-            events :+= OrderDone(order.id, topic, order.side, Filled, order.price, Some(0))
-
-            // Emit the fill
-            fills :+= Fill(order.id, Some("t_" + order.id), makerFee, topic, order.price.get,
-              order.amount, micros, Maker, order.side)
-          }
+          processMatchedOrders(topic, micros, matchedAsks ++ matchedBids)
         }
 
       case _ =>

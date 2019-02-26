@@ -51,6 +51,7 @@ class TestBackfillDataSourceA extends DataSource {
                               (implicit ctx: ActorContext, mat: ActorMaterializer) = {
     println(s"Backfill request A for $topic/$datatype with cursor $cursor")
     val page = (historicalTradesA ++ liveTradesA.take(30))
+      .toVector
       .reverse
       .dropWhile(t => cursor.isDefined && t.id.toLong >= cursor.get.toLong)
       .take(batchSize)
@@ -77,7 +78,7 @@ class TestBackfillDataSourceB extends DataSource {
 
   override def backfillPage[T](topic: String, datatype: DataType[T], cursor: Option[String])
                               (implicit ctx: ActorContext, mat: ActorMaterializer)
-      : Future[(Seq[(Long, T)], Some[(String, FiniteDuration)])] = {
+      : Future[(Vector[(Long, T)], Some[(String, FiniteDuration)])] = {
 
     println(s"Backfill request B for $topic/$datatype with cursor $cursor")
 
@@ -88,6 +89,7 @@ class TestBackfillDataSourceB extends DataSource {
     }
 
     val page = (historicalTradesB ++ liveTradesB.take(30))
+      .toVector
       .reverse
       .dropWhile(t => cursor.isDefined && t.id.toLong >= cursor.get.toLong)
       .take(batchSize)
@@ -114,6 +116,7 @@ class TestBackfillDataSourceC extends DataSource {
                               (implicit ctx: ActorContext, mat: ActorMaterializer) = {
     println(s"Backfill request C for $topic/$datatype with cursor $cursor")
     val page = allTrades
+      .toVector
       .reverse
       .dropWhile(t => cursor.isDefined && t.id.toLong >= cursor.get.toLong)
       .take(batchSize)
@@ -122,6 +125,7 @@ class TestBackfillDataSourceC extends DataSource {
       Some((page.last.id, 20 millis)))
     )
   }
+
   override protected[flashbot] def backfillTickRate: Int = TestBackfillDataSource.backfillRate
 }
 

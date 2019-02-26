@@ -70,13 +70,11 @@ class BackfillService[T](bundleId: Long, path: DataPath[T], dataSource: DataSour
     throw new RuntimeException(s"Unable to create backfill row $bundleId")
   }
 
-  // Backfill ticks
-  system.scheduler.schedule(0 millis, (2 seconds) / tickRate)(Future {
-    blocking {
-      Thread.sleep(random.nextInt(5000 / tickRate))
-      self ! BackfillTick
-    }
-  })
+  def scheduleNextTick(): Unit = {
+    system.scheduler.scheduleOnce(((2 seconds) +
+      (random.nextInt(5000) millis)) / tickRate)(self ! BackfillTick)
+  }
+  self ! BackfillTick
 
   def claimedBackfill = Backfills.filter(_.claimedBy === instanceId)
 
@@ -123,13 +121,17 @@ class BackfillService[T](bundleId: Long, path: DataPath[T], dataSource: DataSour
           // We just claimed a path. Let's get to work!
           runPage(now) andThen {
             case Success(data) =>
-              log.debug("Backfilled data: {}", data)
+              log.debug("Backfilled data for {}", path)
+              scheduleNextTick()
             case Failure(err) =>
-              log.error(err, s"An error occurred during backfill of $path")
+              log.error(err, "Backfill error. Stopping backfill instance {} / {}", path, instanceId)
+              context.stop(self)
           }
-        case Success(false) => // Ignore
+        case Success(false) =>
+          scheduleNextTick()
         case Failure(err) =>
           log.error(err, "An error occurred during backfill scheduling for {}", path)
+          scheduleNextTick()
       }
   }
 
@@ -179,6 +181,8 @@ class BackfillService[T](bundleId: Long, path: DataPath[T], dataSource: DataSour
               .min.result
             seqIdBound = earliestSeqIdOpt.getOrElse(0L)
             seqIdStart: Long = seqIdBound - data.size
+
+            _ = log.debug(s"Backfill info: path={}, seq bound={}, bundle={}", path, seqIdBound, claim.bundle)
 
             // Insert the snapshot
             _ <- data.headOption.map {
@@ -255,11 +259,6 @@ class BackfillService[T](bundleId: Long, path: DataPath[T], dataSource: DataSour
           _ = log.debug(s"Ignoring unimplemented backfill for $path.")
         } yield x)
 
-    } yield Unit).transactionally) andThen {
-      case Success(_) =>
-      case Failure(err) =>
-        log.error(err, "Backfill tick error. Stopping backfill instance {}", instanceId)
-        context.stop(self)
-    }
+    } yield Unit).transactionally)
   }
 }

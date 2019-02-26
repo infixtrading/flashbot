@@ -21,4 +21,7 @@ package object json {
   def printJson(json: Json): String = printer.pretty(json)
   def printJson[T](t: T)(implicit en: Encoder[T]): String = printJson(t.asJson)
 
+  implicit class NoNullsPrinter(json: Json) {
+    def noNulls: String = printJson(json)
+  }
 }

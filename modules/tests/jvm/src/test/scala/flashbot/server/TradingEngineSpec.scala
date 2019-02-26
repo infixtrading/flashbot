@@ -211,8 +211,9 @@ class TradingEngineSpec extends WordSpecLike
         TimeRange.build(now, 1 hour),
         Portfolio(
           Map(Account("bitfinex/eth") -> 0, Account("bitfinex/usd") -> 800),
+          Map.empty,
           Map.empty
-        ),
+        ).toString,
         Some(1 minute),
         None
       )).map {

@@ -2,9 +2,10 @@ package flashbot.core
 
 import flashbot.models.core.Account
 
+import scala.language.implicitConversions
+
 // Price path calculation can use either the straight symbol name ("btc") or it can specify
 // an exchange too via an account, such as Account("bitmex", "xbt").
-//type AssetKey = Either[Account, String]
 
 class AssetKey(val value: Either[Account, String]) extends AnyVal
     with HasSecurity with MaybeHasAccount {

@@ -22,13 +22,8 @@ class TimeSeriesStrategy extends Strategy[Params] with TimeSeriesMixin {
 
   override def handleData(marketData: MarketData[_])(implicit ctx: TradingSession) = marketData.data match {
 
-    case trade: Trade =>
+    case _: Priced =>
       Metrics.inc("time_series_strategy_data_count")
-      recordTrade((marketData.source, marketData.topic), marketData.micros, trade.price, Some(trade.size))
-
-    case data: Priced =>
-      Metrics.inc("time_series_strategy_data_count")
-      recordTrade((marketData.source, marketData.topic), marketData.micros, data.price)
 
     case x => // Ignore non-priced data
   }

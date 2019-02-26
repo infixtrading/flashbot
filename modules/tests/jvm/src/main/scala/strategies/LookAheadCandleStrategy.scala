@@ -75,11 +75,7 @@ class LookAheadCandleStrategy extends Strategy[LookaheadParams]
     * confidences of the lookahead prediction.
     */
   override def initialize(portfolio: Portfolio, loader: EngineLoader) = {
-    import loader._
-    Future {
-//      staticData = dataSeqs
-      Seq("bitfinex/eth_usd/candles_5s")
-    }
+    Future.successful(Seq("bitfinex/eth_usd/candles_5s"))
   }
 
   var prediction: Option[Double] = None

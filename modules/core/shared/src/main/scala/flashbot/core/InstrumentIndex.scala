@@ -17,13 +17,14 @@ class InstrumentIndex(val byExchange: Map[String, Set[Instrument]]) {
     if (base.exchange == quote.exchange) {
       byExchange(base.exchange).find(i =>
         i.security.isDefined &&
-          (i.security.get == base.security) && (i.settledIn == quote.security))
+          (i.security.get == base.security) && (i.settledIn.get == quote.security))
         .map(i => Market(base.exchange, i.symbol))
     } else None
   }
 
   def accounts: Set[Account] = byExchange.flatMap { case (ex, insts) =>
-    insts.flatMap { inst => Set(Account(ex, inst.security.get), Account(ex, inst.settledIn)) }
+    insts.flatMap { inst => Set(Account(ex, inst.security.get),
+      Account(ex, inst.settledIn.get)) }
   }.toSet
 }
 

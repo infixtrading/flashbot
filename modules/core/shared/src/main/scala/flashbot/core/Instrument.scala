@@ -1,7 +1,7 @@
 package flashbot.core
 
 import flashbot.models.core.Order._
-import flashbot.models.core.{Account, Portfolio}
+import flashbot.models.core.{Account, FixedPrice, FixedSize, Portfolio}
 
 trait Instrument {
 
@@ -20,7 +20,8 @@ trait Instrument {
   def security: Option[String]
 
   // When you sell this instrument, what asset do you build back in exchange?
-  def settledIn: String
+  // Will be `None` for non-tradable instruments such as indexes.
+  def settledIn: Option[String]
 
   def markPrice(prices: PriceIndex): Double = prices(symbol)
 
@@ -29,11 +30,16 @@ trait Instrument {
 //    else throw new RuntimeException(s"Can't calculate default PNL for $this")
 //  }
 
-  def settle(exchange: String, fill: Fill, portfolio: Portfolio): Portfolio
+//  def settle(exchange: String, fill: Fill, portfolio: Portfolio): Portfolio
 
   def canShort: Boolean
 
   override def toString: String = symbol
+
+  /**
+    * The value of one unit of this security/contract in terms of the settlement asset.
+    */
+  def value(price: Double): FixedSize[Double]
 }
 
 object Instrument {
@@ -41,43 +47,32 @@ object Instrument {
   case class CurrencyPair(base: String, quote: String) extends Instrument with Labelled {
     override def symbol = s"${base}_$quote"
     override def label = s"$base/$quote".toUpperCase
-    override def settledIn = quote
+    override def settledIn = Some(quote)
     override def security = Some(base)
     override def markPrice(prices: PriceIndex) = prices(this)
     override def canShort = false
 
-    override def settle(exchange: String, fill: Fill, portfolio: Portfolio) = {
-      def acc(str: String) = Account(exchange, str)
-      fill.side match {
-        /**
-          * If we just bought some BTC using USD, then the fee was already subtracted
-          * from the amount of available funds when determining the size of BTC filled.
-          * Simply add the filled size to the existing BTC balance for base. For quote,
-          * it's a little more complicated. We need to reconstruct the original amount
-          * of quote funds (total cost) that was used for the order.
-          *
-          * total_cost * (1 - fee) = size * price
-          */
-        case Buy =>
-          // Cost without accounting for fees. This is what we pay the maker.
-          val rawCost = fill.size * fill.price
+//    override def settle(exchange: String, fill: Fill, portfolio: Portfolio) = {
+//      def acc(str: String) = Account(exchange, str)
+//      fill.side match {
+//        case Buy =>
+//          // Cost without accounting for fees. This is what we pay the maker.
+//          val rawCost = fill.size * fill.price
+//
+//          // Total quote currency paid out to both maker and exchange
+//          val totalCost = rawCost / (1 - fill.fee)
+//          portfolio
+//            .updateAssetBalance(acc(base), _ + fill.size)
+//            .updateAssetBalance(acc(quote), _ - totalCost)
+//
+//        case Sell =>
+//          portfolio
+//            .updateAssetBalance(acc(base), _ - fill.size)
+//            .updateAssetBalance(acc(quote), _ + fill.size * fill.price * (1 - fill.fee))
+//      }
+//    }
 
-          // Total quote currency paid out to both maker and exchange
-          val totalCost = rawCost / (1 - fill.fee)
-          portfolio
-            .updateAssetBalance(acc(base), _ + fill.size)
-            .updateAssetBalance(acc(quote), _ - totalCost)
-
-        /**
-          * If we just sold a certain amount of BTC for USD, then the fee is subtracted
-          * from the USD that is to be credited to our account balance.
-          */
-        case Sell =>
-          portfolio
-            .updateAssetBalance(acc(base), _ - fill.size)
-            .updateAssetBalance(acc(quote), _ + fill.size * fill.price * (1 - fill.fee))
-      }
-    }
+    override def value(price: Double) = FixedSize(price, quote)
   }
 
   object CurrencyPair {
@@ -108,28 +103,21 @@ object Instrument {
     override def markPrice(prices: PriceIndex) = {
       throw new NotImplementedError("Index does not implement `markPrice`")
     }
-    override def settle(exchange: String, fill: Fill, portfolio: Portfolio) = {
-      throw new RuntimeException("Indexes are not tradable")
-    }
+//    override def settle(exchange: String, fill: Fill, portfolio: Portfolio) = {
+//      throw new RuntimeException("Indexes are not tradable")
+//    }
     override def canShort = false
+
+    override def value(price: Double) = ???
   }
 
   trait Derivative extends Instrument {
-    /**
-      * The value of one unit of this contract in terms of the settlement asset.
-      */
-    def contractValue(price: Double): Double
-
     def pnl(size: Long, entryPrice: Double, exitPrice: Double): Double
 
     override def canShort = true
   }
 
-  trait FuturesContract extends Derivative {
-    override def settle(exchange: String, fill: Fill, portfolio: Portfolio) = {
-      throw new NotImplementedError()
-    }
-  }
+  trait FuturesContract extends Derivative
   trait OptionsContract extends Derivative
 
   implicit def instrument2Str(inst: Instrument): String = inst.symbol

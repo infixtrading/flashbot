@@ -4,15 +4,19 @@ import flashbot.core.HasSecurity
 import io.circe._
 import io.circe.generic.semiauto._
 
+import scala.language.implicitConversions
+
 case class Account(exchange: String, security: String) extends HasSecurity {
-  override def toString = s"$exchange/$security"
+  override def toString = s"$exchange.$security"
 }
 
 object Account {
   def apply(str: String): Account = parse(str)
 
   implicit def parse(acc: String): Account = {
-    val parts = acc.split("/")
+    var parts = acc.split("/")
+    if (parts.length < 2)
+      parts = acc.split("\\.")
     Account(parts(0), parts(1))
   }
 

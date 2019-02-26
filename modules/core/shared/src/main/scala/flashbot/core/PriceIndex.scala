@@ -158,5 +158,6 @@ object PriceIndex {
 
   def empty(implicit conversions: Conversions): PriceIndex =
     new PriceIndex(mutable.Map.empty[Market, Double])
+
 }
 

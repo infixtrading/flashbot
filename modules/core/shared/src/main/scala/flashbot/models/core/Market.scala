@@ -1,6 +1,6 @@
 package flashbot.models.core
 
-import flashbot.core.Labelled
+import flashbot.core.{InstrumentIndex, Labelled}
 import flashbot.core.Instrument.CurrencyPair
 import io.circe._
 import io.circe.generic.semiauto._
@@ -8,12 +8,18 @@ import io.circe.generic.semiauto._
 import scala.language.implicitConversions
 
 case class Market(exchange: String, symbol: String) extends Labelled {
-  override def toString = s"$exchange/$symbol"
+  override def toString = s"$exchange.$symbol"
   override def label = {
     val ex = exchange.capitalize
     val sym = CurrencyPair.parse(symbol).map(_.label).getOrElse(symbol)
     s"$ex: $sym"
   }
+
+  def settlementAccount(implicit instruments: InstrumentIndex): Account =
+    Account(exchange, instruments(this).settledIn.get)
+
+  def securityAccount(implicit instruments: InstrumentIndex): Account =
+    Account(exchange, instruments(this).security.get)
 }
 
 object Market {
@@ -22,7 +28,9 @@ object Market {
   implicit def asString(market: Market): String = market.toString
 
   def parse(market: String): Market = {
-    val parts = market.split("/")
+    var parts = market.split("/")
+    if (parts.length < 2)
+      parts = market.split("\\.")
     Market(parts(0), parts(1))
   }
 

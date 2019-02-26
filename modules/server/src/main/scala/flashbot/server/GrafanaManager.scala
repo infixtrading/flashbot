@@ -5,6 +5,7 @@ import akka.actor.{Actor, ActorLogging}
 import akka.http.scaladsl.model.ContentTypes
 import flashbot.server.GrafanaDashboard._
 import flashbot.util._
+import flashbot.util.json._
 import io.circe.parser._
 import io.circe.syntax._
 import io.circe.optics.JsonPath._
@@ -83,7 +84,9 @@ class GrafanaManager(host: String, apiKey: String, dataSourcePort: Int,
             updateDashboard(folderId, strategy + "_backtest", "Backtest: " + info.title,
               info.layout.buildDashboard(_).withTag("backtest")
                 .withTemplate(mkInterval())
-                .withTemplate(mkTemplate("portfolio", label = Some("Portfolio")))
+                .withTemplate(mkTemplate("portfolio", "textbox", label = Some("Portfolio"))
+                  .withOptions("coinbase.usd=5000")
+                  .withSelected("coinbase.usd=5000"))
                 .withJsonSchemaTemplates(info.jsonSchema.get)
                 .mapPanels(_.mapTargets(
                   _.withField("bar_size")
@@ -132,7 +135,7 @@ class GrafanaManager(host: String, apiKey: String, dataSourcePort: Int,
   def post[E: Encoder, T: Decoder](path: String, entity: E): Future[T] =
     sttp.post(uri"$host".path(path))
       .contentType("application/json")
-      .body(entity.asJson.noSpaces)
+      .body(entity.asJson.noNulls)
       .headers(Map("Authorization" -> s"Bearer $apiKey"))
       .send()
       .flatMap(rsp => rsp.body match {

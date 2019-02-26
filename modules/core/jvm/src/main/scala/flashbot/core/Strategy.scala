@@ -247,6 +247,12 @@ abstract class Strategy[P] extends DataHandler {
   implicit class AnnotatorOps[T: SchemaAnnotator](schema: json.Schema[T]) {
     def build: Json = implicitly[SchemaAnnotator[T]].annotate(schema)
   }
+
+
+  implicit def sessionPrices(implicit ctx: TradingSession): PriceIndex = ctx.getPrices
+  implicit def sessionInstruments(implicit ctx: TradingSession): InstrumentIndex = ctx.getInstruments
+  implicit def sessionExchangeParams(implicit ctx: TradingSession)
+    : Map[String, ExchangeParams] = ctx.getExchangeParams
 }
 
 trait DataHandler {

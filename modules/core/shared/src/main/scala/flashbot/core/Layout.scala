@@ -2,33 +2,65 @@ package flashbot.core
 
 import flashbot.core.Layout._
 import flashbot.server.GrafanaDashboard
-import flashbot.server.GrafanaDashboard.{Dashboard, DashboardBuilder, GridPos}
+import flashbot.server.GrafanaDashboard._
 
 case class Layout(queries: Seq[Query] = Seq.empty,
                   panelConfigs: Map[String, PanelConfig] = Map.empty,
                   rowConfigs: Map[String, RowConfig] = Map.empty) extends DashboardBuilder {
 
-  def addTimeSeries(key: String, panel: String): Layout = ???
-  def addTimeSeries(key: String, panel: String, row: String): Layout = ???
-  def addTimeSeries(key: String, panel: String, fn: Query => Query): Layout = ???
-  def addTimeSeries(key: String, panel: String, row: String, fn: Query => Query): Layout = ???
+  def addPanel(title: String, row: String): Layout = addPanel(title, Some(row))
+  def addPanel(title: String): Layout = addPanel(title, None)
 
-  def addTable(key: String, title: String): Layout = ???
-  def addTable(key: String, title: String, row: String): Layout = ???
-  def addTable(key: String, title: String, fn: Query => Query): Layout = ???
-  def addTable(key: String, title: String, row: String, fn: Query => Query): Layout = ???
+  def addPanel(name: String, row: Option[String]): Layout = {
+    if (panelConfigs.isDefinedAt(name)) {
+      throw new RuntimeException(s"Panel $name already exists.")
+    }
+    copy(panelConfigs = panelConfigs + (name -> PanelConfig(row = row)))
+  }
 
-  def addQuery(key: String, panel: String, fn: Query => Query): Layout = ???
-  def updateQuery(key: String, panel: String, fn: Query => Query) = ???
+  def addTimeSeries(key: String, panel: String): Layout = addTimeSeries(key, panel, q => q)
+  def addTimeSeries(key: String, panel: String, fn: Query => Query): Layout =
+    addQuery(fn(Query(key, panel, TimeSeriesType)))
+
+  def addTable(key: String, title: String, row: String): Layout = addTable(key, title, row, q => q)
+  def addTable(key: String, title: String, row: String, fn: Query => Query): Layout =
+    addPanel(title, row).addQuery(fn(Query(key, title, TableType)))
+
+  def addQuery(query: Query): Layout = {
+    if (findQuery(query.key, query.panel).isDefined) {
+      throw new RuntimeException(s"Query ${query.key} already exists in panel ${query.panel}")
+    }
+    copy(queries = queries :+ query)
+  }
+
+  def updateQuery(key: String, panel: String, fn: Query => Query) = {
+    val q = findQuery(key, panel)
+    var layout = removeQuery(key, panel)
+    val newQuery = fn(q.get)
+    addQuery(newQuery)
+  }
+
+  def removeQuery(key: String, panel: String): Layout = {
+    val newQueries = queries.filterNot(q => q.key == key && q.panel == panel)
+    if (newQueries.size == queries.size) {
+      throw new RuntimeException(s"No query with key: $key and panel: $panel")
+    }
+    copy(queries = newQueries)
+  }
+
+  def findQuery(key: String, panel: String): Option[Query] =
+    queries.find(q => q.key == key && q.panel == panel)
 
   def configurePanel(title: String, updater: PanelConfig => PanelConfig) = ???
   def configurePanel(title: String, row: String, updater: PanelConfig => PanelConfig) = ???
   def configureRow(title: String, updater: RowConfig => RowConfig) = ???
 
-  def rows: Seq[String] = queries.map(_.row).collect { case Some(x) => x }.distinct
+  def findPanels: Seq[String] = queries.map(_.panel).distinct
+  def findRows: Seq[String] = findPanels.map(p => panelConfigs(p).row)
+    .collect { case Some(x) => x }.distinct
 
   def panelsForRow(row: Option[String]): Seq[String] =
-    queries.filter(_.row == row).map(_.panel).distinct
+    panelConfigs.filter(_._2.row == row).keys.toSeq.distinct
 
   def queriesForPanel(panel: String): Seq[Query] =
     queries.filter(_.panel == panel)
@@ -48,15 +80,26 @@ case class Layout(queries: Seq[Query] = Seq.empty,
           GrafanaDashboard.mkTablePanel(0, panel, GridPos(x, y, w, h))
             .withTarget(GrafanaDashboard.mkTableTarget(queries.head.key)))
       } else if (queries.forall(_.`type` == TimeSeriesType)) {
-        gPanel = Some(GrafanaDashboard.mkGraphPanel(0, panel, GridPos(x, y, w, h)))
-        queries.foreach(q => {
-          gPanel = gPanel.map(_.withTarget(GrafanaDashboard.mkGraphTarget(q.key)))
-        })
+        gPanel = Some(GrafanaDashboard
+          .mkGraphPanel(0, panel, GridPos(x, y, w, h))
+          .withYAxis(Axis("locale"))
+          .withYAxis(Axis("locale"))
+        )
+        queries.foreach(q => gPanel = for {
+          panel <- gPanel
+          withTarget = panel.withTarget(GrafanaDashboard.mkGraphTarget(q.key))
+          withFill = q.fill.map(f =>
+            withTarget.withSeriesOverride(q.key, _.fill(f))).getOrElse(withTarget)
+          withWidth = q.lineWidth.map(w =>
+            withFill.withSeriesOverride(q.key, _.width(w))).getOrElse(withFill)
+          withColor = q.color.map(c =>
+            withWidth.withSeriesOverride(q.key, _.color(c))).getOrElse(withWidth)
+        } yield withColor)
       } else {
         throw new RuntimeException("Unable to build dashboard. " +
           "Table and time series queries cannot be mixed.")
       }
-      dashboard = dashboard.newPanel(gPanel.get)
+      dashboard = dashboard.newPanel(gPanel.map(_.withLegend(Legend())).get)
     }
 
     def buildRow(row: Option[String]): Unit = {
@@ -81,7 +124,7 @@ case class Layout(queries: Seq[Query] = Seq.empty,
 
     // Iterate through rows, add each row as a panel and then add the corresponding
     // panels. Keep track of the current y coordinate. Rows have a height of 1.
-    rows.foreach(row => buildRow(Some(row)))
+    findRows.foreach(row => buildRow(Some(row)))
 
     dashboard
   }
@@ -90,17 +133,26 @@ case class Layout(queries: Seq[Query] = Seq.empty,
 object Layout {
 
   case class Query(key: String, panel: String, `type`: QueryType,
-                   row: Option[String] = None, isPrimary: Boolean = true) {
+                   isPrimary: Boolean = true,
+                   fill: Option[Boolean] = None,
+                   lineWidth: Option[Int] = None,
+                   color: Option[String] = None) {
     def setPrimary(value: Boolean): Query = copy(isPrimary = value)
+    def setType(ty: QueryType): Query = copy(`type` = ty)
+    def setFill(v: Boolean): Query = copy(fill = Some(v))
+    def setLineWidth(w: Int): Query = copy(lineWidth = Some(w))
+    def setColor(color: String): Query = copy(color = Some(color))
   }
 
-  case class PanelConfig(height: Option[Int] = None)
+  case class PanelConfig(height: Option[Int] = None, row: Option[String])
 
   case class RowConfig(maxCols: Option[Int] = None) {
     assert(maxCols.forall(x => x > 0 && x < 5))
   }
 
-  val default = Layout().addTimeSeries("equity.usd", "Equity", "Portfolio")
+  val default = Layout()
+    .addPanel("Equity", "Portfolio")
+    .addTimeSeries("equity", "Equity")
 
 //    .addQuery("price", "$market Price", "Prices")
 //    .addQuery("volume", "$market Price", "Prices", _.setPrimary(false))

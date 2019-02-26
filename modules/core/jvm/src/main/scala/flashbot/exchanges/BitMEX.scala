@@ -1,13 +1,16 @@
 package flashbot.exchanges
 
+import akka.actor.ActorSystem
+import akka.stream.Materializer
 import flashbot.core.Instrument.{FuturesContract, Index}
 import flashbot.models.core.Order.Fill
 import flashbot.core._
-import flashbot.models.core.{ExchangeResponse, OrderRequest}
+import flashbot.models.core.{ExchangeResponse, FixedSize, OrderRequest}
 
 import scala.concurrent.Future
 
-class BitMEX extends Exchange {
+class BitMEX(implicit val system: ActorSystem,
+             val mat: Materializer) extends Exchange {
   override def makerFee: Double = ???
 
   override def takerFee: Double = ???
@@ -25,7 +28,7 @@ class BitMEX extends Exchange {
   override def instruments =
     Future.successful(Set(BitMEX.XBTUSD, BitMEX.ETHUSD))
 
-  override def fetchPortfolio = ???
+  override def fetchPortfolio = Future.successful((Map.empty, Map.empty))
 }
 
 object BitMEX {
@@ -34,7 +37,7 @@ object BitMEX {
     override def symbol = "xbtusd"
     override def base = "xbt"
     override def quote = "usd"
-    override def settledIn = "xbt"
+    override def settledIn = Some("xbt")
 
     override def markPrice(prices: PriceIndex) = 1.0 / prices(symbol)
 
@@ -44,14 +47,14 @@ object BitMEX {
     override def pnl(size: Long, entryPrice: Double, exitPrice: Double) =
       size * (1.0 / entryPrice - 1.0 / exitPrice)
 
-    override def contractValue(price: Double) = 1.0 / price
+    override def value(price: Double) = FixedSize(1.0 / price, settledIn.get)
   }
 
   object ETHUSD extends FuturesContract {
     override def symbol = "ethusd"
     override def base = "eth"
     override def quote = "usd"
-    override def settledIn = "xbt"
+    override def settledIn = Some("xbt")
 
     val bitcoinMultiplier: Double = 0.000001
 
@@ -64,7 +67,7 @@ object BitMEX {
       (exitPrice - entryPrice) * bitcoinMultiplier * size
     }
 
-    override def contractValue(price: Double) = price * bitcoinMultiplier
+    override def value(price: Double) = FixedSize(price * bitcoinMultiplier, settledIn.get)
   }
 
   object BXBT extends Index(".BXBT", "xbt", "usd")

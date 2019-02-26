@@ -20,6 +20,12 @@ object Order {
       case "buy" => Buy
     }
 
+    def fromSize(size: Double): Unit = {
+      assert(size != 0)
+      if (size > 0) Buy
+      else Sell
+    }
+
     implicit val sideEn: Encoder[Side] = Encoder.instance(_.toString.asJson)
     implicit val sideDe: Decoder[Side] = Decoder.decodeString.map(Side(_))
   }
