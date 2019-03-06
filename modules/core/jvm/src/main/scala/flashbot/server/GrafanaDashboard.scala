@@ -6,7 +6,6 @@ import io.circe._
 import io.circe.generic.JsonCodec
 import io.circe.parser._
 import io.circe.syntax._
-import io.circe.optics.JsonPath._
 import json.schema.parser.SimpleType.SimpleType
 import json.schema.parser._
 
@@ -66,7 +65,6 @@ object GrafanaDashboard {
 
     def withJsonSchemaTemplates(schemaJson: Json): Dashboard = {
       val schema = JsonSchemaParser.parse(schemaJson.noNulls).toOption.get
-      println("SCHEMA", schemaJson.spaces2)
       schema.obj.get.properties.value.foldLeft(this) {
         case (dash, (key, prop)) =>
           val default = StrategyInfo.default(key).json.getOption(schemaJson)

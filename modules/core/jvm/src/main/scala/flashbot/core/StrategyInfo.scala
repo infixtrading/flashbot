@@ -1,12 +1,12 @@
 package flashbot.core
 
+import flashbot.core.StrategyInfo._
 import flashbot.server.GrafanaDashboard.DashboardBuilder
-import io.circe.{Json, JsonObject}
 import io.circe.optics.JsonPath
+import io.circe.optics.JsonPath._
 import io.circe.parser._
 import io.circe.syntax._
-import io.circe.optics.JsonPath._
-import StrategyInfo._
+import io.circe.{Json, JsonObject}
 
 /**
   * Description of a strategy.

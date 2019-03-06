@@ -10,7 +10,6 @@ import io.circe.{Decoder, Encoder}
 
 import scala.collection.immutable.Map
 import scala.language.postfixOps
-import scala.util.parsing.combinator.RegexParsers
 
 /**
   * Keeps track of asset balances and positions across all exchanges. Calculates equity and PnL.
@@ -291,47 +290,11 @@ case class Portfolio(assets: Map[Account, Double],
 
 }
 
-object Portfolio extends RegexParsers {
+object Portfolio {
 
   implicit val portfolioEn: Encoder[Portfolio] = deriveEncoder
   implicit val portfolioDe: Decoder[Portfolio] = deriveDecoder
 
   def empty: Portfolio = Portfolio(Map.empty, Map.empty, Map.empty)
-
-  val key = raw"(.+)\.(.+)".r
-  val position = raw"(-?[0-9\.]+)(x[0-9\.]+)?(@[0-9\.]+)?".r
-
-  object Optional {
-    def unapply[T](a: T) = if (null == a) Some(None) else Some(Some(a))
-  }
-
-  /**
-    * Comma separated list of balance or position expressions.
-    *
-    * bitmex/xbtusd=-10000x2@500,coinbase/btc=5.0,coinbase/usd=0
-    * bitmex/xbtusd=-10000@500
-    * bitmex/xbtusd=-10000x2,bitmex/xbtusd=-10000
-    */
-  def parse(expr: String)(implicit instruments: InstrumentIndex): Portfolio = {
-    expr.split(",").map(_.trim).filterNot(_.isEmpty).foldLeft(empty) {
-      case (portfolio, item) => item.split("=").toList match {
-        case k@key(exchange, symbol) :: pos :: Nil =>
-          (pos, instruments.get(exchange, symbol).isDefined) match {
-
-            case (position(size, Optional(None), Optional(None)), false) =>
-              portfolio.withAssetBalance(Account(exchange, symbol), size.toDouble)
-
-            case (position(size, Optional(leverage), Optional(entry)), true) =>
-              portfolio.withPosition(Market(exchange, symbol),
-                Position(size.toLong,
-                  leverage.map(l => l.slice(1, l.length).toDouble).getOrElse(1.0),
-                  entry.map(e => e.slice(1, e.length).toDouble)))
-
-            case _ =>
-              throw new RuntimeException(s"No such instrument: $k")
-          }
-      }
-    }
-  }
 }
 

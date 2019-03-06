@@ -2,6 +2,7 @@ package flashbot.server
 
 import flashbot.core.InstrumentIndex
 import flashbot.models.core.Portfolio
+import flashbot.util.ParsingUtils
 
 trait PortfolioRef {
   def mergePortfolio(partial: Portfolio): Unit
@@ -20,7 +21,7 @@ object PortfolioRef {
 
     override def getPortfolio(instruments: Option[InstrumentIndex]) = {
       if (portfolio.isEmpty)
-        portfolio = Some(Portfolio.parse(initialPortfolioStr)(instruments.get))
+        portfolio = Some(ParsingUtils.parsePortfolio(initialPortfolioStr)(instruments.get))
       portfolio.get
     }
 
