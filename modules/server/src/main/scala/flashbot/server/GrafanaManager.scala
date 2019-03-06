@@ -3,17 +3,18 @@ package flashbot.server
 import akka.Done
 import akka.actor.{Actor, ActorLogging}
 import akka.http.scaladsl.model.ContentTypes
-import flashbot.server.GrafanaDashboard._
+import GrafanaDashboard._
 import flashbot.util._
 import flashbot.util.json._
 import io.circe.parser._
 import io.circe.syntax._
 import io.circe.optics.JsonPath._
 
-import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.ExecutionContext
+
+//import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 import scala.language.postfixOps
-import scala.collection.JavaConverters._
 import scala.concurrent.{Await, Future}
 import com.softwaremill.sttp._
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
@@ -38,6 +39,7 @@ import scala.util.{Failure, Success}
 class GrafanaManager(host: String, apiKey: String, dataSourcePort: Int,
                      loader: EngineLoader) extends Actor with ActorLogging {
 
+  implicit val ec: ExecutionContext = context.system.dispatcher
   implicit val okHttpBackend = OkHttpFutureBackend()
 
   private case object Init

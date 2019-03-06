@@ -15,6 +15,7 @@ import flashbot.models.core.FixedSize
 import flashbot.models.core._
 import io.circe._
 import com.github.andyglow.jsonschema.AsCirce._
+import flashbot.util.time.FlashbotTimeout
 
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
@@ -75,7 +76,16 @@ abstract class Strategy[P] extends DataHandler {
     */
   def handleData(data: MarketData[_])(implicit ctx: TradingSession): Unit
 
-  override def aroundHandleData(data: MarketData[_])(implicit ctx: TradingSession) = handleData(data)
+
+  protected var initialPortfolio: Option[Portfolio] = None
+
+  override def aroundHandleData(data: MarketData[_])(implicit ctx: TradingSession) = {
+    if (initialPortfolio.isEmpty && ctx.getPortfolio.isReady()) {
+      initialPortfolio = Some(ctx.getPortfolio)
+    }
+
+    handleData(data)
+  }
 
   /**
     * Receives and handles events that occur in the system. This method is most commonly used
@@ -200,7 +210,7 @@ abstract class Strategy[P] extends DataHandler {
       .map(Future.successful)
 
     overrideOpt getOrElse {
-      implicit val timeout: Timeout = Timeout(10 seconds)
+      implicit val timeout: Timeout = FlashbotTimeout.default
       (dataServer ? DataStreamReq(selection))
         .mapTo[StreamResponse[MarketData[T]]]
         .map(_.toSource)

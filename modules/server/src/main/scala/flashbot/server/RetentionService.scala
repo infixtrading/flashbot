@@ -1,21 +1,26 @@
 package flashbot.server
 
 import java.time.Instant
+
 import akka.actor.{Actor, ActorLogging}
 import akka.stream.alpakka.slick.javadsl.SlickSession
 import flashbot.util.stream._
 import flashbot.db._
 import flashbot.models.core.DataPath
 
-import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.ExecutionContext
+
+//import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.{Future, blocking}
 import scala.concurrent.duration._
 import scala.language.postfixOps
 import scala.util.{Failure, Random, Success}
 
 class RetentionService(path: DataPath[Any], retention: Option[FiniteDuration], tickRate: Int)
-                        (implicit session: SlickSession) extends Actor with ActorLogging {
+                      (implicit session: SlickSession) extends Actor with ActorLogging {
   import session.profile.api._
+
+  implicit val ec: ExecutionContext = context.system.dispatcher
 
   case object RetentionTick
 

@@ -11,6 +11,7 @@ import akka.pattern.ask
 import flashbot.server.StreamResponse
 import flashbot.models.api.StreamRequest
 import flashbot.models.core.{DataAddress, TimeRange}
+import flashbot.util.time.FlashbotTimeout
 
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
@@ -90,7 +91,7 @@ package object stream {
 
   implicit class StreamRequester(ref: ActorRef) {
     def <<?[T](req: StreamRequest[T]): Future[StreamResponse[T]] =
-      (ref ? req)(Timeout(10 seconds)) match {
+      (ref ? req)(FlashbotTimeout.default) match {
         case fut: Future[StreamResponse[T]] => fut
       }
   }

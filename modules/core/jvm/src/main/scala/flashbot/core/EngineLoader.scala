@@ -8,9 +8,10 @@ import flashbot.core.FlashbotConfig.ExchangeConfig
 import flashbot.core.Instrument.CurrencyPair
 import flashbot.models.api.MarketDataIndexQuery
 import flashbot.models.core.{DataPath, Market}
+import flashbot.util.time.FlashbotTimeout
 
-import scala.concurrent.Future
-import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.{ExecutionContext, Future}
+//import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 import scala.language.postfixOps
 import scala.util.{Failure, Success, Try}
@@ -22,7 +23,8 @@ import scala.util.{Failure, Success, Try}
 class EngineLoader(val getExchangeConfigs: () => Map[String, ExchangeConfig],
                    dataServer: ActorRef, strategyClassNames: Map[String, String])
                   (implicit system: ActorSystem, mat: Materializer) {
-  implicit val timeout = Timeout(10 seconds)
+  implicit val timeout = FlashbotTimeout.default
+  implicit val ec: ExecutionContext = system.dispatcher
 
   def exchanges: Set[String] = getExchangeConfigs().keySet
 

@@ -1,6 +1,7 @@
 package flashbot.server
 
 import java.time.Instant
+import java.util.concurrent.ConcurrentHashMap
 
 import akka.actor.ActorRef
 import akka.http.scaladsl.model.{ContentTypes, HttpEntity}
@@ -26,10 +27,9 @@ import flashbot.models.api.TakeLast
 import flashbot.models.core._
 
 import scala.collection.SortedMap
-import scala.collection.concurrent.TrieMap
-import scala.concurrent.Future
+import scala.concurrent.{ExecutionContext, ExecutionContextExecutor, Future}
 import scala.concurrent.duration._
-import scala.concurrent.ExecutionContext.Implicits.global
+//import scala.concurrent.ExecutionContext.Implicits.global
 import scala.language.postfixOps
 import scala.util.Failure
 
@@ -50,7 +50,7 @@ object GrafanaServer {
       from <- obj("from").map(_.as[String].right.get)
       to <- obj("to").map(_.as[String].right.get)
     } yield (from, to)).get
-    TimeRange(TimeFmt.ISO8601ToMicros(from), TimeFmt.ISO8601ToMicros(to))
+    TimeRange(TimeFmt.ISO8601ToMicros(from), TimeFmt.ISO8601ToMicros(to)).roundToSecs
   }
 
   implicit def mdEncoder[T](implicit tEn: Encoder[T]): ObjectEncoder[MarketData[T]] =
@@ -149,128 +149,138 @@ object GrafanaServer {
                               portfolio: String, interval: FiniteDuration,
                               timeRange: TimeRange)
 
-  val backtestRequests = TrieMap.empty[BacktestCacheKey, Future[Report]]
-  def getBacktestReport(client: FlashbotClient, key: BacktestCacheKey): Future[Report] = {
-    val fut = backtestRequests.getOrElseUpdate(key, client.backtestAsync(
-      key.strategy, key.params, key.portfolio, key.interval, key.timeRange))
-    fut andThen {
-      case scala.util.Success(value) =>
-        // Remove reports for all cache keys that don't equal the current one, but
-        // do belong to the same strategy.
-        backtestRequests
-          .filterKeys(k => k.strategy == key.strategy && k != key)
-          .foreach(Function.tupled(backtestRequests.remove))
+  val backtestRequests = new ConcurrentHashMap[BacktestCacheKey, Future[Report]]()
+  def getBacktestReport(client: FlashbotClient, key: BacktestCacheKey)
+                       (implicit ec: ExecutionContext): Future[Report] = {
+    backtestRequests.computeIfAbsent(key, k =>
+      {
+        client
+          .backtestAsync(k.strategy, k.params, k.portfolio, k.interval, k.timeRange)
+          .andThen {
+            case scala.util.Success(value) =>
+              // Remove reports for all cache keys that don't equal the current one, but
+              // do belong to the same strategy.
+              backtestRequests.keySet().stream()
+                .filter(_.strategy == k.strategy)
+                .filter(_ != k)
+                .forEach(x =>
+                  backtestRequests.remove(x))
 
-      case Failure(_) =>
-        // Always remove failed requests from the cache.
-        backtestRequests.remove(key, fut)
-    }
-    fut
+            case Failure(_) =>
+              // Always remove failed requests from the cache.
+              backtestRequests.remove(k)
+          }
+      }
+    )
   }
 
 
-  def routes(client: FlashbotClient)(implicit mat: Materializer): Route = get {
+  def routes(client: FlashbotClient)
+            (implicit mat: Materializer,
+             ec: ExecutionContextExecutor): Route = get {
     pathSingleSlash {
       complete(HttpEntity(ContentTypes.`application/json`, "{}"))
     }
-  } ~ post {
-    path("search") {
-      entity(as[SearchReqBody]) { body =>
-        val rsp = Seq("trades", "price", "orderbook")
-        complete(HttpEntity(ContentTypes.`application/json`, rsp.asJson.noSpaces ))
-      }
-    } ~ path("query") {
-      entity(as[QueryReqBody]) { body =>
+  } ~ withExecutionContext(ec) {
+    post {
+      path("search") {
+        entity(as[SearchReqBody]) { body =>
+          val rsp = Seq("trades", "price", "orderbook")
+          complete(HttpEntity(ContentTypes.`application/json`, rsp.asJson.noSpaces))
+        }
+      } ~ path("query") {
+        entity(as[QueryReqBody]) { body =>
 
-        val fromMillis = body.range.start / 1000
-        val toMillis = body.range.end / 1000
+          val fromMillis = body.range.start / 1000
+          val toMillis = body.range.end / 1000
 
-        val dataSetsFut = Future.sequence(body.targets.toIterator.map[Future[Seq[DataSeries]]] { target =>
-          decode[Query](target.target).toTry match {
-            case scala.util.Success(
+          val dataSetsFut = Future.sequence(body.targets.toIterator.map[Future[Seq[DataSeries]]] { target =>
+            decode[Query](target.target).toTry match {
+              case scala.util.Success(
               Query(key, ty, marketOpt, barSizeOpt, strategyOpt, paramsOpt, botOpt, portfolioOpt)) =>
-              (ty, key, strategyOpt) match {
+                (ty, key, strategyOpt) match {
 
-                case ("time_series", _, Some(strategy)) =>
-                  val barSize = parseDuration(barSizeOpt.get)
-                  val cacheKey = BacktestCacheKey(strategy, paramsToJson(paramsOpt.get),
-                    portfolioOpt.get, barSize, body.range)
-                  getBacktestReport(client, cacheKey).map(report => {
-                    Seq(buildSeries(key, key, report.timeSeries))
-                  })
+                  case ("time_series", _, Some(strategy)) =>
+                    val barSize = parseDuration(barSizeOpt.get)
+                    val cacheKey = BacktestCacheKey(strategy, paramsToJson(paramsOpt.get),
+                      portfolioOpt.get, barSize, body.range)
+                    getBacktestReport(client, cacheKey).map(report => {
+                      Seq(buildSeries(key, key, report.timeSeries))
+                    })
 
-                case ("table", _, Some(strategy)) =>
-                  val barSize = parseDuration(barSizeOpt.get)
-                  val cacheKey = BacktestCacheKey(strategy, paramsToJson(paramsOpt.get),
-                    portfolioOpt.get, barSize, body.range)
+                  case ("table", _, Some(strategy)) =>
+                    val barSize = parseDuration(barSizeOpt.get)
+                    val cacheKey = BacktestCacheKey(strategy, paramsToJson(paramsOpt.get),
+                      portfolioOpt.get, barSize, body.range)
 
-                  getBacktestReport(client, cacheKey).map(report => {
-                    if (report.collections.isDefinedAt(key))
-                      Seq(buildTable(report.collections(key).flatMap(_.asObject), List()))
-                    else if (report.values.isDefinedAt(key)) {
-                      val foo: Json = report.values.asJson(Report.vMapEn).asObject.get(key).get
-                      Seq(buildTable(Seq(JsonObject("value" -> foo)), List()))
-                    } else Seq(buildTable(Seq(JsonObject("error" -> "no data".asJson)), List()))
-                  })
+                    getBacktestReport(client, cacheKey).map(report => {
+                      if (report.collections.isDefinedAt(key))
+                        Seq(buildTable(report.collections(key).flatMap(_.asObject), List()))
+                      else if (report.values.isDefinedAt(key)) {
+                        val foo: Json = report.values.asJson(Report.vMapEn).asObject.get(key).get
+                        Seq(buildTable(Seq(JsonObject("value" -> foo)), List()))
+                      } else Seq(buildTable(Seq(JsonObject("error" -> "no data".asJson)), List()))
+                    })
 
-                case (_, "trades", _) =>
-                  val path = DataPath.wildcard.withType(TradesType).withMarket(marketOpt.get)
-                  for {
-                    streamSrc <- client.historicalMarketDataAsync[Trade](path,
-                      Some(Instant.ofEpochMilli(fromMillis)),
-                      Some(Instant.ofEpochMilli(toMillis)),
-                      Some(TakeLast(body.maxDataPoints.toInt))
-                    )
-                    tradeMDs <- streamSrc.runWith(Sink.seq)
-                  } yield Seq(buildTable(tradeMDs.reverse.map(_.asJsonObject), TradeCols))
+                  case (_, "trades", _) =>
+                    val path = DataPath.wildcard.withType(TradesType).withMarket(marketOpt.get)
+                    for {
+                      streamSrc <- client.historicalMarketDataAsync[Trade](path,
+                        Some(Instant.ofEpochMilli(fromMillis)),
+                        Some(Instant.ofEpochMilli(toMillis)),
+                        Some(TakeLast(body.maxDataPoints.toInt))
+                      )
+                      tradeMDs <- streamSrc.runWith(Sink.seq)
+                    } yield Seq(buildTable(tradeMDs.reverse.map(_.asJsonObject), TradeCols))
 
-                case (_, "orderbook", _) =>
-                  val path = DataPath.wildcard.withType(LadderType(Some(12))).withMarket(marketOpt.get)
-                  for {
-                    streamSrc <- client.pollingMarketDataAsync[Ladder](path)
-                    ladder <- streamSrc.runWith(Sink.head)
-                    askObjects = ladder.data.asks.toSeq.map(_.asJsonObject(askEncoder))
-                    bidObjects = ladder.data.bids.toSeq.map(_.asJsonObject(bidEncoder))
-                    t = buildTable(
-                      askObjects.zipAll(bidObjects, JsonObject(), JsonObject())
-                        .map(Function.tupled(mergeObjects)),
-                      LadderCols)
-                  } yield Seq(t)
+                  case (_, "orderbook", _) =>
+                    val path = DataPath.wildcard.withType(LadderType(Some(12))).withMarket(marketOpt.get)
+                    for {
+                      streamSrc <- client.pollingMarketDataAsync[Ladder](path)
+                      ladder <- streamSrc.runWith(Sink.head)
+                      askObjects = ladder.data.asks.toSeq.map(_.asJsonObject(askEncoder))
+                      bidObjects = ladder.data.bids.toSeq.map(_.asJsonObject(bidEncoder))
+                      t = buildTable(
+                        askObjects.zipAll(bidObjects, JsonObject(), JsonObject())
+                          .map(Function.tupled(mergeObjects)),
+                        LadderCols)
+                    } yield Seq(t)
 
-                case (_, "price", _) =>
-                  val path = DataPath.wildcard.withType(TradesType).withMarket(marketOpt.get)
-                  val barSize = parseDuration(barSizeOpt.get)
-                  client.pricesAsync(path, body.range, barSize)
-                    .map(ts => Seq(
-                      buildSeries("price", s"${path.source}.${path.topic}", ts),
-                      buildSeries("volume", s"${path.source}.${path.topic}", ts,
-                        _.volume, scaleTo(0, 1))))
-              }
+                  case (_, "price", _) =>
+                    val path = DataPath.wildcard.withType(TradesType).withMarket(marketOpt.get)
+                    val barSize = parseDuration(barSizeOpt.get)
+                    client.pricesAsync(path, body.range, barSize)
+                      .map(ts => Seq(
+                        buildSeries("price", s"${path.source}.${path.topic}", ts),
+                        buildSeries("volume", s"${path.source}.${path.topic}", ts,
+                          _.volume, scaleTo(0, 1))))
+                }
 
-            case Failure(exception) => Future.failed(exception)
+              case Failure(exception) => Future.failed(exception)
+            }
+          })
+
+          onSuccess(dataSetsFut) { dataSets =>
+            val jsonRsp = dataSets.toSeq.flatten.asJson
+            complete(HttpEntity(ContentTypes.`application/json`, jsonRsp.noSpaces))
           }
-        })
-
-        onSuccess(dataSetsFut) { dataSets =>
-          val jsonRsp = dataSets.toSeq.flatten.asJson
-          complete(HttpEntity(ContentTypes.`application/json`, jsonRsp.noSpaces ))
         }
-      }
-    } ~ path("annotations") {
-      entity(as[AnnotationReqBody]) { body =>
-        complete(HttpEntity(ContentTypes.`application/json`, body.asJson.noSpaces ))
-      }
-    } ~ path("tag-keys") {
-      val keys = Seq(TagKey("string", "source"), TagKey("string", "topic"))
-      complete(HttpEntity(ContentTypes.`application/json`, keys.asJson.noSpaces ))
-
-    } ~ path("tag-values") {
-      entity(as[TagValReq]) { req =>
-        val vals = req.key match {
-          case "source" => Seq(TagValue("coinbase"), TagValue("bitstamp"))
-          case "topic" => Seq(TagValue("btc_usd"), TagValue("eth_usd"))
+      } ~ path("annotations") {
+        entity(as[AnnotationReqBody]) { body =>
+          complete(HttpEntity(ContentTypes.`application/json`, body.asJson.noSpaces))
         }
-        complete(HttpEntity(ContentTypes.`application/json`, vals.asJson.noSpaces ))
+      } ~ path("tag-keys") {
+        val keys = Seq(TagKey("string", "source"), TagKey("string", "topic"))
+        complete(HttpEntity(ContentTypes.`application/json`, keys.asJson.noSpaces))
+
+      } ~ path("tag-values") {
+        entity(as[TagValReq]) { req =>
+          val vals = req.key match {
+            case "source" => Seq(TagValue("coinbase"), TagValue("bitstamp"))
+            case "topic" => Seq(TagValue("btc_usd"), TagValue("eth_usd"))
+          }
+          complete(HttpEntity(ContentTypes.`application/json`, vals.asJson.noSpaces))
+        }
       }
     }
   }

@@ -12,7 +12,8 @@ import flashbot.client.FlashbotClient
 import flashbot.core.MarketData.BaseMarketData
 import flashbot.core._
 import flashbot.models.api.DataOverride
-import flashbot.models.core.{Candle, Portfolio, TimeRange}
+import flashbot.models.core.Order.TickDirection
+import flashbot.models.core._
 
 import scala.concurrent.duration._
 import org.scalatest.{FlatSpec, Matchers}
@@ -97,7 +98,7 @@ class MarketMakerSpec extends FlatSpec with Matchers {
     // 6 * 50 hours in time range.
     val candles = Source((0 to (360 * 6 * 50)).map(i =>
         (Instant.EPOCH.plusSeconds(i * 20), math.sin(math.toRadians(i)) * 10 + 100)))
-      .via(TimeSeriesTap.aggregateCandles(1 hour))
+      .via(TimeSeriesTap.aggregatePrices(1 hour))
       .zipWithIndex
       .map { case (c, i) => BaseMarketData(c, "coinbase/btc_usd/candles_1h", c.micros, 1, i) }
 
@@ -118,6 +119,56 @@ class MarketMakerSpec extends FlatSpec with Matchers {
     println("# trades: ", report.trades.size)
 
     equity.last > 4000 shouldBe true
+
+    Await.ready(for {
+      _ <- system.terminate()
+      _ <- TestDB.dropTestDB()
+    } yield Unit, 10 seconds)
+  }
+
+  "MarketMaker" should "have the expected portfolio in an increasing market" in {
+
+    implicit val config = FlashbotConfig.load()
+    implicit val system = ActorSystem(config.systemName, config.conf)
+    implicit val mat = ActorMaterializer()
+
+    val engine = system.actorOf(TradingEngine.props("market-maker", config))
+    val client = new FlashbotClient(engine)
+
+    val trades = (0 to 30).map(i => {
+      val micros = i * 1000000 * 20 // Trade every 20 seconds
+      val trade = Trade(i.toString, micros, 4000 + i, .01, Order.Up)
+      BaseMarketData(trade, "coinbase/btc_usd/trades", micros, 0, i)
+    })
+    val timeRange = TimeRange(trades.head.micros, trades.last.micros)
+    val params = MarketMakerParams("coinbase/btc_usd", "trades", "sma", 2, 2, 1, .1)
+    val portfolio = Portfolio.empty
+      .withAssetBalance("coinbase/btc", 1.05)
+      .withAssetBalance("coinbase/usd", 1000)
+      .withPosition("bitmex/xbtusd", Position((-1.05 * 4000).toLong, 2, None))
+    val data = Seq(DataOverride("coinbase/btc_usd/trades", Source(trades)))
+
+    val report = client.backtest("market_maker",
+      params.asJson, portfolio.toString, 1 minute, timeRange, data)
+
+    val prices = report.timeSeries("coinbase.btc_usd").map(_.close)
+    val fairPrices = report.timeSeries("fair_price_sma").map(_.close)
+    val equity = report.timeSeries("equity").map(_.close)
+    val usd = report.timeSeries("cash").map(_.close)
+    val btc = report.timeSeries("position").map(_.close)
+    val hedge = report.timeSeries("hedge").map(_.close)
+
+    def round(d: Double): Double = BigDecimal.valueOf(d)
+      .setScale(2, BigDecimal.RoundingMode.HALF_UP).doubleValue()
+
+    def pairsToRow(pairs: Any): String = pairs match {
+      case d: Double => round(d).toString
+      case (x: Any, y: Any) => pairsToRow(x) + "\t" + pairsToRow(y)
+    }
+
+    (prices zip fairPrices zip equity zip usd zip btc zip hedge).map(pairsToRow).foreach(println)
+
+    round(btc.last) shouldBe .05
 
     Await.ready(for {
       _ <- system.terminate()

@@ -1,7 +1,7 @@
 package flashbot.models.core
 
 import flashbot.core.Instrument.Derivative
-import flashbot.core.{ExchangeParams, InstrumentIndex, PriceIndex}
+import flashbot.core.{AssetKey, ExchangeParams, InstrumentIndex, PriceIndex}
 import flashbot.models.core.FixedSize._
 import flashbot.models.core.Order.{Buy, Fill, Liquidity, Maker, Sell, Taker}
 import flashbot.util.Margin
@@ -154,9 +154,9 @@ case class Portfolio(assets: Map[Account, Double],
     val position = positions(market)
     instruments(market) match {
       case instrument: Derivative =>
-        val entryPosition = position.entryPrice.get
-        val price = prices(market)
-        val pnlVal = instrument.pnl(position.size, entryPosition, price)
+        val entryPrice = position.entryPrice.get
+        val price = prices.convert(market.baseAccount, market.quoteAccount).get
+        val pnlVal = instrument.pnl(position.size, entryPrice, price.price)
         FixedSize(pnlVal, instrument.settledIn.get)
     }
   }
@@ -170,20 +170,33 @@ case class Portfolio(assets: Map[Account, Double],
     */
   def initializePositions(implicit prices: PriceIndex,
                           instruments: InstrumentIndex): Portfolio = {
-    positions.filter(_._2.entryPrice.isEmpty).foldLeft(this) {
+    positions.filter(_._2.entryPrice.isEmpty).toSeq.foldLeft(this) {
       case (memo, (market, position)) =>
-        prices.get(market).map(price => instruments(market) match {
-          case instrument: Derivative =>
-            val account = Account(market.exchange, instrument.settledIn.get)
-            val newPosition = position.copy(entryPrice = Some (price) )
-            val temp = memo.setPosition (market, newPosition)
+        prices.convert(market.baseAccount, market.quoteAccount)
+          .map(price => instruments(market) match {
+            case instrument: Derivative =>
+              val account = Account(market.exchange, instrument.settledIn.get)
+              val newPosition = position.copy(entryPrice = Some(price.price) )
+              val temp = memo.withPosition (market, newPosition)
               // If there is no balance for the asset which this position is settled in, then infer
               // it to be this position's initial margin requirement.
-            if (memo.assets.isDefinedAt(account)) temp
-            else temp.withAssetBalance(account, newPosition.initialMargin(instrument))
-        }).getOrElse(memo)
+              val marg = newPosition.initialMargin(instrument)
+              if (memo.assets.isDefinedAt(account)) temp
+              else temp.withAssetBalance(account, marg)
+          }).getOrElse(memo)
 
     }
+  }
+
+  /**
+    * Whether the positions are initialized, and prices exist such that all accounts
+    * can be converted to the given target asset.
+    */
+  def isReady(targetAsset: String = "usd")
+             (implicit prices: PriceIndex,
+              instruments: InstrumentIndex): Boolean = {
+    positions.forall(_._2.entryPrice.nonEmpty) &&
+      assets.keySet.forall(prices.convert(_, targetAsset).nonEmpty)
   }
 
   /**
@@ -193,7 +206,9 @@ case class Portfolio(assets: Map[Account, Double],
             (implicit prices: PriceIndex,
              instruments: InstrumentIndex): FixedSize[Double] = {
     import FixedSize.numericDouble._
-    val PNLs = positions.keys.map(positionPNL(_) as targetAsset).sum
+    val PNLs = positions.keys.map(k => {
+      positionPNL(k) as targetAsset
+    }).sum
     val assetsEquity = balances.map(_ as targetAsset size).sum
     assetsEquity + PNLs
   }
@@ -226,7 +241,7 @@ case class Portfolio(assets: Map[Account, Double],
 
   // This is unsafe because it lets you set a new position without updating account
   // balances with the realized PNL that occurs from changing a position size.
-  protected[flashbot] def setPosition(market: Market, position: Position): Portfolio =
+  protected[flashbot] def withPosition(market: Market, position: Position): Portfolio =
     copy(positions = positions + (market -> position))
 
   def merge(portfolio: Portfolio): Portfolio = copy(
@@ -240,7 +255,7 @@ case class Portfolio(assets: Map[Account, Double],
   def diff(other: Portfolio): Portfolio = copy(
     assets = assets.filterNot { case (acc, value) => other.assets.get(acc).contains(value) },
     positions = positions.filterNot {
-      case (market, value) => positions.get(market).contains(value) }
+      case (market, value) => other.positions.get(market).contains(value) }
   )
 
   def withoutExchange(name: String): Portfolio = copy(
@@ -307,12 +322,13 @@ object Portfolio extends RegexParsers {
               portfolio.withAssetBalance(Account(exchange, symbol), size.toDouble)
 
             case (position(size, Optional(leverage), Optional(entry)), true) =>
-              portfolio.setPosition(Market(exchange, symbol),
+              portfolio.withPosition(Market(exchange, symbol),
                 Position(size.toLong,
-                  leverage.map(_.toDouble).getOrElse(1.0),
-                  entry.map(_.toDouble)))
+                  leverage.map(l => l.slice(1, l.length).toDouble).getOrElse(1.0),
+                  entry.map(e => e.slice(1, e.length).toDouble)))
 
-            case _ => throw new RuntimeException(s"No such instrument: $k")
+            case _ =>
+              throw new RuntimeException(s"No such instrument: $k")
           }
       }
     }

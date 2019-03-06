@@ -13,6 +13,7 @@ import akka.stream.scaladsl.{Keep, Sink, Source}
 import akka.stream.{Materializer, OverflowStrategy}
 import akka.util.Timeout
 import flashbot.client.FlashbotClient
+import flashbot.core.DataType.CandlesType
 import flashbot.core.FlashbotConfig.{BotConfig, ExchangeConfig, GrafanaConfig, StaticBotsConfig}
 import flashbot.core.ReportEvent._
 import flashbot.server.TradingSessionActor.{SessionPing, SessionPong, StartSession, StopSession}
@@ -22,12 +23,13 @@ import flashbot.models.core.{Account, Market, Portfolio, _}
 import flashbot.strategies.TimeSeriesStrategy
 import flashbot.util._
 import flashbot.util.stream._
-import flashbot.util.time.currentTimeMicros
+import flashbot.util.time.{FlashbotTimeout, currentTimeMicros}
 import io.circe.Json
 import io.circe.syntax._
 
 import scala.collection.immutable
 import scala.concurrent._
+//import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 import scala.language.postfixOps
 import scala.util.{Failure, Success}
@@ -45,9 +47,9 @@ class TradingEngine(engineId: String,
     extends PersistentActor with ActorLogging {
 
   private implicit val system: ActorSystem = context.system
+  private implicit val ec: ExecutionContextExecutor = context.dispatcher
   private implicit val mat: Materializer = buildMaterializer()
-  private implicit val ec: ExecutionContext = system.dispatcher
-  private implicit val timeout: Timeout = Timeout(15 seconds)
+  private implicit val timeout: Timeout = FlashbotTimeout.default
 
   override def persistenceId: String = engineId
   private val snapshotInterval = 100000
@@ -414,7 +416,6 @@ class TradingEngine(engineId: String,
         */
       case req: DataStreamReq[_] =>
         val timer = Metrics.startTimer("data_query_ms")
-        log.debug("PROXY REQUEST {}", req)
         (dataServer ? req)
           .mapTo[StreamResponse[MarketData[_]]]
           .flatMap(_.rebuild)
@@ -424,14 +425,53 @@ class TradingEngine(engineId: String,
         * A TimeSeriesQuery is a thin wrapper around a backtest of the TimeSeriesStrategy.
         */
       case query: TimeSeriesQuery =>
+
         (if (query.path.isPattern) Future.failed(
           new IllegalArgumentException("Patterns are not currently supported in time series queries."))
         else {
-          val params = TimeSeriesStrategy.Params(query.path)
-          (self ? BacktestQuery("time_series", params.asJson, query.range,
+
+          def viaBacktest: Future[Map[String, Vector[Candle]]] = {
+            val params = TimeSeriesStrategy.Params(query.path)
+            (self ? BacktestQuery("time_series", params.asJson, query.range,
               "", Some(query.interval)))
-            .mapTo[ReportResponse]
-            .map(_.report.timeSeries)
+              .mapTo[ReportResponse]
+              .map(_.report.timeSeries)
+          }
+
+          def viaDataServer(req: DataStreamReq[Candle],
+                            interval: Duration): Future[Map[String, Vector[Candle]]] = for {
+            rsp <- (dataServer ? req).mapTo[StreamResponse[MarketData[Candle]]]
+            candlesMD <- rsp.toSource.map(_.data)
+              .via(TimeSeriesTap.aggregateCandles(interval)).runWith(Sink.seq)
+            path = req.selection.path
+            key = List(path.source, path.topic).mkString(".")
+          } yield Map(key -> candlesMD.toVector)
+
+          query match {
+            // Price queries may be served by the data server directly if candle data exists
+            // for this or finer granularity.
+            case PriceQuery(path, range, interval) =>
+              for {
+              index <- (dataServer ? MarketDataIndexQuery).mapTo[Map[Long, DataPath[Any]]]
+
+              candlePath = path.withType(CandlesType(interval))
+              exactMatch = index.values.collectFirst {
+                case p: DataPath[Candle] if candlePath == p => p
+              }
+              finestMatch = index.values.toSeq.filter(_.matchesLocation(path))
+                .map(_.datatype).collect({
+                  case ct @ CandlesType(d) if d < interval => ct
+                }).sortBy(_.duration).headOption.map(t => path.withType(t))
+              matchedPath = exactMatch.orElse(finestMatch)
+              matchedRequest = matchedPath.map(p =>
+                DataStreamReq(DataSelection(p, Some(range.start), Some(range.end))))
+              result <- matchedRequest.map(viaDataServer(_, interval)).getOrElse(viaBacktest)
+            } yield result
+
+            case _ =>
+              log.debug("X")
+              viaBacktest
+          }
         }) pipeTo sender()
 
       /**

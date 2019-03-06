@@ -15,6 +15,7 @@ import flashbot.models.api._
 import flashbot.models.core._
 import flashbot.client.FlashbotClient._
 import flashbot.core.FlashbotConfig.BotConfig
+import flashbot.util.time.FlashbotTimeout
 import io.circe.Json
 
 import scala.concurrent._
@@ -180,7 +181,7 @@ class FlashbotClient(engine: ActorRef, skipTouch: Boolean = false) {
 
 object FlashbotClient {
 
-  implicit val timeout: Timeout = Timeout(10.seconds)
+  implicit val timeout: Timeout = FlashbotTimeout.default
 
   /**
     * A lightweight actor that collects ActorRefs of TradingEngine actors in the system.

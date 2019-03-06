@@ -11,6 +11,8 @@ case class DataPath[+T](source: String, topic: String, datatype: DataType[T]) {
     this._matches(matcher) || matcher._matches(this)
   }
 
+  def matchesLocation(matcher: DataPath[_]): Boolean = matches(matcher.withoutType)
+
   def _matches(matcher: DataPath[_]): Boolean = {
     def matchItem(value: String, pattern: String) = pattern == "*" || value == pattern
     val srcMatches = matchItem(source, matcher.source)
@@ -33,6 +35,8 @@ case class DataPath[+T](source: String, topic: String, datatype: DataType[T]) {
   def fmt[S >: T]: DeltaFmtJson[S] = datatype.fmtJson
 
   def withType[D](dt: DataType[D]): DataPath[D] = copy(datatype = dt)
+
+  def withoutType: DataPath[Any] = copy(datatype = AnyType)
 
   def withMarket(market: Market): DataPath[T] =
     copy(source = market.exchange, topic = market.symbol)

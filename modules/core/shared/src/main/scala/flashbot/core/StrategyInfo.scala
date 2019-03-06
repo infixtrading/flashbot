@@ -22,20 +22,22 @@ case class StrategyInfo(jsonSchema: Option[Json] = None,
   def withSchema(newSchema: Json): StrategyInfo = copy(jsonSchema = Some(newSchema))
 
   def withParamOptions(param: String, options: Seq[Any]): StrategyInfo =
-    _withParamOptions(param, options, None)
+    withParamOptionsOpt(param, options, None)
 
   def withParamOptions(param: String, options: Seq[Any], default: Any): StrategyInfo =
-    _withParamOptions(param, options, Some(default))
+    withParamOptionsOpt(param, options, Some(default))
 
-  private def _withParamOptions(param: String, options: Seq[Any],
-                                defaultVal: Option[Any]): StrategyInfo = {
+  def withParamOptionsOpt(param: String, options: Seq[Any],
+                          defaultVal: Option[Any]): StrategyInfo = {
     val enums = options.toVector.map(encodePropertyValue(param, _))
-    val withEnums = property(param).as[JsonObject].modify(_.add("enum", enums.asJson))
-    val withDefault = property(param).as[JsonObject].modify(o => defaultVal match {
-      case Some(v) => o.add("default", encodePropertyValue(param, v))
-      case None => o
-    })
-    withSchema((withEnums compose withDefault)(jsonSchema.get))
+    if (enums.nonEmpty) {
+      val withEnums = property(param).as[JsonObject].modify(_.add("enum", enums.asJson))
+      val withDefault = property(param).as[JsonObject].modify(o => defaultVal match {
+        case Some(v) => o.add("default", encodePropertyValue(param, v))
+        case None => o
+      })
+      withSchema((withEnums compose withDefault) (jsonSchema.get))
+    } else this
   }
 
   def withParamDefault(param: String, value: Any): StrategyInfo = {

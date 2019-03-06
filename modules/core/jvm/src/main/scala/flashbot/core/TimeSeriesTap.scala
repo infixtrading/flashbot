@@ -103,24 +103,39 @@ object TimeSeriesTap {
       first.plusMillis(i * timeStep.toMillis)
   }
 
-  def aggregateCandles(timeStep: Duration): Flow[(Instant, Double), Candle, NotUsed] = {
-    Flow[(Instant, Double)].statefulMapConcat { () =>
+  def aggregateTrades(timeStep: Duration): Flow[(Instant, Double, Double), Candle, NotUsed] =
+    _aggAsCandles[(Instant, Double, Double)](
+      x => Candle.single(x._1.toEpochMilli * 1000, x._2, x._3),
+      (c, x) => c.addOHLCV(x._2, x._2, x._2, x._2, x._3),
+      _._1)(timeStep)
+
+  def aggregatePrices(timeStep: Duration): Flow[(Instant, Double), Candle, NotUsed] =
+    Flow[(Instant, Double)].map(x => (x._1, x._2, 0d)).via(aggregateTrades(timeStep))
+
+  def aggregateCandles(timeStep: Duration): Flow[Candle, Candle, NotUsed] =
+    _aggAsCandles[Candle](c => c,
+      (a, b) => a.addOHLCV(b.open, b.high, b.low, b.close, b.volume),
+      _.instant)(timeStep)
+
+  private def _aggAsCandles[T](build: T => Candle, reduce: (Candle, T) => Candle, inst: T => Instant)
+                              (timeStep: Duration): Flow[T, Candle, NotUsed] =
+    Flow[T].statefulMapConcat { () =>
       var currentCandle: Option[Candle] = None
-      (x: (Instant, Double)) => {
-        val (instant, price) = x
-        val singleCandle = Candle.single(instant.toEpochMilli * 1000, x._2)
+      (x: T) => {
+        val instant = inst(x)
+        val singleCandle = build(x)
         if (currentCandle.isEmpty) {
           currentCandle = Some(singleCandle)
           List()
         } else {
           val prevCandle = currentCandle.get
           currentCandle = Some(
-            if (prevCandle.micros + timeStep.toMicros < x._1.toEpochMilli * 1000) singleCandle
-            else prevCandle.addPrice(price))
+            if (prevCandle.micros + timeStep.toMicros < instant.toEpochMilli * 1000) singleCandle
+            else reduce(prevCandle, x))
           if (prevCandle.micros == currentCandle.get.micros) List()
           else List(prevCandle)
         }
       }
     }
-  }
+
 }

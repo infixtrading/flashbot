@@ -37,7 +37,7 @@ class CandleScanner extends Strategy[CandleScannerParams] {
       : Future[Source[MarketData[T], NotUsed]] = {
     Future.successful(TimeSeriesTap
       .prices(1 day)
-      .via(TimeSeriesTap.aggregateCandles(1 day))
+      .via(TimeSeriesTap.aggregatePrices(1 day))
       .throttle(1, 200 millis)
       .zipWithIndex
       .map {

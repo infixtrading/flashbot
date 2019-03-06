@@ -19,6 +19,7 @@ import flashbot.models.api._
 import flashbot.models.core.DataPath
 import flashbot.util._
 import flashbot.util.stream._
+import flashbot.util.time.FlashbotTimeout
 import io.circe.parser._
 import slick.jdbc.PostgresProfile.api._
 import slick.jdbc.meta.MTable
@@ -80,6 +81,8 @@ class DataServer(dbConfig: Config,
     }
   }
   override def postStop() = {
+    log.debug("STOPPING THE DATA SERVER")
+
     if (cluster.isDefined) cluster.get.unsubscribe(self)
     slickSession.close()
   }
@@ -134,7 +137,7 @@ class DataServer(dbConfig: Config,
 
   var remoteDataServers = Map.empty[ActorPath, ActorRef]
 
-  implicit val timeout = Timeout(10 seconds)
+  implicit val timeout = FlashbotTimeout.default
 
   def receive = {
 
@@ -192,8 +195,6 @@ class DataServer(dbConfig: Config,
             // If it's not a polling request, we use an empty stream instead.
             case (_, _, _) => Future.successful(Source.empty)
           }
-
-          _ = { log.debug("Found live stream") }
 
           // Build the historical stream.
           historical <- from

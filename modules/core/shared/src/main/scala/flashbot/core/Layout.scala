@@ -82,8 +82,8 @@ case class Layout(queries: Seq[Query] = Seq.empty,
       } else if (queries.forall(_.`type` == TimeSeriesType)) {
         gPanel = Some(GrafanaDashboard
           .mkGraphPanel(0, panel, GridPos(x, y, w, h))
-          .withYAxis(Axis("locale"))
-          .withYAxis(Axis("locale"))
+          .withYAxis(Axis("locale", decimals = Some(6)))
+          .withYAxis(Axis("locale", decimals = Some(6)))
         )
         queries.foreach(q => gPanel = for {
           panel <- gPanel
@@ -94,7 +94,9 @@ case class Layout(queries: Seq[Query] = Seq.empty,
             withFill.withSeriesOverride(q.key, _.width(w))).getOrElse(withFill)
           withColor = q.color.map(c =>
             withWidth.withSeriesOverride(q.key, _.color(c))).getOrElse(withWidth)
-        } yield withColor)
+          withAxis = q.axis.map(a =>
+            withColor.withSeriesOverride(q.key, _.axis(a))).getOrElse(withColor)
+        } yield withAxis)
       } else {
         throw new RuntimeException("Unable to build dashboard. " +
           "Table and time series queries cannot be mixed.")
@@ -136,12 +138,14 @@ object Layout {
                    isPrimary: Boolean = true,
                    fill: Option[Boolean] = None,
                    lineWidth: Option[Int] = None,
-                   color: Option[String] = None) {
+                   color: Option[String] = None,
+                   axis: Option[Int] = None) {
     def setPrimary(value: Boolean): Query = copy(isPrimary = value)
     def setType(ty: QueryType): Query = copy(`type` = ty)
     def setFill(v: Boolean): Query = copy(fill = Some(v))
     def setLineWidth(w: Int): Query = copy(lineWidth = Some(w))
     def setColor(color: String): Query = copy(color = Some(color))
+    def setAxis(axis: Int): Query = copy(axis = Some(axis))
   }
 
   case class PanelConfig(height: Option[Int] = None, row: Option[String])
@@ -153,6 +157,7 @@ object Layout {
   val default = Layout()
     .addPanel("Equity", "Portfolio")
     .addTimeSeries("equity", "Equity")
+    .addTimeSeries("buy_and_hold", "Equity")
 
 //    .addQuery("price", "$market Price", "Prices")
 //    .addQuery("volume", "$market Price", "Prices", _.setPrimary(false))

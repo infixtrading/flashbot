@@ -8,10 +8,13 @@ case class Candle(micros: Long,
                   low: Double,
                   close: Double,
                   volume: Double) extends Timestamped with Priced {
-  def addPrice(value: Double): Candle = copy(
-    high = math.max(high, value),
-    low = math.min(low, value),
-    close = value
+
+  def addOHLCV(open: Double, high: Double, low: Double,
+               close: Double, volume: Double): Candle = copy(
+    high = math.max(this.high, high),
+    low = math.min(this.low, low),
+    close = close,
+    volume = this.volume + volume
   )
 
   override def price = close

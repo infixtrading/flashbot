@@ -54,7 +54,9 @@ case class Position(size: Long, leverage: Double, entryPrice: Option[Double]) {
 
   override def toString = {
     Seq(Some(size.toString),
-      if (leverage == 1) None else Some("x" + leverage),
-      entryPrice.map(p => "@" + p)).mkString("")
+        if (leverage == 1) None else Some("x" + leverage),
+        entryPrice.map(p => "@" + p))
+      .map(_.getOrElse(""))
+      .mkString("")
   }
 }

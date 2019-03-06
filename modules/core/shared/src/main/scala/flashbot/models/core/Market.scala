@@ -1,6 +1,6 @@
 package flashbot.models.core
 
-import flashbot.core.{InstrumentIndex, Labelled}
+import flashbot.core.{DataType, InstrumentIndex, Labelled}
 import flashbot.core.Instrument.CurrencyPair
 import io.circe._
 import io.circe.generic.semiauto._
@@ -20,6 +20,15 @@ case class Market(exchange: String, symbol: String) extends Labelled {
 
   def securityAccount(implicit instruments: InstrumentIndex): Account =
     Account(exchange, instruments(this).security.get)
+
+  def baseAccount(implicit instruments: InstrumentIndex): Account =
+    Account(exchange, instruments(this).base)
+
+  def quoteAccount(implicit instruments: InstrumentIndex): Account =
+    Account(exchange, instruments(this).quote)
+
+  def path[T](dataType: DataType[T]): DataPath[T] =
+    DataPath(exchange, symbol, dataType)
 }
 
 object Market {

@@ -3,7 +3,7 @@ package flashbot.core
 import java.time.{Instant, ZoneOffset, ZonedDateTime}
 
 import flashbot.core.ReportEvent.{CandleAdd, CandleUpdate}
-import flashbot.models.core.{Candle, FixedPrice, FixedSize, Market}
+import flashbot.models.core._
 import flashbot.util.time._
 import org.ta4j.core.BaseTimeSeries.SeriesBuilder
 import org.ta4j.core.indicators.AbstractIndicator
@@ -133,6 +133,7 @@ trait TimeSeriesMixin extends DataHandler { self: Strategy[_] =>
 
   private def _series(key: String): TimeSeries = {
     if (!allSeries.isDefinedAt(key)) {
+      println("CREATING TIME SERIES", key)
       val ts = new BaseTimeSeries.SeriesBuilder().withName(key).withMaxBarCount(1000).build()
       allSeries += (key -> ts)
     }
@@ -146,12 +147,19 @@ trait TimeSeriesMixin extends DataHandler { self: Strategy[_] =>
     md.data match {
       case trade: Trade =>
         recordTrade((md.source, md.topic), md.micros, trade.price, Some(trade.size))
+      case candle: Candle =>
+        recordCandle((md.source, md.topic), candle)
       case priced: Priced =>
         recordTrade((md.source, md.topic), md.micros, priced.price)
       case _ =>
     }
-    recordTimeSeries("equity", md.micros, ctx.getPortfolio.equity().amount)
+
     super.aroundHandleData(md)
+
+    if (ctx.getPortfolio.isReady()) {
+      recordTimeSeries("equity", md.micros, ctx.getPortfolio.equity().amount)
+      recordTimeSeries("buy_and_hold", md.micros, initialPortfolio.get.equity().amount)
+    }
   }
 
   def toNum(number: Number): Num = new BaseTimeSeries().numOf(number)
@@ -168,4 +176,8 @@ trait TimeSeriesMixin extends DataHandler { self: Strategy[_] =>
   }
 
   def index(market: Market): Int = prices(market).getEndIndex
+  def lastBarTime(market: Market): Option[ZonedDateTime] = {
+    val ts = prices(market)
+    (if (ts.isEmpty) None else Some(ts.getLastBar)).map(_.getBeginTime)
+  }
 }

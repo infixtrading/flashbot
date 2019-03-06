@@ -1,6 +1,6 @@
 package flashbot.server
 
-import java.util.concurrent.Executors
+import java.util.concurrent.{ConcurrentHashMap, Executors}
 
 import akka.{Done, NotUsed}
 import akka.actor.{Actor, ActorLogging, ActorRef, PoisonPill, Props}
@@ -20,9 +20,11 @@ import flashbot.core.{DataType, DeltaFmt, DeltaFmtJson, MarketData}
 import flashbot.models.core.DataPath
 import io.circe.Printer
 
-import scala.collection.concurrent.TrieMap
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
+//import scala.concurrent.ExecutionContext.Implicits.global
+import scala.collection.JavaConverters._
+import scala.concurrent.blocking
 import scala.language.postfixOps
 import scala.util.{Failure, Random, Success}
 
@@ -40,11 +42,9 @@ class DataSourceActor(session: SlickSession,
   import DataSourceActor._
   import session.profile.api._
 
-  val blockingEc: ExecutionContext =
-    ExecutionContext.fromExecutor(Executors.newFixedThreadPool(2))
   implicit val system = context.system
+  implicit val ec: ExecutionContext = system.dispatcher
   implicit val mat = buildMaterializer()
-  implicit val ec = system.dispatcher
   implicit val slickSession = session
 
   val random = new Random()
@@ -77,13 +77,13 @@ class DataSourceActor(session: SlickSession,
 
   var itemBuffers = Map.empty[Long, Vector[MarketData[_]]]
 
-  var subscriptions = TrieMap.empty[String, Set[ActorRef]]
+  var subscriptions = new ConcurrentHashMap[String, Set[ActorRef]]
 
-  var bundleIndex = TrieMap.empty[String, Seq[Long]]
+  var bundleIndex = new ConcurrentHashMap[String, Seq[Long]]
 
   override def postStop() = {
     // Close all subscriptions on stop.
-    for (ref <- subscriptions.values.flatten) {
+    for (ref <- subscriptions.values().asScala.toSet.flatten) {
       ref ! PoisonPill
     }
   }
@@ -155,17 +155,20 @@ class DataSourceActor(session: SlickSession,
           // instance, drop all data that doesn't match the ingest config, and return the streams.
           def getStreams[T](topics: Either[String, Set[String]],
                             delay: Duration, matchers: Set[DataPath[Any]]) = for {
-            _ <- Future { Thread.sleep(delay.toMillis) } (blockingEc)
+            _ <- Future(blocking {
+              Thread.sleep(delay.toMillis)
+            })
 
             streams <- topics match {
               case Left(topic) =>
-                log.debug("Requesting ingest stream for {}/{}", topic, DataType(dataType))
-                dataSource.ingest[T](topic, DataType(dataType))
+                log.debug("Requesting ingest stream for {}/{}", topic, dataType)
+                dataSource.ingest[T](topic, dataType.asInstanceOf[DataType[T]])
                   .andThen { case x =>
-                    log.debug("Got ingest stream for {}/{}: {}", topic, DataType(dataType), x)
+                    log.debug("Got ingest stream for {}/{}: {}", topic, dataType, x)
                   }
                   .map(src => Map(topic -> src))
-              case Right(ts) => dataSource.ingestGroup[T](ts, DataType(dataType))
+              case Right(ts) =>
+                dataSource.ingestGroup[T](ts, dataType.asInstanceOf[DataType[T]])
             }
             _ = log.debug("Ingest streams: {}", streams)
           } yield streams.filterKeys(topic =>
@@ -220,11 +223,11 @@ class DataSourceActor(session: SlickSession,
                           ingestConfig.retentionFor(path), dataSource.backfillTickRate)))
 
 
-                        // Save bundle id for this path.
-                        bundleIndex += (path.toString ->
-                          (bundleIndex.getOrElse(path, Seq.empty[Long]) :+ ingestBundleId))
+                        bundleIndex.computeIfAbsent(path.toString, _ => Seq.empty[Long])
+                        bundleIndex.computeIfPresent(path.toString, (_, s) => s :+ ingestBundleId)
 
-                        subscriptions += (path.toString -> Set.empty[ActorRef])
+                        subscriptions.computeIfAbsent(path.toString, _ => Set.empty[ActorRef])
+                        subscriptions.computeIfPresent(path.toString, (_, s) => s)
 
                         case class ScanState(lastSnapshotAt: Long, seqId: Long,
                                              micros: Long, item: T, delta: Option[fmt.D],
@@ -316,7 +319,7 @@ class DataSourceActor(session: SlickSession,
       itemBuffers += (item.bundle -> (existing :+ item))
 
       // Broadcast
-      subscriptions.get(item.path).foreach(refs => refs.foreach(_ ! item))
+      Option(subscriptions.get(item.path)).foreach(refs => refs.foreach(_ ! item))
 
     case DataIngested(bundleId, lastIngestedSeqId: Long) =>
       val existing = itemBuffers.getOrElse(bundleId, Vector.empty)
@@ -334,19 +337,25 @@ class DataSourceActor(session: SlickSession,
      */
     case StreamLiveData(path) =>
       def buildOptSrc[T](fmt: DeltaFmtJson[T]): Option[Source[MarketData[T], NotUsed]] =
-        if (subscriptions.isDefinedAt(path)) {
-          val (ref, src) =
-            Source.actorRef[MarketData[T]](Int.MaxValue, OverflowStrategy.fail).preMaterialize()
-          subscriptions += (path.toString -> (subscriptions(path) + ref))
-          val initialItems: Vector[MarketData[T]] = lookupBundleId(path)
-            .flatMap(itemBuffers.get(_).map(_.asInstanceOf[Vector[MarketData[T]]]) )
-            .getOrElse(Vector.empty[MarketData[T]])
-          Some(Source(initialItems).concat(src))
-        } else None
+        {
+          var srcOpt: Option[Source[MarketData[T], NotUsed]] = None
+          val newSubs = Option(subscriptions.computeIfPresent(path.toString, (_, subs) => {
+            val (ref, _src) =
+              Source.actorRef[MarketData[T]](Int.MaxValue, OverflowStrategy.fail).preMaterialize()
+            srcOpt = Some(_src)
+            subs + ref
+          }))
+          newSubs.map(subs => {
+            val initialItems: Vector[MarketData[T]] = lookupBundleId(path)
+              .flatMap(itemBuffers.get(_).map(_.asInstanceOf[Vector[MarketData[T]]]) )
+              .getOrElse(Vector.empty[MarketData[T]])
+            Source(initialItems).concat(srcOpt.get)
+          })
+        }
       sender ! buildOptSrc(DeltaFmt.formats(path.datatype))
   }
 
-  def lookupBundleId(path: DataPath[_]): Option[Long] = bundleIndex.get(path).map(_.last)
+  def lookupBundleId(path: DataPath[_]): Option[Long] = Option(bundleIndex.get(path)).map(_.last)
 }
 
 

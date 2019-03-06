@@ -114,7 +114,7 @@ object GrafanaDashboard {
                       hide: Long, includeAll: Boolean, multi: Boolean, name: String,
                       label: Option[String], options: Seq[VariableOption], query: String,
                       refresh: Option[Int], skipUrlSync: Boolean, auto: Option[Boolean],
-                      auto_count: Option[Boolean], auto_min: Option[String]) {
+                      auto_count: Option[Int], auto_min: Option[String]) {
     // Add the option and update the query
     def withOption(option: VariableOption): Template =
       copy(options = options :+ option,
@@ -187,6 +187,7 @@ object GrafanaDashboard {
     def width(w: Int): SeriesOverride = copy(linewidth = Some(w))
     def fill(f: Boolean): SeriesOverride = copy(fill = Some(if (f) 1 else 0))
     def color(c: String): SeriesOverride = copy(color = Some(c))
+    def axis(a: Int): SeriesOverride = copy(yaxis = Some(a))
   }
 
   @JsonCodec
@@ -253,7 +254,7 @@ object GrafanaDashboard {
   }
 
   @JsonCodec
-  case class Sort(col: Option[String], desc: Boolean)
+  case class Sort(col: Int, desc: Boolean)
 
   @JsonCodec
   case class GridPos(x: Int, y: Int, w: Int, h: Int)
@@ -299,7 +300,7 @@ object GrafanaDashboard {
       links = Some(Seq.empty),
       scroll = Some(true),
       showHeader = Some(true),
-      sort = Some(Sort(None, desc = false)),
+      sort = Some(Sort(0, desc = false)),
       styles = Some(defaultStyles),
       targets = Some(Seq.empty),
       transform = Some("table")

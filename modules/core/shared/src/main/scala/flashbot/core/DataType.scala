@@ -40,7 +40,7 @@ object DataType {
   }
   case class CandlesType(duration: FiniteDuration) extends DataType[Candle] {
     override def fmtJson[S >: Candle] =
-      DeltaFmt.defaultFmtJson[Candle]("candles").asInstanceOf[DeltaFmtJson[S]]
+      DeltaFmt.defaultFmtJson[Candle](toString).asInstanceOf[DeltaFmtJson[S]]
     override def toString = "candles_" + printDuration(duration)
   }
 

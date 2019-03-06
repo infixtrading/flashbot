@@ -20,7 +20,6 @@ object Pegs {
     ("usd", "dai"),
     ("usd", "tusd"),
     ("usd", "bitusd"),
-    ("btc", "xbt"),
-    ("usd", "xbtusd")
+    ("btc", "xbt")
   )
 }

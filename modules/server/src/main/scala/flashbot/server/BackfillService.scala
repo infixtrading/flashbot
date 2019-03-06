@@ -17,7 +17,7 @@ import io.circe.Printer
 import io.circe.syntax._
 
 import scala.collection.immutable
-import scala.concurrent.ExecutionContext.Implicits.global
+//import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.blocking
 import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.concurrent.duration._
@@ -51,6 +51,7 @@ class BackfillService[T](bundleId: Long, path: DataPath[T], dataSource: DataSour
 
   implicit val system = context.system
   implicit val mat = buildMaterializer()
+  implicit val ec: ExecutionContext = system.dispatcher
   val random = new Random()
 
   implicit val fmt: DeltaFmtJson[T] = path.fmt[T]

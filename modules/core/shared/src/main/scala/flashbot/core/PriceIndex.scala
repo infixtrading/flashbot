@@ -22,7 +22,9 @@ class PriceIndex(private val priceMap: mutable.Map[Market, Double] = mutable.Map
       if (approx) markets
       else markets.filter(mentionedExchanges contains _.exchange)
     val exchanges = filteredPrices.map(_.exchange)
-    val key = CacheKey(from, to, exchanges)
+    val key =
+      if (approx) CacheKey(from.security, to.security, exchanges)
+      else CacheKey(from, to, exchanges)
 
     val pathOpt = pricePathCache.get(key)
       // If this is coming from the cache, then the structure of the price path is useful for us,
@@ -35,7 +37,7 @@ class PriceIndex(private val priceMap: mutable.Map[Market, Double] = mutable.Map
         fp.copy(price = priceForward.orElse(priceBackward).get)
       }))
       // If not coming from the cache, the prices must be correct already.
-      .orElse(conversions.findPricePath(from, to)(this, instruments))
+      .orElse(conversions.findPricePath(key.from, key.to)(this, instruments))
 
     // Update the cache
     if (pathOpt.isDefined) {

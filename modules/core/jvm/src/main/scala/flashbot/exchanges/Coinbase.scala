@@ -12,7 +12,9 @@ class Coinbase(implicit val system: ActorSystem,
                val mat: Materializer) extends Exchange {
 
   override def makerFee = .0000
-  override def takerFee = .003
+//  override def takerFee = .003
+  override def takerFee = -.0012
+
   override def order(req: OrderRequest) = ???
   override def cancel(id: String, pair: Instrument) = ???
 

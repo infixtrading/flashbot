@@ -45,7 +45,10 @@ object BitMEX {
 
     // https://www.bitmex.com/app/seriesGuide/XBT#How-is-the-XBTUSD-Perpetual-Contract-Quoted
     override def pnl(size: Long, entryPrice: Double, exitPrice: Double) =
-      size * (1.0 / entryPrice - 1.0 / exitPrice)
+      {
+        val ret = size * (1.0 / entryPrice - 1.0 / exitPrice)
+        ret
+      }
 
     override def value(price: Double) = FixedSize(1.0 / price, settledIn.get)
   }

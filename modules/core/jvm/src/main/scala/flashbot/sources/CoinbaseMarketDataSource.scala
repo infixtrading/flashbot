@@ -2,14 +2,16 @@ package flashbot.sources
 
 import java.net.URI
 import java.time.Instant
-import java.util.concurrent.Executors
+import java.time.format.DateTimeFormatter
+import java.time.temporal.{ChronoField, ChronoUnit, TemporalAccessor}
+import java.util.concurrent.{Executors, TimeUnit}
 
-import akka.NotUsed
+import akka.{Done, NotUsed}
 import akka.actor.{ActorContext, ActorRef, PoisonPill}
 import akka.stream.{ActorMaterializer, OverflowStrategy}
-import akka.stream.scaladsl.{Flow, Keep, Sink, Source}
+import akka.stream.scaladsl.{Flow, Keep, RestartSource, Sink, Source}
 import flashbot.core.DataSource.IngestGroup
-import flashbot.core.DataType.{LadderType, OrderBookType, TradesType}
+import flashbot.core.DataType.{CandlesType, LadderType, OrderBookType, TradesType}
 import flashbot.core.Instrument.CurrencyPair
 import flashbot.core._
 import flashbot.models.core._
@@ -29,26 +31,22 @@ import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import flashbot.core.DataType
 import flashbot.models.core.Order._
 import flashbot.models.core.OrderBook
+import flashbot.server.RequestService._
 
-import scala.concurrent.{ExecutionContext, Future, Promise}
+import scala.concurrent.{ExecutionContext, Future, Promise, blocking}
 import scala.concurrent.duration._
 import scala.language.postfixOps
 import scala.util.{Failure, Success}
 
 class CoinbaseMarketDataSource extends DataSource {
 
-  val blockingEc: ExecutionContext =
-    ExecutionContext.fromExecutor(Executors.newFixedThreadPool(5))
-
   import CoinbaseMarketDataSource._
-
-  implicit val okHttpBackend = OkHttpFutureBackend()(blockingEc)
 
   override def scheduleIngest(topics: Set[String], dataType: String) = {
     IngestGroup(topics, 0 seconds)
   }
 
-  override def types = Seq(TradesType, OrderBookType)
+  override def types = Seq(TradesType, OrderBookType, CandlesType(1 minute))
 
   override def ingestGroup[T](topics: Set[String], datatype: DataType[T])
                              (implicit ctx: ActorContext, mat: ActorMaterializer) = {
@@ -102,7 +100,7 @@ class CoinbaseMarketDataSource extends DataSource {
     datatype match {
       case OrderBookType =>
         // Asynchronously connect to the client and send the subscription message
-        Future {
+        Future(blocking {
           if (!client.connectBlocking(30, SECONDS)) {
             responsePromise.failure(new RuntimeException("Unable to connect to Coinbase Pro WebSocket"))
           }
@@ -117,7 +115,7 @@ class CoinbaseMarketDataSource extends DataSource {
           // Send the subscription message
           log.debug("Sending message: {}", strMsg)
           client.send(strMsg)
-        }(blockingEc)
+        })
 
         val snapshotPromises = topics.map(_ -> Promise[StreamItem]).toMap
 
@@ -150,7 +148,7 @@ class CoinbaseMarketDataSource extends DataSource {
               val product = toCBProduct(topic)
               var uri = uri"https://api.pro.coinbase.com/products/$product/book?level=3"
               val snapRef = snapshotPromises(topic)
-              sttp.get(uri).send().flatMap { rsp =>
+              sttp.get(uri).sendWithRetries().flatMap { rsp =>
                 rsp.body match {
                   case Left(err) => Future.failed(new RuntimeException(s"Error in Coinbase snapshot request: $err"))
                   case Right(bodyStr) => Future.fromTry(decode[BookSnapshot](bodyStr).toTry)
@@ -191,7 +189,7 @@ class CoinbaseMarketDataSource extends DataSource {
 
       case TradesType =>
         // Asynchronously connect to the client and send the subscription message
-        Future {
+        Future(blocking {
           if (!client.connectBlocking(30, SECONDS)) {
             responsePromise.failure(new RuntimeException("Unable to connect to Coinbase Pro WebSocket"))
           }
@@ -206,7 +204,7 @@ class CoinbaseMarketDataSource extends DataSource {
           // Send the subscription message
           log.debug("Sending message: {}", strMsg)
           client.send(strMsg)
-        } (blockingEc)
+        })
 
         jsonSrc.alsoTo(Sink.foreach { json =>
           // Resolve promise if necessary
@@ -251,6 +249,14 @@ class CoinbaseMarketDataSource extends DataSource {
               log.warning("An error occured while closing the Coinbase WebSocket connection: {}", err)
           }
         }
+
+      case CandlesType(d) if d == 1.minute =>
+        responsePromise.completeWith(ingestGroup(topics, TradesType).map(_.map {
+          case (topic, src) =>
+            topic -> src.map(_._2).map(t => (t.instant, t.price, t.size))
+              .via(TimeSeriesTap.aggregateTrades(d).map(c => (c.micros, c.asInstanceOf[T])))
+              .drop(1)
+        }))
     }
 
     responsePromise.future
@@ -260,7 +266,7 @@ class CoinbaseMarketDataSource extends DataSource {
                               (implicit ctx: ActorContext, mat: ActorMaterializer)
       : Future[(Vector[(Long, T)], Option[(String, FiniteDuration)])] = datatype match {
     case TradesType =>
-      implicit val ec = ctx.dispatcher
+      implicit val ec: ExecutionContext = ctx.dispatcher
       val cursor = cursorStr.map(decode[BackfillCursor](_).right.get)
       val product = toCBProduct(topic)
       var uri = uri"https://api.pro.coinbase.com/products/$product/trades"
@@ -268,7 +274,7 @@ class CoinbaseMarketDataSource extends DataSource {
         uri = uri.queryFragment(KeyValue("after", cursor.get.cbAfter))
       }
 
-      sttp.get(uri).send().flatMap { rsp =>
+      sttp.get(uri).sendWithRetries().flatMap { rsp =>
         val nextCbAfterOpt = rsp.headers.toMap.get("cb-after").filterNot(_.isEmpty)
         rsp.body match {
           case Left(err) =>
@@ -293,6 +299,36 @@ class CoinbaseMarketDataSource extends DataSource {
               (trades.map(_.toTrade).map(t => (t.micros, t.asInstanceOf[T])),
                 nextCursorOpt.map(x => (x.asJson.noSpaces, 4 seconds)))
             }
+        }
+      }
+
+    case CandlesType(d) if d == 1.minute =>
+      implicit val ec: ExecutionContext = ctx.dispatcher
+      val product = toCBProduct(topic)
+      val now = Instant.now()
+      val endInstant = cursorStr.map(s =>
+          Instant.from(DateTimeFormatter.ISO_INSTANT.parse(s)))
+        .getOrElse(now)
+      val end = DateTimeFormatter.ISO_INSTANT.format(endInstant)
+      val start = DateTimeFormatter.ISO_INSTANT.format(endInstant.minusSeconds(60 * 200))
+      val uri = uri"https://api.pro.coinbase.com/products/$product/candles?start=$start&end=$end&granularity=60"
+      sttp.get(uri).sendWithRetries().flatMap { rsp =>
+        rsp.body match {
+          case Left(err) =>
+            Future.failed(new RuntimeException(err))
+          case Right(value) =>
+            Future.fromTry(decode[Seq[(Long, Double, Double, Double, Double, Double)]](value).toTry)
+              .map(rawData => {
+                val data = rawData.toVector.map {
+                  case (secs, low, high, open, close, volume) =>
+                    val micros = secs * 1000000
+                    (micros, Candle(micros, open, high, low, close, volume).asInstanceOf[T])
+                }
+                val cursor =
+                  if (endInstant.isBefore(now.minus(4 * 365, ChronoUnit.DAYS))) None
+                  else Some((start, 4 seconds))
+                (data, cursor)
+              })
         }
       }
 

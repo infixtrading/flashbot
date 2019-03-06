@@ -51,11 +51,11 @@ object GraphConversions extends Conversions {
     }
 
     val componentNameProvider = new ComponentNameProvider[AssetKey] {
-      override def getName(component: AssetKey) = component.toString.replace("""/""", "_")
+      override def getName(component: AssetKey) = component.toString.replace(""".""", "_")
     }
 
     val vertexLabelProvider = new ComponentNameProvider[AssetKey] {
-      override def getName(component: AssetKey) = component.toString.replace("""/""", "_")
+      override def getName(component: AssetKey) = component.toString.replace(""".""", "_")
     }
 
     val edgeLabelProvider = new ComponentNameProvider[Edge[_]] {
@@ -64,7 +64,7 @@ object GraphConversions extends Conversions {
 
     import java.io.StringWriter
 
-    def printGraph = {
+    def printGraph() = {
      val writer = new StringWriter
 
       new DOTExporter(componentNameProvider, vertexLabelProvider, edgeLabelProvider)
@@ -147,7 +147,7 @@ object GraphConversions extends Conversions {
       edgeSol = Option(priceEdges.map(_.fp))
     } catch {
       case npe: NullPointerException =>
-        println(s"Warning: No solution found for $baseKey -> $quoteKey conversion.")
+//        println(s"Warning: No solution found for $baseKey -> $quoteKey conversion.")
     }
 
     edgeSol
