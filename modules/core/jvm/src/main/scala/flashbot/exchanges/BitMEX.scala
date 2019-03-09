@@ -11,9 +11,10 @@ import scala.concurrent.Future
 
 class BitMEX(implicit val system: ActorSystem,
              val mat: Materializer) extends Exchange {
-  override def makerFee: Double = ???
 
-  override def takerFee: Double = ???
+  override def makerFee: Double = -0.00025
+
+  override def takerFee: Double = 0.00075
 
   override def cancel(id: String, pair: Instrument): Future[ExchangeResponse] = ???
 
@@ -50,7 +51,7 @@ object BitMEX {
         ret
       }
 
-    override def value(price: Double) = FixedSize(1.0 / price, settledIn.get)
+    override def valueDouble(price: Double) = 1.0 / price
   }
 
   object ETHUSD extends FuturesContract {
@@ -70,7 +71,7 @@ object BitMEX {
       (exitPrice - entryPrice) * bitcoinMultiplier * size
     }
 
-    override def value(price: Double) = FixedSize(price * bitcoinMultiplier, settledIn.get)
+    override def valueDouble(price: Double) = price * bitcoinMultiplier
   }
 
   object BXBT extends Index(".BXBT", "xbt", "usd")

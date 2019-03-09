@@ -415,11 +415,11 @@ class TradingEngine(engineId: String,
         * Proxy market data requests to the data server.
         */
       case req: DataStreamReq[_] =>
-        val timer = Metrics.startTimer("data_query_ms")
+        val timer = ServerMetrics.startTimer("data_query_ms")
         (dataServer ? req)
           .mapTo[StreamResponse[MarketData[_]]]
           .flatMap(_.rebuild)
-          .andThen { case x => timer.observeDuration() } pipeTo sender
+          .andThen { case x => timer.close() } pipeTo sender
 
       /**
         * A TimeSeriesQuery is a thin wrapper around a backtest of the TimeSeriesStrategy.
@@ -480,7 +480,7 @@ class TradingEngine(engineId: String,
         */
       case BacktestQuery(strategyName, paramsJson, timeRange, portfolio, barSize, eventsOut, dataOverrides) =>
 
-        val timer = Metrics.startTimer("backtest_ms")
+        val timer = ServerMetrics.startTimer("backtest_ms")
 
         // TODO: Remove the try catch
         try {
@@ -490,7 +490,7 @@ class TradingEngine(engineId: String,
           val (ref, reportEventSrc) = Source
             .actorRef[ReportEvent](Int.MaxValue, OverflowStrategy.fail)
             .alsoTo(Sink.foreach { x =>
-              Metrics.inc("report_event_count")
+              ServerMetrics.inc("report_event_count")
             })
             .preMaterialize()
 
@@ -509,7 +509,7 @@ class TradingEngine(engineId: String,
 
               deltas.foreach { delta =>
                 jsonDeltas :+= delta.asJson
-                Metrics.inc("backtest_report_delta_counter")
+                ServerMetrics.inc("backtest_report_delta_counter")
               }
               (deltas.foldLeft(r._1)(_.update(_)), jsonDeltas)
             })
@@ -537,7 +537,7 @@ class TradingEngine(engineId: String,
 
           fut.andThen {
             case x =>
-              timer.observeDuration()
+              timer.close()
           }.map(ReportResponse) pipeTo sender
         } catch {
           case err: Throwable =>

@@ -7,7 +7,7 @@ import io.circe.generic.JsonCodec
 import io.circe.generic.semiauto._
 import io.circe.parser._
 import TimeSeriesStrategy._
-import flashbot.server.Metrics
+import flashbot.server.ServerMetrics
 
 import scala.concurrent.Future
 
@@ -23,7 +23,7 @@ class TimeSeriesStrategy extends Strategy[Params] with TimeSeriesMixin {
   override def handleData(marketData: MarketData[_])(implicit ctx: TradingSession) = marketData.data match {
 
     case _: Priced =>
-      Metrics.inc("time_series_strategy_data_count")
+      ServerMetrics.inc("time_series_strategy_data_count")
 
     case x => // Ignore non-priced data
   }

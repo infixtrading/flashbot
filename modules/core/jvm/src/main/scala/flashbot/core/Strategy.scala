@@ -9,7 +9,7 @@ import akka.pattern.ask
 import akka.stream.Materializer
 import akka.stream.scaladsl.Source
 import akka.util.Timeout
-import flashbot.server.StreamResponse
+import flashbot.server.{ServerMetrics, StreamResponse}
 import flashbot.models.api.{DataOverride, DataSelection, DataStreamReq, OrderTarget}
 import flashbot.models.core.FixedSize
 import flashbot.models.core._
@@ -263,6 +263,7 @@ abstract class Strategy[P] extends DataHandler {
   implicit def sessionInstruments(implicit ctx: TradingSession): InstrumentIndex = ctx.getInstruments
   implicit def sessionExchangeParams(implicit ctx: TradingSession)
     : Map[String, ExchangeParams] = ctx.getExchangeParams
+  implicit def metrics(implicit ctx: TradingSession): Metrics = ServerMetrics
 }
 
 trait DataHandler {

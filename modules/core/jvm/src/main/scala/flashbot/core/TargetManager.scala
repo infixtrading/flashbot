@@ -29,7 +29,8 @@ case class TargetManager(instruments: InstrumentIndex,
 
   def enqueueActions(exchange: Exchange, currentActions: ActionQueue)
                     (implicit prices: PriceIndex,
-                     instruments: InstrumentIndex): (TargetManager, ActionQueue) = {
+                     instruments: InstrumentIndex,
+                     metrics: Metrics): (TargetManager, ActionQueue) = {
 
     if (currentActions.nonEmpty) {
       // If the current actions queue still has actions to work with, then don't do anything.

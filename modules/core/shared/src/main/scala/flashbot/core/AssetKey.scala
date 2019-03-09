@@ -10,14 +10,27 @@ import scala.language.implicitConversions
 class AssetKey(val value: Either[Account, String]) extends AnyVal
     with HasSecurity with MaybeHasAccount {
 
+  def isAccount: Boolean = value.isLeft
+  def isSecurity: Boolean = value.isRight
+
   def security: String = value match {
     case Left(acc) => acc.security
     case Right(sym) => sym
   }
 
-  def exchange: Option[String] = value.left.toOption.map(_.exchange)
+  def exchangeOpt: Option[String] = Option(exchange)
 
-  def account: Option[Account] = value.left.toOption
+  def exchange: String = value match {
+    case Left(acc) => acc.exchange
+    case Right(_) => null
+  }
+
+  def accountOpt: Option[Account] = Option(account)
+
+  def account: Account = value match {
+    case Left(acc) => acc
+    case _ => null
+  }
 
   override def toString = value match {
     case Left(acc) => acc.toString

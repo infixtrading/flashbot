@@ -160,8 +160,7 @@ class FlashbotClient(engine: ActorRef, skipTouch: Boolean = false) {
   private def req[T](query: Any)(implicit tag: ClassTag[T]): Future[T] =
     (engine ? query).mapTo[T]
 
-  private def await[T](fut: Future[T]): T =
-    Await.result[T](fut, timeout.duration)
+  private def await[T](fut: Future[T]): T = Await.result[T](fut, timeout.duration)
 
   implicit class RecoverOps[T](future: Future[Source[MarketData[T], NotUsed]]) {
 

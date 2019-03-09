@@ -1,7 +1,8 @@
 package flashbot.models.core
 
-import flashbot.core.{AssetKey, InstrumentIndex, PriceIndex}
+import flashbot.core.{AssetKey, InstrumentIndex, Metrics, PriceIndex}
 import flashbot.models.core.Order._
+
 import scala.language.implicitConversions
 
 case class FixedSize[T: Numeric](amount: T, security: String) {
@@ -34,9 +35,28 @@ object FixedSize {
 
   implicit class ConvertFixedSizeOps[T: Numeric](size: FixedSize[T]) {
     def as(key: AssetKey)(implicit prices: PriceIndex,
-                          instruments: InstrumentIndex): FixedSize[Double] = {
-      val n = implicitly[Numeric[T]]
-      FixedSize(prices.convert(size.security, key).get.price * n.toDouble(size.amount), key.security)
+                          instruments: InstrumentIndex,
+                          metrics: Metrics): FixedSize[Double] = {
+      as(key, strict = false)
+    }
+
+    def as(key: AssetKey, strict: Boolean)
+          (implicit prices: PriceIndex,
+           instruments: InstrumentIndex,
+           metrics: Metrics): FixedSize[Double] =
+      FixedSize[Double](asDouble(key, strict), key.security)
+
+    def asDouble(key: AssetKey)
+                (implicit prices: PriceIndex,
+                 instruments: InstrumentIndex,
+                 metrics: Metrics): Double = asDouble(key, strict = false)
+
+    def asDouble(key: AssetKey, strict: Boolean)
+                (implicit prices: PriceIndex,
+                 instruments: InstrumentIndex,
+                 metrics: Metrics): Double = {
+      val price = prices.calcPrice(size.security, key, strict)
+      price * size.amount.asInstanceOf[Double]
     }
   }
 

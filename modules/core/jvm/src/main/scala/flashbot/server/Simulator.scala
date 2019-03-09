@@ -199,6 +199,7 @@ class Simulator(base: Exchange, latencyMicros: Long = 0) extends Exchange {
             case Down =>
               myOrders(topic).bids.index.filter(_._1 > lastFillPrice).values.toSet.flatten
           }
+
           filledOrders.foreach { order =>
             // Remove order from private book
             myOrders = myOrders + (topic -> myOrders(topic).done(order.id))
@@ -246,13 +247,11 @@ class Simulator(base: Exchange, latencyMicros: Long = 0) extends Exchange {
   }
 
   override def order(req: OrderRequest): Future[ExchangeResponse] = {
-//    println(s"ordering: $req")
     apiRequestQueue = apiRequestQueue.enqueue(OrderReq(syntheticCurrentMicros.get, req))
     Future.successful(RequestOk)
   }
 
   override def cancel(id: String, pair: Instrument): Future[ExchangeResponse] = {
-//    println(s"cancelling: $id")
     apiRequestQueue = apiRequestQueue.enqueue(CancelReq(syntheticCurrentMicros.get, id, pair))
     Future.successful(RequestOk)
   }

@@ -1,7 +1,7 @@
 package flashbot.models.core
 
 import flashbot.core.Instrument.Derivative
-import flashbot.core.{AssetKey, ExchangeParams, InstrumentIndex, PriceIndex}
+import flashbot.core._
 import flashbot.models.core.FixedSize._
 import flashbot.models.core.Order.{Buy, Fill, Liquidity, Maker, Sell, Taker}
 import flashbot.util.Margin
@@ -80,7 +80,8 @@ case class Portfolio(assets: Map[Account, Double],
     */
   def positionMargin(market: Market)
                     (implicit instruments: InstrumentIndex,
-                     prices: PriceIndex): FixedSize[Double] = {
+                     prices: PriceIndex,
+                     metrics: Metrics): FixedSize[Double] = {
     val instrument = instruments(market).asInstanceOf[Derivative]
     val position = positions(market)
     position.initialMargin(instrument).of(market.settlementAccount) + positionPNL(market)
@@ -92,7 +93,8 @@ case class Portfolio(assets: Map[Account, Double],
     */
   def availableBalance(account: Account)
                       (implicit instruments: InstrumentIndex,
-                       prices: PriceIndex): FixedSize[Double] = {
+                       prices: PriceIndex,
+                       metrics: Metrics): FixedSize[Double] = {
     val walletBalance = balance(account).size
     val markets = positions.filter(_._1.settlementAccount == account).keys
     val pnl = markets.map(positionPNL(_)).foldLeft(0d.of(account))(_ + _)
@@ -129,7 +131,7 @@ case class Portfolio(assets: Map[Account, Double],
       val position = positions(market)
       val (newPosition, realizedPnl) =
         position.setSize(position.size + size.toLong, instrument, fill.price)
-      val feeCost = instrument.value(fill.price) * fill.size * fill.fee
+      val feeCost = instrument.valueDouble(fill.price) * fill.size * fill.fee
       updateAssetBalance(market.settlementAccount, _ + (realizedPnl - feeCost.amount))
         .copy(positions = positions + (market -> newPosition))
 
@@ -149,13 +151,15 @@ case class Portfolio(assets: Map[Account, Double],
   }
 
   def positionPNL(market: Market)
-                 (implicit prices: PriceIndex, instruments: InstrumentIndex): FixedSize[Double] = {
+                 (implicit prices: PriceIndex,
+                  instruments: InstrumentIndex,
+                  metrics: Metrics): FixedSize[Double] = {
     val position = positions(market)
     instruments(market) match {
       case instrument: Derivative =>
         val entryPrice = position.entryPrice.get
-        val price = prices.convert(market.baseAccount, market.quoteAccount).get
-        val pnlVal = instrument.pnl(position.size, entryPrice, price.price)
+        val price = prices.calcPrice(market.baseAccount, market.quoteAccount)
+        val pnlVal = instrument.pnl(position.size, entryPrice, price)
         FixedSize(pnlVal, instrument.settledIn.get)
     }
   }
@@ -168,21 +172,23 @@ case class Portfolio(assets: Map[Account, Double],
     * to finally initialize them.
     */
   def initializePositions(implicit prices: PriceIndex,
-                          instruments: InstrumentIndex): Portfolio = {
+                          instruments: InstrumentIndex,
+                          metrics: Metrics): Portfolio = {
     positions.filter(_._2.entryPrice.isEmpty).toSeq.foldLeft(this) {
       case (memo, (market, position)) =>
-        prices.convert(market.baseAccount, market.quoteAccount)
-          .map(price => instruments(market) match {
-            case instrument: Derivative =>
-              val account = Account(market.exchange, instrument.settledIn.get)
-              val newPosition = position.copy(entryPrice = Some(price.price) )
-              val temp = memo.withPosition (market, newPosition)
-              // If there is no balance for the asset which this position is settled in, then infer
-              // it to be this position's initial margin requirement.
-              val marg = newPosition.initialMargin(instrument)
-              if (memo.assets.isDefinedAt(account)) temp
-              else temp.withAssetBalance(account, marg)
-          }).getOrElse(memo)
+        val price = prices.calcPrice(market.baseAccount, market.quoteAccount)
+        if (java.lang.Double.isNaN(price)) memo
+        else instruments(market) match {
+          case instrument: Derivative =>
+            val account = Account(market.exchange, instrument.settledIn.get)
+            val newPosition = position.copy(entryPrice = Some(price) )
+            val temp = memo.withPosition (market, newPosition)
+            // If there is no balance for the asset which this position is settled in, then infer
+            // it to be this position's initial margin requirement.
+            val marg = newPosition.initialMargin(instrument)
+            if (memo.assets.isDefinedAt(account)) temp
+            else temp.withAssetBalance(account, marg)
+        }
 
     }
   }
@@ -193,22 +199,23 @@ case class Portfolio(assets: Map[Account, Double],
     */
   def isReady(targetAsset: String = "usd")
              (implicit prices: PriceIndex,
-              instruments: InstrumentIndex): Boolean = {
+              instruments: InstrumentIndex,
+              metrics: Metrics): Boolean = {
     positions.forall(_._2.entryPrice.nonEmpty) &&
-      assets.keySet.forall(prices.convert(_, targetAsset).nonEmpty)
+      assets.keySet.forall(x => !java.lang.Double.isNaN(prices.calcPrice(x, targetAsset)))
   }
 
   /**
     * What is the value of our portfolio in terms of `targetAsset`?
     */
-  def equity(targetAsset: String = "usd")
-            (implicit prices: PriceIndex,
-             instruments: InstrumentIndex): FixedSize[Double] = {
-    import FixedSize.numericDouble._
+  def equityDouble(targetAsset: String = "usd")
+                  (implicit prices: PriceIndex,
+                   instruments: InstrumentIndex,
+                   metrics: Metrics): Double = {
     val PNLs = positions.keys.map(k => {
-      positionPNL(k) as targetAsset
+      positionPNL(k).asDouble(targetAsset)
     }).sum
-    val assetsEquity = balances.map(_ as targetAsset size).sum
+    val assetsEquity = balances.map(_ asDouble targetAsset).sum
     assetsEquity + PNLs
   }
 

@@ -62,7 +62,7 @@ class MarketMakerSpec extends FlatSpec with Matchers {
     val engine = system.actorOf(TradingEngine.props("market-maker", config))
     val client = new FlashbotClient(engine)
 
-    val params = MarketMakerParams("coinbase/btc_usd", "candles_1m", "sma", 4, 10, .5, .2)
+    val params = MarketMakerParams("coinbase/btc_usd", "candles_1m", "sma", 4, 10, .5, .2, 4, 2.0)
     val portfolio = Portfolio.empty
       .withAssetBalance("coinbase.btc", 5.0)
       .withAssetBalance("coinbase.usd", 2000)
@@ -104,7 +104,7 @@ class MarketMakerSpec extends FlatSpec with Matchers {
 
     val candleSeq = Await.result(candles.runWith(Sink.seq), 1 second)
     val timeRange = TimeRange(candleSeq.head.micros, candleSeq.last.micros)
-    val params = MarketMakerParams("coinbase/btc_usd", "candles_1h", "sma", 6, 10, 1, 1)
+    val params = MarketMakerParams("coinbase/btc_usd", "candles_1h", "sma", 6, 10, 1, 1, 4, 2.0)
     val portfolio = Portfolio.empty
       .withAssetBalance("coinbase/btc", 20.0)
       .withAssetBalance("coinbase/usd", 2000)
@@ -141,7 +141,7 @@ class MarketMakerSpec extends FlatSpec with Matchers {
       BaseMarketData(trade, "coinbase/btc_usd/trades", micros, 0, i)
     })
     val timeRange = TimeRange(trades.head.micros, trades.last.micros)
-    val params = MarketMakerParams("coinbase/btc_usd", "trades", "sma", 2, 2, 1, .1)
+    val params = MarketMakerParams("coinbase/btc_usd", "trades", "sma", 2, 2, 1, .1, 4, 2.0)
     val portfolio = Portfolio.empty
       .withAssetBalance("coinbase/btc", 1.05)
       .withAssetBalance("coinbase/usd", 1000)

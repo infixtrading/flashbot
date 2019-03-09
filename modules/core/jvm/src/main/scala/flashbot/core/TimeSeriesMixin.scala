@@ -4,6 +4,7 @@ import java.time.{Instant, ZoneOffset, ZonedDateTime}
 
 import flashbot.core.ReportEvent.{CandleAdd, CandleUpdate}
 import flashbot.models.core._
+import flashbot.server.ServerMetrics
 import flashbot.util.time._
 import org.ta4j.core.BaseTimeSeries.SeriesBuilder
 import org.ta4j.core.indicators.AbstractIndicator
@@ -55,6 +56,8 @@ trait TimeSeriesMixin extends DataHandler { self: Strategy[_] =>
   private def _record(key: String, micros: Long,
                       updateLastBar: (TimeSeries, Boolean) => Unit)
                      (implicit ctx: TradingSession): Unit = {
+    val timer = ServerMetrics.startTimer("ts_record", Map("strategy" -> self.title))
+
     if (!allSeries.isDefinedAt(key)) {
       allSeries += (key ->
         new BaseTimeSeries.SeriesBuilder().withName(key).withMaxBarCount(1000).build())
@@ -92,10 +95,13 @@ trait TimeSeriesMixin extends DataHandler { self: Strategy[_] =>
     updateLastBar(series, addedBars > 0)
 
     // Update the report
-    if (addedBars > 0) {
+    val ret = if (addedBars > 0) {
       ctx.send((1 to addedBars).map(_ - 1).reverse.map(i =>
         CandleAdd(key, barToCandle(series.getBar(series.getEndIndex - i)))):_*)
     } else ctx.send(CandleUpdate(key, barToCandle(series.getLastBar)))
+
+    timer.close()
+    ret
   }
 
     private def _recordPoint(key: String, micros: Long, price: Double,
@@ -133,7 +139,6 @@ trait TimeSeriesMixin extends DataHandler { self: Strategy[_] =>
 
   private def _series(key: String): TimeSeries = {
     if (!allSeries.isDefinedAt(key)) {
-      println("CREATING TIME SERIES", key)
       val ts = new BaseTimeSeries.SeriesBuilder().withName(key).withMaxBarCount(1000).build()
       allSeries += (key -> ts)
     }
@@ -156,9 +161,18 @@ trait TimeSeriesMixin extends DataHandler { self: Strategy[_] =>
 
     super.aroundHandleData(md)
 
-    if (ctx.getPortfolio.isReady()) {
-      recordTimeSeries("equity", md.micros, ctx.getPortfolio.equity().amount)
-      recordTimeSeries("buy_and_hold", md.micros, initialPortfolio.get.equity().amount)
+    val t1 = ServerMetrics.startTimer("ts_equity_calc", Map("strategy" -> self.title))
+    val equities: Option[(Double, Double)] =
+      if (ctx.getPortfolio.isReady()) {
+        val equity = ctx.getPortfolio.equityDouble()
+        val buyAndHold = initialPortfolio.get.equityDouble()
+        Some((equity, buyAndHold))
+      } else None
+    t1.close()
+
+    if (equities.isDefined) {
+      recordTimeSeries("equity", md.micros, equities.get._1)
+      recordTimeSeries("buy_and_hold", md.micros, equities.get._2)
     }
   }
 

@@ -50,7 +50,7 @@ case class Position(size: Long, leverage: Double, entryPrice: Option[Double]) {
   def isShort: Boolean = size < 0
 
   def initialMargin(instrument: Derivative): Double =
-    instrument.value(entryPrice.get).amount * math.abs(size) / leverage
+    instrument.valueDouble(entryPrice.get) * math.abs(size) / leverage
 
   override def toString = {
     Seq(Some(size.toString),

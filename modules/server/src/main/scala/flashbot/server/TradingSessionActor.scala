@@ -180,7 +180,7 @@ class TradingSessionActor(loader: EngineLoader,
           sessionMicros, initialPortfolio) =>
       implicit val conversions = GraphConversions
 
-      Metrics.observe("streams_per_trading_session", streams.size)
+      ServerMetrics.observe("streams_per_trading_session", streams.size)
 
       killSwitch = Some(KillSwitches.shared(sessionId))
 
@@ -189,7 +189,7 @@ class TradingSessionActor(loader: EngineLoader,
         */
       class Session(protected[server] val instruments: InstrumentIndex = instruments,
                     protected[server] var portfolio: Portfolio = initialPortfolio,
-                    protected[server] var prices: PriceIndex = PriceIndex.empty,
+                    protected[server] var prices: PriceIndex = new JPriceIndex(),
                     protected[server] var orderManagers: Map[String, TargetManager] =
                         exchanges.mapValues(_ => TargetManager(instruments)),
                     // Create action queue for every exchange
@@ -251,6 +251,7 @@ class TradingSessionActor(loader: EngineLoader,
 
         implicit val ctx: TradingSession = session
         implicit val idx: InstrumentIndex = ctx.getInstruments
+        implicit val metrics: Metrics = ServerMetrics
 
         // Split up `dataOrTick` into two Options
         val (tick, data) = dataOrTick match {
@@ -270,7 +271,8 @@ class TradingSessionActor(loader: EngineLoader,
         data.map(_.data) match {
           case Some(pd: Priced) =>
             session.prices.setPrice(Market(data.get.source, data.get.topic), pd.price)
-            session.portfolio = session.portfolio.initializePositions(session.prices, session.getInstruments)
+            session.portfolio = session.portfolio.initializePositions(
+              session.prices, session.getInstruments, metrics)
           case _ =>
         }
 
@@ -380,15 +382,15 @@ class TradingSessionActor(loader: EngineLoader,
         // Call aroundHandleData and catch user errors.
         data match {
           case Some(md) =>
-            val timer = Metrics.startTimer("handle_data_ms")
+            val timer = ServerMetrics.startTimer("handle_data_ms", Map("strategy" -> strategy.title))
             try {
               strategy.aroundHandleData(md)(session)
             } catch {
               case e: Throwable =>
-                Metrics.inc("handle_data_error")
+                ServerMetrics.inc("handle_data_error")
                 log.error(e, "Handle data error")
             } finally {
-              timer.observeDuration()
+              timer.close()
             }
           case None =>
         }
@@ -424,7 +426,7 @@ class TradingSessionActor(loader: EngineLoader,
         session.orderManagers.foreach {
           case (exName, om) =>
             om.enqueueActions(exchanges(exName), session.actionQueues(exName))(
-              session.prices, session.getInstruments) match {
+              session.prices, session.getInstruments, metrics) match {
                 case (newOm, newActions) =>
                   session.orderManagers += (exName -> newOm)
                   session.actionQueues += (exName -> newActions)

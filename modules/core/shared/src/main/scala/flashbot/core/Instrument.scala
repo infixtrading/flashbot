@@ -39,7 +39,8 @@ trait Instrument {
   /**
     * The value of one unit of this security/contract in terms of the settlement asset.
     */
-  def value(price: Double): FixedSize[Double]
+  def valueDouble(price: Double): Double
+  def value(price: Double): FixedSize[Double] = new FixedSize(valueDouble(price), settledIn.get)
 }
 
 object Instrument {
@@ -72,7 +73,7 @@ object Instrument {
 //      }
 //    }
 
-    override def value(price: Double) = FixedSize(price, quote)
+    override def valueDouble(price: Double) = price
   }
 
   object CurrencyPair {
@@ -108,7 +109,7 @@ object Instrument {
 //    }
     override def canShort = false
 
-    override def value(price: Double) = ???
+    override def valueDouble(price: Double) = ???
   }
 
   trait Derivative extends Instrument {

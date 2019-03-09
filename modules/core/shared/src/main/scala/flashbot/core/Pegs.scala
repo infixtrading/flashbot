@@ -2,24 +2,26 @@ package flashbot.core
 
 import scala.collection.immutable.Set
 
-class Pegs(val pegs: Set[(String, String)]) extends AnyVal {
-  def of(asset: String): Set[String] = of(Set(asset))
+class Pegs(pegs: Set[(String, String)]) {
 
-  def of(assets: Set[String]): Set[String] = {
-    val pegMap = pegs.flatMap { case (a, b) => Set((a, b), (b, a))}.toMap
-    pegMap.filterKeys(assets.contains).values.toSet
-  }
+  private lazy val pegMap = pegs
+    .flatMap { case (a, b) => Set((a, b), (b, a))}
+    .groupBy(_._1)
+    .mapValues(_.map(_._2))
+
+  private val empty = Set.empty[String]
+
+  def of(asset: String)(implicit metrics: Metrics): Set[String] =
+    pegMap.getOrElse(asset, empty)
 }
 
 object Pegs {
-  implicit def pegs(set: Set[(String, String)]): Pegs = new Pegs(set)
-
-  def default: Pegs = Set(
+  def default: Pegs = new Pegs(Set(
     ("usd", "usdt"),
     ("usd", "usdc"),
     ("usd", "dai"),
     ("usd", "tusd"),
     ("usd", "bitusd"),
     ("btc", "xbt")
-  )
+  ))
 }

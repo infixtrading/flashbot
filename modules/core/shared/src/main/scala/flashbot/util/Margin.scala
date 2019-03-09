@@ -43,7 +43,7 @@ object Margin {
     }
 
     def orderValue(order: Order) =
-      instrument.value(order.price.get).amount * order.amount
+      instrument.valueDouble(order.price.get) * order.amount
 
     val primaryQty = sum(primary, _.amount)
     val secondaryQty = sum(secondary, _.amount)
