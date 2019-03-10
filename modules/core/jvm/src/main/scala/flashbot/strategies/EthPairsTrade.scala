@@ -2,7 +2,9 @@ package flashbot.strategies
 
 import flashbot.core.DataType.{CandlesType, TradesType}
 import flashbot.core._
-import flashbot.models.core.{Candle, DataPath, FixedSize, Market, Portfolio}
+import flashbot.core.AssetKey._
+import flashbot.core.Num._
+import flashbot.models.core.{Candle, DataPath, Market, Portfolio}
 import FixedSize._
 import EthPairsTrade._
 import akka.NotUsed
@@ -31,8 +33,6 @@ case class PairsTradeParams(eth_market: String,
 
 class EthPairsTrade extends Strategy[PairsTradeParams] with TimeSeriesMixin {
 
-  import FixedSize.numericDouble._
-
   override def title = "ETH Pairs Trade"
 
   // coinbase.usd=4000,coinbase.eth=0,coinbase.etc=0,bitmex.ethusd=-10000x2
@@ -60,6 +60,8 @@ class EthPairsTrade extends Strategy[PairsTradeParams] with TimeSeriesMixin {
     ))
   }
 
+  lazy val threshold = params.threshold.num
+
   var count = 0
 
   override def handleData(data: MarketData[_])(implicit ctx: TradingSession) = data.data match {
@@ -68,13 +70,13 @@ class EthPairsTrade extends Strategy[PairsTradeParams] with TimeSeriesMixin {
 
     case candle: Candle =>
       if (data.path.market == ethMarket)
-        recordTimeSeries("eth_usd", data.micros, getPrice(ethMarket))
+        recordTimeSeries("eth_usd", data.micros, getPrice(ethMarket).toDouble())
       else if (data.path.market == hedgeMarket)
-        recordTimeSeries("hedge_usd", data.micros, getPrice(hedgeMarket))
+        recordTimeSeries("hedge_usd", data.micros, getPrice(hedgeMarket).toDouble())
 
-      recordTimeSeries("hedge", data.micros, ctx.getPortfolio.balance(hedgeMarket.baseAccount).qty)
-      recordTimeSeries("eth", data.micros, ctx.getPortfolio.balance(ethMarket.baseAccount).qty)
-      recordTimeSeries("usd", data.micros, ctx.getPortfolio.balance(ethMarket.quoteAccount).qty)
+      recordTimeSeries("hedge", data.micros, ctx.getPortfolio.getBalance(hedgeMarket.baseAccount).toDouble())
+      recordTimeSeries("eth", data.micros, ctx.getPortfolio.getBalance(ethMarket.baseAccount).toDouble())
+      recordTimeSeries("usd", data.micros, ctx.getPortfolio.getBalance(ethMarket.quoteAccount).toDouble())
 
       // If the price indices are the same, update the kalman filter
       if (lastBarTime(ethMarket).isDefined &&
@@ -84,14 +86,14 @@ class EthPairsTrade extends Strategy[PairsTradeParams] with TimeSeriesMixin {
           recordTimeSeries("alpha", data.micros, alpha)
           recordTimeSeries("beta", data.micros, beta)
 
-          val estimate = alpha + beta * getPrice(ethMarket)
-          recordTimeSeries("residual", data.micros, getPrice(hedgeMarket) - estimate)
+          val estimate = alpha + beta * getPrice(ethMarket).toDouble()
+          recordTimeSeries("residual", data.micros, getPrice(hedgeMarket).toDouble() - estimate)
 
-          updatePositions(data.micros, estimate, beta)
+          updatePositions(data.micros, estimate.num, beta.num)
         }
 
         count = count + 1
-        coint.step(getPrice(ethMarket), getPrice(hedgeMarket))
+        coint.step(getPrice(ethMarket).toDouble(), getPrice(hedgeMarket).toDouble())
 
         if (count > 4) {
           recordTimeSeries("error", data.micros, coint.getError)
@@ -110,56 +112,69 @@ class EthPairsTrade extends Strategy[PairsTradeParams] with TimeSeriesMixin {
 
   var spreadPosition: SpreadPosition = Neutral
 
-  def updatePositions(micros: Long, hedgePrediction: Double, beta: Double)
+  def updatePositions(micros: Long, hedgePrediction: Num, beta: Num)
                      (implicit ctx: TradingSession)= {
     val spread = getPrice(hedgeMarket) - hedgePrediction
 
-    val contractVal = ctx.getInstruments("bitmex/ethusd").value(getPrice(ethMarket)).as("eth")
-    val shortEthPos = contractVal * ctx.getPortfolio.positions("bitmex/ethusd").size.toDouble.of("eth")
-    val ethBalance = ctx.getPortfolio.balance(ethMarket.baseAccount).size
-    var totalEthPos = shortEthPos + ctx.getPortfolio.balance("bitmex/xbt").size.as("eth") + ethBalance
+    // How much is every ETHUSD contract worth in ETH currently?
+    val contractValInEth = ctx
+      .getInstruments("bitmex/ethusd")
+      .value(getPrice(ethMarket))
+      .convert("xbt", "eth")
 
-    recordTimeSeries("short_eth_pos", micros, shortEthPos.amount)
-    recordTimeSeries("total_eth_pos", micros, totalEthPos.amount)
+    // What is the ETH size of our short ETH position?
+    val shortEthPos = contractValInEth * ctx.getPortfolio.positions("bitmex/ethusd").size
+
+    // What is our current ETH balance on the main exchange?
+    val ethBalance = ctx.getPortfolio.getBalance(ethMarket.baseAccount)
+
+    // Compute our total position using the values above.
+    var totalEthPos = shortEthPos +
+      ctx.getPortfolio.getBalance("bitmex/xbt").convert("xbt", "eth") +
+      ethBalance
+
+    recordTimeSeries("short_eth_pos", micros, shortEthPos.toDouble())
+    recordTimeSeries("total_eth_pos", micros, totalEthPos.toDouble())
 
     // Balance the neutral position. Order/sell enough ETH so that it cancels out the
     // short position.
-    val roundedTotalEthPos = BigDecimal(totalEthPos.amount)
-      .setScale(2, RoundingMode.FLOOR).rounded.doubleValue()
-    if (spreadPosition == Neutral && roundedTotalEthPos != 0) {
-      marketOrder(ethMarket, -roundedTotalEthPos.of("eth"))
-      totalEthPos = totalEthPos - roundedTotalEthPos.of("eth")
+    val roundedTotalEthPos = totalEthPos.toBigDecimial.setScale(2, RoundingMode.FLOOR).rounded.num
+    if (spreadPosition == Neutral && roundedTotalEthPos != `0`) {
+      marketOrder(ethMarket, (-roundedTotalEthPos).of("eth")).send()
+      totalEthPos = totalEthPos - roundedTotalEthPos
     }
 
     // Close position
     spreadPosition match {
-      case Long if spread > -params.threshold * .1 =>
+      case Long if spread > -threshold * `0.1` =>
         // We were long the spread, so we bought the hedge security and sold eth.
         // Now we want to exit by selling the security and buying back the eth.
         spreadPosition = Neutral
         marketOrder(hedgeMarket,
-          -ctx.getPortfolio.balance(hedgeMarket.securityAccount).size)
+            (-ctx.getPortfolio.getBalance(hedgeMarket.securityAccount))
+              .of(hedgeMarket.securityAccount))
+          .send()
 
         // Total eth position should be negative right now. Negate it again to make
         // a positive order size.
-        marketOrder(ethMarket, -totalEthPos)
+        marketOrder(ethMarket, (-totalEthPos).of("eth")).send()
 
       case _ =>
     }
 
     // Open position
     spreadPosition match {
-      case Neutral if spread < -params.threshold =>
+      case Neutral if spread < -threshold =>
         // Long the spread if it's under the threshold.
         // This means that ETH is relatively overvalued.
         // Sell all that we have.
         spreadPosition = Long
-        marketOrder(ethMarket, -ethBalance)
+        marketOrder(ethMarket, (-ethBalance).of("eth"))
 
         // At the same time, buy the hedge security.
         // Amount of ETH sold * (1 + beta)
-        marketOrder(hedgeMarket, ethBalance.as(hedgeMarket.securityAccount) * (1 + beta).of("etc"))
-//        marketOrder(hedgeMarket, ethBalance.as(hedgeMarket.securityAccount))
+        val hedgeAmount = ethBalance.convert("eth", hedgeMarket.securityAccount) * (`1` + beta)
+        marketOrder(hedgeMarket, hedgeAmount.of(hedgeMarket.securityAccount))
 
       case _ =>
     }

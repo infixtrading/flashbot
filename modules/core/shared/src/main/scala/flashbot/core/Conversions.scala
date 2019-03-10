@@ -6,7 +6,7 @@ trait Conversions {
   def findPricePath(baseKey: AssetKey, quoteKey: AssetKey)
                    (implicit prices: PriceIndex,
                     instruments: InstrumentIndex,
-                    metrics: Metrics): Array[FixedPrice[Account]]
+                    metrics: Metrics): Array[FixedPrice[AccountAsset]]
 
 //  def apply(source: AssetKey, target: AssetKey, approx: Boolean)
 //           (implicit prices: PriceIndex,

@@ -1,6 +1,7 @@
 package flashbot.core
 
 import java.io.IOException
+import java.util
 import java.util.UUID
 
 import akka.NotUsed
@@ -11,10 +12,10 @@ import akka.stream.scaladsl.Source
 import akka.util.Timeout
 import flashbot.server.{ServerMetrics, StreamResponse}
 import flashbot.models.api.{DataOverride, DataSelection, DataStreamReq, OrderTarget}
-import flashbot.models.core.FixedSize
 import flashbot.models.core._
 import io.circe._
 import com.github.andyglow.jsonschema.AsCirce._
+import flashbot.util.MapUtil
 import flashbot.util.time.FlashbotTimeout
 
 import scala.concurrent.duration._
@@ -76,14 +77,22 @@ abstract class Strategy[P] extends DataHandler {
     */
   def handleData(data: MarketData[_])(implicit ctx: TradingSession): Unit
 
+  private var initialPortfolio: Option[Portfolio] = None
+  protected val isInitializedMap = new util.WeakHashMap[java.lang.Long, Boolean]()
 
-  protected var initialPortfolio: Option[Portfolio] = None
-
-  override def aroundHandleData(data: MarketData[_])(implicit ctx: TradingSession) = {
-    if (initialPortfolio.isEmpty && ctx.getPortfolio.isReady()) {
-      initialPortfolio = Some(ctx.getPortfolio)
+  def getInitialPortfolio()(implicit ctx: TradingSession): Option[Portfolio] =
+    initialPortfolio orElse {
+      if (MapUtil.getOrCompute(isInitializedMap, ctx.ref, ctx.getPortfolio.isInitialized())) {
+        initialPortfolio = Some(ctx.getPortfolio)
+      }
+      initialPortfolio
     }
 
+  override def aroundHandleData(data: MarketData[_])(implicit ctx: TradingSession) = {
+    // Call the side effectful function to ensure initialPortfolio is set.
+    getInitialPortfolio()
+
+    // Invoke the actual user `handleData` method.
     handleData(data)
   }
 
@@ -111,28 +120,26 @@ abstract class Strategy[P] extends DataHandler {
     * @param postOnly whether to allow any portion of this order to execute immediately as
     *                 a taker.
     * @param ctx the trading session instance.
-    * @return the target id, globally unique within this session.
+    * @return the target with an id that uniquely identifies this quote.
     */
   protected def limitOrder(market: Market,
-                           size: FixedSize[Double],
+                           size: FixedSize,
                            price: Double,
                            key: String,
                            postOnly: Boolean = false)
-                          (implicit ctx: TradingSession): String = {
-    val target = OrderTarget(
+                          (implicit ctx: TradingSession): OrderTarget = {
+    _sendOrder(OrderTarget(
       market,
       key,
       size,
       Some(price),
       once = Some(false),
       postOnly = Some(postOnly)
-    )
-    ctx.send(target)
-    target.id.toString
+    ))
   }
 
   /**
-    * Submits a new limit order to the exchange.
+    * Submit a new limit order to the exchange.
     *
     * WARNING! Note that unlike the declarative [[limitOrder]] method, [[limitOrderOnce]] is
     * not idempotent! This makes it considerably harder to write most strategies, as you'll
@@ -146,44 +153,52 @@ abstract class Strategy[P] extends DataHandler {
     * @param postOnly whether to allow any portion of this order to execute immediately as
     *                 a taker.
     * @param ctx the trading session instance.
-    * @return the underlying target id, which is randomly generated in this call.
+    * @return the order target with a randomly generated id.
     */
   protected def limitOrderOnce(market: Market,
-                               size: FixedSize[Double],
-                               price: Double,
+                               size: FixedSize,
+                               price: BigDecimal,
                                postOnly: Boolean = false)
-                              (implicit ctx: TradingSession): String = {
-    val target = OrderTarget(
+                              (implicit ctx: TradingSession): OrderTarget = {
+    _sendOrder(OrderTarget(
       market,
       UUID.randomUUID().toString,
       size,
       Some(price),
       once = Some(true),
       postOnly = Some(postOnly)
-    )
-    ctx.send(target)
-    target.id.toString
+    ))
   }
 
   /**
-    * Submits a market order to the exchange.
+    * Submit a market order to the exchange.
     *
     * @param market the market (exchange and instrument symbol) of the order.
     * @param size the size of the order. May be denominated in any asset whose price can be
     *             implicitly converted to the market's base asset.
     * @param ctx the trading session instance.
-    * @return the underlying target id, which is randomly generated in this call.
+    * @return the order target with a randomly generated id.
     */
-  protected def marketOrder(market: Market, size: FixedSize[Double])
-                           (implicit ctx: TradingSession): String = {
-    val target = OrderTarget(
+  protected def marketOrder(market: Market, size: FixedSize)
+                           (implicit ctx: TradingSession): OrderTarget = {
+    _sendOrder(OrderTarget(
       market,
       UUID.randomUUID().toString,
       size,
       None
-    )
+    ))
+  }
+
+  private def _transformTarget(target: OrderTarget)
+                              (implicit ctx: TradingSession): OrderTarget = (for {
+    roundedSize <- ctx.tryRound(target.market, target.size).orElse(Some(target.size))
+  } yield target.copy(size = roundedSize)).get
+
+  private def _sendOrder(targetSpec: OrderTarget)
+                        (implicit ctx: TradingSession): OrderTarget = {
+    val target = _transformTarget(targetSpec)
     ctx.send(target)
-    target.id.toString
+    target
   }
 
   /**

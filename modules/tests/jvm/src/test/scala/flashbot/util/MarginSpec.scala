@@ -1,6 +1,7 @@
 package flashbot.util
 
 import flashbot.core.Instrument.Derivative
+import flashbot.core.Num._
 import flashbot.exchanges.BitMEX
 import flashbot.models.core.{Order, OrderBook}
 import org.scalatest.{FlatSpec, Matchers}
@@ -9,17 +10,17 @@ class MarginSpec extends FlatSpec with Matchers {
 
   private def _calcOrderMargin(pos: Double, orders: Seq[(Double, Double)],
                              leverage: Double, instrument: Derivative) = {
-    round(Margin.calcOrderMargin(pos, leverage, orders.zipWithIndex.map {
+    round(Margin.calcOrderMargin(pos.num, leverage.num, orders.zipWithIndex.map {
       case ((qty, v), i) =>
         val price = instrument match {
           case BitMEX.ETHUSD =>
-            v / qty / BitMEX.ETHUSD.bitcoinMultiplier
+            v.num / qty.num / BitMEX.ETHUSD.bitcoinMultiplier
           case BitMEX.XBTUSD =>
-            1.0 / (v / qty)
+            `1` / (v.num / qty.num)
         }
 
-        Order(i.toString, if (qty < 0) Order.Sell else Order.Buy, qty.abs, Some(price))
-    }.foldLeft(OrderBook()) { case (book, order) => book.open(order) }, instrument))
+        Order(i.toString, if (qty < 0) Order.Sell else Order.Buy, qty.num.abs, Some(price))
+    }.foldLeft(OrderBook()) { case (book, order) => book.open(order) }, instrument).toDouble())
   }
 
   def round(d: Double): Double = BigDecimal.valueOf(d)

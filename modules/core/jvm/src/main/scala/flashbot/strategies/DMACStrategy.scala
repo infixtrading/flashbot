@@ -1,6 +1,8 @@
 package flashbot.strategies
 
 import flashbot.core._
+import flashbot.core.Num._
+import flashbot.core.FixedSize._
 import flashbot.models.core._
 import io.circe.generic.JsonCodec
 import io.circe.parser._
@@ -14,8 +16,6 @@ import scala.concurrent.Future
 case class DMACParams(market: String, smaShort: Int, smaLong: Int)
 
 class DMACStrategy extends Strategy[DMACParams] with TimeSeriesMixin {
-  import FixedSize.numericDouble._
-
   override def decodeParams(paramsStr: String) = decode[DMACParams](paramsStr).toTry
 
   override def title = "Dual Moving Average Crossover"
@@ -32,31 +32,34 @@ class DMACStrategy extends Strategy[DMACParams] with TimeSeriesMixin {
     Future.successful(Seq(DataPath(market, "candles_1m")))
 
   var isLong = false
-  var enteredAt: Double = -1
+  var enteredAt: Num = `-1`
+
+  val stopLoss = .97.num
+  val takeProfit = 1.02.num
 
   override def handleData(data: MarketData[_])(implicit ctx: TradingSession) = {
     val portfolio = ctx.getPortfolio
-    val balance = portfolio.balance(market.settlementAccount).size
-    val holding = portfolio.balance(market.securityAccount).size
+    val balance: FixedSize = portfolio.getBalanceAs(market.settlementAccount)
+    val holding = portfolio.getBalanceAs(market.securityAccount)
     val price = getPrice(market)
 
     val hasCrossedUp = crossedUp.isSatisfied(index(market))
     val hasCrossedDown = crossedDown.isSatisfied(index(market))
 
     // 3% stop loss
-    val stopLossTriggered = isLong && price < enteredAt * .97
+    val stopLossTriggered = isLong && price < enteredAt * stopLoss
 
     // 2% take profit
-    val takeProfitTriggered = isLong && price > enteredAt * 1.02
+    val takeProfitTriggered = isLong && price > enteredAt * takeProfit
 
     if (hasCrossedUp && !isLong) {
       isLong = true
       enteredAt = price
-      marketOrder(market, balance * portfolio.leverage(market))
+      marketOrder(market, balance * portfolio.getLeverage(market))
 
     } else if (stopLossTriggered || takeProfitTriggered || (hasCrossedDown && isLong)) {
       isLong = false
-      enteredAt = -1
+      enteredAt = `-1`
       marketOrder(market, -holding)
     }
   }

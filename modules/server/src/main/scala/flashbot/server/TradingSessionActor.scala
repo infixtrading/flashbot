@@ -147,10 +147,8 @@ class TradingSessionActor(loader: EngineLoader,
       // Load the instruments.
       instruments <- loader.loadInstruments
 
-      initialPortfolio = portfolioRef.getPortfolio(Some(instruments))
-
       // Initialize the strategy and collect data paths
-      paths <- strategy.initialize(initialPortfolio, loader)
+      paths <- strategy.initialize(portfolioRef.getPortfolio(Some(instruments)), loader)
 
       // Load the exchanges
       exchangeNames: Set[String] = paths.toSet[DataPath[_]].map(_.source)
@@ -170,14 +168,13 @@ class TradingSessionActor(loader: EngineLoader,
 
     } yield
       SessionSetup(instruments, exchanges, strategy,
-        UUID.randomUUID.toString, streams, sessionMicros, initialPortfolio)
+        UUID.randomUUID.toString, streams, sessionMicros)
   }
 
   val gaussian = Gaussian(0, 1)
 
   def runSession(sessionSetup: SessionSetup): String = sessionSetup match {
-    case SessionSetup(instruments, exchanges, strategy, sessionId, streams,
-          sessionMicros, initialPortfolio) =>
+    case SessionSetup(instruments, exchanges, strategy, sessionId, streams, sessionMicros) =>
       implicit val conversions = GraphConversions
 
       ServerMetrics.observe("streams_per_trading_session", streams.size)
@@ -188,7 +185,6 @@ class TradingSessionActor(loader: EngineLoader,
         * The trading session that we fold market data over.
         */
       class Session(protected[server] val instruments: InstrumentIndex = instruments,
-                    protected[server] var portfolio: Portfolio = initialPortfolio,
                     protected[server] var prices: PriceIndex = new JPriceIndex(),
                     protected[server] var orderManagers: Map[String, TargetManager] =
                         exchanges.mapValues(_ => TargetManager(instruments)),
@@ -197,7 +193,8 @@ class TradingSessionActor(loader: EngineLoader,
                         exchanges.mapValues(_ => ActionQueue()),
                     protected[server] var emittedReportEvents: Seq[ReportEvent] = Seq.empty,
                     protected[server] val exchangeParams: Map[String, ExchangeParams] =
-                        exchanges.mapValues(_.params))
+                        exchanges.mapValues(_.params),
+                    protected[flashbot] var ref: java.lang.Long = -1L )
         extends TradingSession {
 
         override val id: String = sessionId
@@ -214,19 +211,25 @@ class TradingSessionActor(loader: EngineLoader,
           sendFn(events)
         }
 
-        override def getPortfolio = portfolio
+        override def getPortfolio = portfolioRef.getPortfolio(Some(instruments))
         override def getActionQueues = actionQueues
         override def getPrices = prices
         override def getInstruments = instruments
         override def getExchangeParams = exchangeParams
+
+        override def tryRound(market: Market, size: FixedSize) = {
+          val instrument = instruments(market)
+          val exchange = exchanges(market.exchange)
+          if (size.security == instrument.security.get)
+            Some(size.map(exchange.roundBase(instrument)))
+          else if (size.security == instrument.settledIn.get)
+            Some(size.map(exchange.roundQuote(instrument)))
+          else None
+        }
       }
 
       def processDataOrTick(session: Session,
                             dataOrTick: Either[MarketData[_], Tick]): Session = {
-
-        // Load the portfolio into the session from the PortfolioRef on every scan iteration.
-        val initPortfolio = portfolioRef.getPortfolio(Some(instruments))
-        session.portfolio = initPortfolio
 
         // First, setup the event buffer so that we can handle synchronous events.
         val thisEventBuffer: mutable.Buffer[Any] = new ArrayBuffer[Any]()
@@ -271,8 +274,9 @@ class TradingSessionActor(loader: EngineLoader,
         data.map(_.data) match {
           case Some(pd: Priced) =>
             session.prices.setPrice(Market(data.get.source, data.get.topic), pd.price)
-            session.portfolio = session.portfolio.initializePositions(
-              session.prices, session.getInstruments, metrics)
+            portfolioRef.update(_.initializePositions(
+              session.prices, session.getInstruments, metrics), session)
+
           case _ =>
         }
 
@@ -313,8 +317,8 @@ class TradingSessionActor(loader: EngineLoader,
             val targetOpt = os(ex.get).ids.actualToTarget.get(id)
             val market = Market(ex.get, product)
             strategy.handleEvent(OrderTargetEvent(targetOpt, o))
-            session.portfolio = session.portfolio
-              .withOrder(Some(id), market, if (side == Buy) size else -size, price)
+            portfolioRef.update(session,
+              _.addOrder(Some(id), market, if (side == Buy) size else -size, price))
             if (targetOpt.isDefined)
               (os.updated(ex.get, os(ex.get).openOrder(o)),
                 as.updated(ex.get, closeActionForOrderId(as(ex.get), os(ex.get).ids, id)))
@@ -329,7 +333,7 @@ class TradingSessionActor(loader: EngineLoader,
             val targetOpt = os(ex.get).ids.actualToTarget.get(id)
             val market = Market(ex.get, product)
             strategy.handleEvent(OrderTargetEvent(targetOpt, o))
-            session.portfolio = session.portfolio.withoutOrder(market, id)
+            portfolioRef.update(session, _.removeOrder(market, id))
             if (targetOpt.isDefined)
               (os.updated(ex.get, os(ex.get).orderComplete(id)),
                 as.updated(ex.get, closeActionForOrderId(as(ex.get), os(ex.get).ids, id)))
@@ -361,19 +365,19 @@ class TradingSessionActor(loader: EngineLoader,
 
             // Emit portfolio info:
             // The settlement account must be an asset
-            val settlementAccount = acc(instrument.settledIn.get)
-            session.send(BalanceEvent(settlementAccount,
-              newPortfolio.balance(settlementAccount).qty, fill.micros))
+//            val settlementAccount = acc(instrument.settledIn.get)
+//            session.send(BalanceEvent(settlementAccount,
+//              newPortfolio.balance(settlementAccount).qty, fill.micros))
 
             // The security account may be a position or an asset
-            val position = portfolio.positions.get(market)
-            if (position.isDefined) {
-              session.send(PositionEvent(market, position.get, fill.micros))
-            } else {
-              val assetAccount = acc(instrument.security.get)
-              session.send(BalanceEvent(assetAccount,
-                portfolio.balance(assetAccount).qty, fill.micros))
-            }
+//            val position = portfolio.positions.get(market)
+//            if (position.isDefined) {
+//              session.send(PositionEvent(market, position.get, fill.micros))
+//            } else {
+//              val assetAccount = acc(instrument.security.get)
+//              session.send(BalanceEvent(assetAccount,
+//                portfolio.balance(assetAccount).qty, fill.micros))
+//            }
 
             // Return updated portfolio
             newPortfolio
@@ -510,6 +514,9 @@ class TradingSessionActor(loader: EngineLoader,
 
         // Lift-off
         .scan(new Session()) { case (session, dataOrTick) =>
+          // Increment the weak ref.
+          session.ref = session.ref + 1
+
           // Dequeue and process ticks while they occur before the current
           // market data item.
           var queueItems = dequeueTicksFor(dataOrTick)

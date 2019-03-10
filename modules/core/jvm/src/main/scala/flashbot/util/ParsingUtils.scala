@@ -28,7 +28,7 @@ object ParsingUtils extends RegexParsers {
           (pos, instruments.get(exchange, symbol).isDefined) match {
 
             case (position(size, Optional(None), Optional(None)), false) =>
-              portfolio.withAssetBalance(Account(exchange, symbol), size.toDouble)
+              portfolio.withBalance(Account(exchange, symbol), size.toDouble)
 
             case (position(size, Optional(leverage), Optional(entry)), true) =>
               portfolio.withPosition(Market(exchange, symbol),

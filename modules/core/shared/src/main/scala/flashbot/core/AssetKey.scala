@@ -7,41 +7,34 @@ import scala.language.implicitConversions
 // Price path calculation can use either the straight symbol name ("btc") or it can specify
 // an exchange too via an account, such as Account("bitmex", "xbt").
 
-class AssetKey(val value: Either[Account, String]) extends AnyVal
-    with HasSecurity with MaybeHasAccount {
+sealed trait AssetKey extends Any with HasSecurity with MaybeHasAccount {
+  def isAccount: Boolean
+  def isSecurity: Boolean
+  def exchangeOpt: Option[String]
+  def withExchange(exchange: String): AssetKey
+}
 
-  def isAccount: Boolean = value.isLeft
-  def isSecurity: Boolean = value.isRight
+class AccountAsset(val account: Account) extends AnyVal with AssetKey {
+  override def isAccount = true
+  override def isSecurity = false
+  override def security = account.security
+  override def exchangeOpt = Some(account.exchange)
+  override def accountOpt = Some(account)
+  override def withExchange(exchange: String) = new AccountAsset(account.copy(exchange = exchange))
+  override def toString = account.toString
+}
 
-  def security: String = value match {
-    case Left(acc) => acc.security
-    case Right(sym) => sym
-  }
-
-  def exchangeOpt: Option[String] = Option(exchange)
-
-  def exchange: String = value match {
-    case Left(acc) => acc.exchange
-    case Right(_) => null
-  }
-
-  def accountOpt: Option[Account] = Option(account)
-
-  def account: Account = value match {
-    case Left(acc) => acc
-    case _ => null
-  }
-
-  override def toString = value match {
-    case Left(acc) => acc.toString
-    case Right(str) => str
-  }
-
-  def withExchange(exchange: String): AssetKey = AssetKey(Account(exchange, security))
+class SecurityAsset(val security: String) extends AnyVal with AssetKey {
+  override def isAccount = false
+  override def isSecurity = true
+  override def exchangeOpt = None
+  override def accountOpt = None
+  override def withExchange(exchange: String) =
+    new AccountAsset(Account(exchange, security))
+  override def toString = security
 }
 
 object AssetKey {
-  implicit def apply(acc: Account): AssetKey = new AssetKey(Left(acc))
-  implicit def apply(sym: String): AssetKey = new AssetKey(Right(sym))
-  def apply(exchange: String, security: String): AssetKey = AssetKey(Account(exchange, security))
+  implicit def apply(acc: Account): AccountAsset = new AccountAsset(acc)
+  implicit def apply(sym: String): SecurityAsset = new SecurityAsset(sym)
 }

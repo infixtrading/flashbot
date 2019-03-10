@@ -1,6 +1,6 @@
 package flashbot.core
 
-import flashbot.models.core.{FixedSize, Market, Portfolio}
+import flashbot.models.core.{Market, Portfolio}
 
 import com.quantego.clp
 

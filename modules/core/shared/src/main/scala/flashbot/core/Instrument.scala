@@ -1,7 +1,8 @@
 package flashbot.core
 
+import flashbot.core.Num._
 import flashbot.models.core.Order._
-import flashbot.models.core.{Account, FixedPrice, FixedSize, Portfolio}
+import flashbot.models.core.{Account, FixedPrice, Portfolio}
 
 trait Instrument {
 
@@ -23,7 +24,7 @@ trait Instrument {
   // Will be `None` for non-tradable instruments such as indexes.
   def settledIn: Option[String]
 
-  def markPrice(prices: PriceIndex): Double = prices(symbol)
+//  def markPrice(prices: PriceIndex): Double = prices(symbol)
 
 //  def PNL(amount: Double, entryPrice: Double, exitPrice: Double): Double = {
 //    if (security.get == base && settledIn == quote) amount * (exitPrice - entryPrice)
@@ -39,8 +40,8 @@ trait Instrument {
   /**
     * The value of one unit of this security/contract in terms of the settlement asset.
     */
-  def valueDouble(price: Double): Double
-  def value(price: Double): FixedSize[Double] = new FixedSize(valueDouble(price), settledIn.get)
+//  def valueDouble(price: Double): Double
+  def value(price: Num): Num
 }
 
 object Instrument {
@@ -50,7 +51,7 @@ object Instrument {
     override def label = s"$base/$quote".toUpperCase
     override def settledIn = Some(quote)
     override def security = Some(base)
-    override def markPrice(prices: PriceIndex) = prices(this)
+//    override def markPrice(prices: PriceIndex) = prices(this)
     override def canShort = false
 
 //    override def settle(exchange: String, fill: Fill, portfolio: Portfolio) = {
@@ -73,7 +74,7 @@ object Instrument {
 //      }
 //    }
 
-    override def valueDouble(price: Double) = price
+    override def value(price: Num) = price
   }
 
   object CurrencyPair {
@@ -101,19 +102,19 @@ object Instrument {
     override def settledIn = {
       throw new NotImplementedError("Index does not implement `settledIn`")
     }
-    override def markPrice(prices: PriceIndex) = {
-      throw new NotImplementedError("Index does not implement `markPrice`")
-    }
+//    override def markPrice(prices: PriceIndex) = {
+//      throw new NotImplementedError("Index does not implement `markPrice`")
+//    }
 //    override def settle(exchange: String, fill: Fill, portfolio: Portfolio) = {
 //      throw new RuntimeException("Indexes are not tradable")
 //    }
     override def canShort = false
 
-    override def valueDouble(price: Double) = ???
+    override def value(price: Num) = ???
   }
 
   trait Derivative extends Instrument {
-    def pnl(size: Long, entryPrice: Double, exitPrice: Double): Double
+    def pnl(size: Num, entryPrice: Num, exitPrice: Num): Num
 
     override def canShort = true
   }

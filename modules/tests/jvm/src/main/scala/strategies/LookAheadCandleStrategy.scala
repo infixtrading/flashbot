@@ -99,12 +99,13 @@ class LookAheadCandleStrategy extends Strategy[LookaheadParams]
         val sym = md.path
         val market = Market(md.source, md.topic)
         val pair = CurrencyPair(md.topic)
+        val quoteAccount = Account(md.source, pair.quote)
 
         def buy() = marketOrder(market,
-          ctx.getPortfolio.balance(Account(md.source, pair.quote)).size)
+          ctx.getPortfolio.getBalance(quoteAccount).of)
 
         def sell() = marketOrder(market,
-          -ctx.getPortfolio.balance(Account(md.source, pair.base)).size)
+          -ctx.getPortfolio.getBalance(Account(md.source, pair.base)).size)
 
         // Price about to go up, buy as much as we can.
         if (prediction.get > candle.close) {

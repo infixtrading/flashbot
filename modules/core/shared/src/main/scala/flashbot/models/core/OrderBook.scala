@@ -183,7 +183,7 @@ object OrderBook {
 
 
   @JsonCodec sealed trait Delta
-  case class Open(orderId: String, price: Double, size: Double, side: Side) extends Delta
+  case class Open(orderId: String, price: Num, size: Num, side: Side) extends Delta
   case class Done(orderId: String) extends Delta
   case class Change(orderId: String, newSize: Double) extends Delta
 

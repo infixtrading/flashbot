@@ -1,13 +1,13 @@
 package flashbot.models.api
-import flashbot.core.TargetId
-import flashbot.models.core.{FixedSize, Market}
+import flashbot.core.{FixedSize, TargetId}
+import flashbot.models.core.Market
 
 trait TradingSessionEvent
 case class LogMessage(message: String) extends TradingSessionEvent
 case class OrderTarget(market: Market,
                        key: String,
-                       size: FixedSize[Double],
-                       price: Option[Double],
+                       size: FixedSize,
+                       price: Option[BigDecimal],
                        once: Option[Boolean] = None,
                        postOnly: Option[Boolean] = None) extends TradingSessionEvent {
   def id: TargetId = TargetId(market, key)

@@ -1,5 +1,6 @@
 package flashbot.core
 
+import TradingSession._
 import flashbot.models.api.OrderTarget
 import flashbot.models.core.Action.{ActionQueue, CancelLimitOrder, PostLimitOrder, PostMarketOrder}
 import flashbot.models.core.{Action, OrderOpen}
@@ -28,8 +29,7 @@ case class TargetManager(instruments: InstrumentIndex,
     copy(targets = targets.enqueue(target))
 
   def enqueueActions(exchange: Exchange, currentActions: ActionQueue)
-                    (implicit prices: PriceIndex,
-                     instruments: InstrumentIndex,
+                    (implicit ctx: TradingSession,
                      metrics: Metrics): (TargetManager, ActionQueue) = {
 
     if (currentActions.nonEmpty) {
@@ -56,7 +56,7 @@ case class TargetManager(instruments: InstrumentIndex,
                 exchange.genOrderId,
                 TargetId(market, key),
                 size.side,
-                Some(exchange.round(instrument)(size.as(instrument.security.get)).qty),
+                Some(ctx.round(market, size.as(instrument.security.get)).amount),
                 None
               ))
 
@@ -74,7 +74,7 @@ case class TargetManager(instruments: InstrumentIndex,
                 exchange.genOrderId,
                 targetId,
                 size.side,
-                exchange.round(instrument)(size.as(instrument.security.get)).qty,
+                ctx.round(market, size.as(instrument.security.get)).amount,
                 price,
                 postOnly
               )
@@ -86,7 +86,7 @@ case class TargetManager(instruments: InstrumentIndex,
                   * Existing mounted target is identical to this one. Ignore for idempotency.
                   */
                 case Some(action: PostLimitOrder)
-                  if action.price == price && action.size == size.qty
+                  if action.price == price && action.size == size.amount
                     && action.side == size.side && action.postOnly == postOnly => Nil
 
                 /**

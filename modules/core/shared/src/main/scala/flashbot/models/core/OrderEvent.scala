@@ -1,7 +1,7 @@
 package flashbot.models.core
 
+import flashbot.core.Num._
 import flashbot.core.{Timestamped, Trade}
-import flashbot.models.core.Order
 import flashbot.models.core.Order._
 
 sealed trait OrderEvent {
@@ -11,16 +11,16 @@ sealed trait OrderEvent {
 
 final case class OrderOpen(orderId: String,
                            product: String,
-                           price: Double,
-                           size: Double,
+                           price: Num,
+                           size: Num,
                            side: Side) extends OrderEvent
 
 final case class OrderDone(orderId: String,
                            product: String,
                            side: Side,
                            reason: DoneReason,
-                           price: Option[Double],
-                           remainingSize: Option[Double]) extends OrderEvent {
+                           price: Option[Num],
+                           remainingSize: Option[Num]) extends OrderEvent {
   def orderType: OrderType = (price, remainingSize) match {
     case (Some(_), Some(_)) => LimitOrder
     case (None, None) => Order.MarketOrder
@@ -29,16 +29,16 @@ final case class OrderDone(orderId: String,
 
 final case class OrderChange(orderId: String,
                              product: String,
-                             price: Option[Double],
-                             newSize: Double) extends OrderEvent {
+                             price: Option[Num],
+                             newSize: Num) extends OrderEvent {
   def orderType: OrderType = if (price.isDefined) LimitOrder else Order.MarketOrder
 }
 
 final case class OrderMatch(tradeId: Long,
                             product: String,
                             micros: Long,
-                            size: Double,
-                            price: Double,
+                            size: Num,
+                            price: Num,
                             direction: TickDirection,
                             makerOrderId: String,
                             orderId: String) extends OrderEvent {

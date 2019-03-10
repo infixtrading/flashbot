@@ -1,3 +1,5 @@
 package flashbot.core
 
-case class ExchangeParams(makerFee: Double, takerFee: Double)
+import flashbot.core.Num._
+
+case class ExchangeParams(makerFee: Num, takerFee: Num)

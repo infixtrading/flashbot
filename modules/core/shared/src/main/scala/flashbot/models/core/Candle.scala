@@ -1,18 +1,19 @@
 package flashbot.models.core
 
+import flashbot.core.Num._
 import flashbot.core.{Priced, Timestamped}
 
 case class Candle(micros: Long,
-                  open: Double,
-                  high: Double,
-                  low: Double,
-                  close: Double,
-                  volume: Double) extends Timestamped with Priced {
+                  open: Num,
+                  high: Num,
+                  low: Num,
+                  close: Num,
+                  volume: Num) extends Timestamped with Priced {
 
-  def addOHLCV(open: Double, high: Double, low: Double,
-               close: Double, volume: Double): Candle = copy(
-    high = math.max(this.high, high),
-    low = math.min(this.low, low),
+  def addOHLCV(open: Num, high: Num, low: Num,
+               close: Num, volume: Num): Candle = copy(
+    high = this.high max high,
+    low = this.low min low,
     close = close,
     volume = this.volume + volume
   )
@@ -27,7 +28,7 @@ object Candle {
   implicit val candleEn: Encoder[Candle] = deriveEncoder
   implicit val candleDe: Decoder[Candle] = deriveDecoder
 
-  def single(micros: Long, price: Double, volume: Double = 0) =
+  def single(micros: Long, price: Num, volume: Num = `0`) =
     Candle(micros, price, price, price, price, volume)
 
 //  case class CandleMD(source: String, topic: String, data: Candle)

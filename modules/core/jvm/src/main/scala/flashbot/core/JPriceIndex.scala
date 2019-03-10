@@ -2,10 +2,13 @@ package flashbot.core
 
 import java.util
 import java.util.Collections
-import scala.collection.JavaConverters._
 
+import flashbot.core.Num._
+import AssetKey._
+
+import scala.collection.JavaConverters._
 import flashbot.models.core.{Account, FixedPrice, Market}
-import flashbot.util.JavaUtils
+import flashbot.util.MapUtil._
 
 class JPriceIndex(implicit val conversions: Conversions) extends PriceIndex {
 
@@ -14,13 +17,13 @@ class JPriceIndex(implicit val conversions: Conversions) extends PriceIndex {
   //
 
   // Raw prices per market.
-  private val priceMap = new java.util.HashMap[Market, FixedPrice[Account]]()
+  private val priceMap = new java.util.HashMap[Market, FixedPrice[AccountAsset]]()
 
   // Index of (base -> quote) accounts to market prices.
-  private val priceAccountMap = JavaUtils.hashMap2d[Account, FixedPrice[Account]]
+  private val priceAccountMap = hashMap2d[Account, FixedPrice[AccountAsset]]
 
   // Cache of (base -> quote) accounts to markets.
-  private val marketIndex = JavaUtils.hashMap2d[Account, Market]
+  private val marketIndex = hashMap2d[Account, Market]
 
   // Index to support the lookup of markets by their symbol.
   private val symbolsToMarkets = new util.HashMap[String, java.util.Set[Market]]()
@@ -32,13 +35,13 @@ class JPriceIndex(implicit val conversions: Conversions) extends PriceIndex {
   //
 
   // Price path entries and cached calculations.
-  private var pricePathCacheStrict = JavaUtils.hashMap2d[AssetKey, PricePathEntry]
-  private var pricePathCacheApprox = JavaUtils.hashMap2d[String, PricePathEntry]
-  private var marketDependencies = JavaUtils.hashMap2d[Account, java.util.Set[PricePathEntry]]
+  private var pricePathCacheStrict = hashMap2d[AssetKey, PricePathEntry]
+  private var pricePathCacheApprox = hashMap2d[String, PricePathEntry]
+  private var marketDependencies = hashMap2d[Account, java.util.Set[PricePathEntry]]
 
-  private def lookupMarket(base: Account, quote: Account)
-                          (implicit instruments: InstrumentIndex) =
-    JavaUtils.getOrCompute(marketIndex, base, quote, instruments.findMarket(base, quote).orNull)
+//  private def lookupMarket(base: Account, quote: Account)
+//                          (implicit instruments: InstrumentIndex) =
+//    getOrCompute(marketIndex, base, quote, instruments.findMarket(base, quote).orNull)
 
   private def computePath(from: AssetKey, to: AssetKey, strict: Boolean)
                          (implicit instruments: InstrumentIndex,
@@ -64,8 +67,16 @@ class JPriceIndex(implicit val conversions: Conversions) extends PriceIndex {
       idx += 1
     }
 
-    val fromAcc = if (pathArr.nonEmpty) Some(Account(pathArr.head.base.exchange, from.security)) else None
-    val toAcc = if (pathArr.nonEmpty) Some(Account(pathArr.last.base.exchange, to.security)) else None
+    val fromAcc =
+      if (pathArr.nonEmpty)
+        Some(Account(pathArr.head.base.account.exchange, from.security))
+      else None
+
+    val toAcc =
+      if (pathArr.nonEmpty)
+        Some(Account(pathArr.last.base.account.exchange, to.security))
+      else None
+
     val entry = new PricePathEntry(fromAcc, toAcc, pathArr)
 
     // Update the market -> entry index, so that, for every market, we have a list of
@@ -73,7 +84,7 @@ class JPriceIndex(implicit val conversions: Conversions) extends PriceIndex {
     idx = 0
     while (idx < entry.path.length) {
       val fp = entry.path(idx)
-      val set = JavaUtils.getOrCompute(marketDependencies, fp.base, fp.quote,
+      val set = getOrCompute(marketDependencies, fp.base.account, fp.quote.account,
         Collections.newSetFromMap[PricePathEntry](new java.util.IdentityHashMap()))
       set.add(entry)
       idx += 1
@@ -82,37 +93,38 @@ class JPriceIndex(implicit val conversions: Conversions) extends PriceIndex {
     entry
   }
 
-  private def fetchPriceInstance(base: Account, quote: Account)
-                                (implicit instruments: InstrumentIndex): FixedPrice[Account] = {
-    lazy val market: Market = {
-      if (base.exchange != quote.exchange)
-        throw new RuntimeException(s"Base ($base) and quote ($quote) accounts must have the same exchange.")
-      lookupMarket(base, quote)
-    }
-    JavaUtils.getOrCompute(priceAccountMap, base, quote,
-      JavaUtils.getOrCompute(priceMap, market,
-        new FixedPrice[Account](Double.NaN, (base, quote))))
-  }
+//  private def fetchPriceInstance(base: Account, quote: Account)
+//                                (implicit instruments: InstrumentIndex): FixedPrice[AccountAsset] = {
+//    lazy val market: Market = {
+//      if (base.exchange != quote.exchange)
+//        throw new RuntimeException(s"Base ($base) and quote ($quote) accounts must have the same exchange.")
+//      lookupMarket(base, quote)
+//    }
+//    getOrCompute(priceAccountMap, base, quote,
+//      getOrCompute(priceMap, market,
+//        new FixedPrice[AccountAsset](Double.NaN, (base, quote))))
+//  }
 
-  private def lookupPriceInstance(priceEdge: FixedPrice[Account])
-                                 (implicit instruments: InstrumentIndex): FixedPrice[Account] =
-    if (priceEdge.flipped) fetchPriceInstance(priceEdge.quote, priceEdge.base)
-    else fetchPriceInstance(priceEdge.base, priceEdge.quote)
+  private def lookupPriceInstance(priceEdge: FixedPrice[AccountAsset])
+                                 (implicit instruments: InstrumentIndex): FixedPrice[AccountAsset] =
+    if (priceEdge.flipped)
+      priceAccountMap.get(priceEdge.quote).get(priceEdge.base)
+    else priceAccountMap.get(priceEdge.base).get(priceEdge.quote)
 
 
   override def calcPrice(source: AssetKey, target: AssetKey, strict: Boolean)
-                        (implicit instruments: InstrumentIndex, metrics: Metrics): Double = this.synchronized {
+                        (implicit instruments: InstrumentIndex, metrics: Metrics): Num = this.synchronized {
     val timer = metrics.startTimer("convert_calc")
     val ret = {
       // Retrieve or build the path.
       var isNewPath = false
       val pricePath =
-        if (strict) JavaUtils.getOrCompute(
+        if (strict) getOrCompute(
           pricePathCacheStrict, source, target, {
             isNewPath = true
             computePath(source, target, strict)
           })
-        else JavaUtils.getOrCompute(
+        else getOrCompute(
           pricePathCacheApprox, source.security, target.security, {
             isNewPath = true
             computePath(source.security, target.security, strict)
@@ -122,20 +134,20 @@ class JPriceIndex(implicit val conversions: Conversions) extends PriceIndex {
       if (pricePath != null) {
         // Update the reverse path
         if (isNewPath) {
-          if (strict) JavaUtils.getOrCompute(pricePathCacheStrict, target, source, pricePath)
-          else JavaUtils.getOrCompute(
+          if (strict) getOrCompute(pricePathCacheStrict, target, source, pricePath)
+          else getOrCompute(
             pricePathCacheApprox, target.security, source.security, pricePath)
         }
 
         pricePath.calcPriceOf(source, target)
 
-      } else Double.NaN
+      } else NaN
     }
     timer.close()
     ret
   }
 
-  def get(symbol: String): Double = {
+  def get(symbol: String): Num = {
     val matches = symbolsToMarkets.get(symbol)
     if (matches != null) {
       if (matches.size() == 1) {
@@ -145,22 +157,22 @@ class JPriceIndex(implicit val conversions: Conversions) extends PriceIndex {
         throw new RuntimeException(s"Ambiguous symbol. Found more than one price for $symbol.")
       }
     }
-    Double.NaN
+    NaN
   }
 
-  def get(market: Market): Double = {
+  def get(market: Market): Num = {
     val fp = priceMap.get(market)
     if (fp != null) fp.price
-    else Double.NaN
+    else NaN
   }
 
-  protected[flashbot] def setPrice(market: Market, price: Double)
+  protected[flashbot] def setPrice(market: Market, price: Num)
                                   (implicit instruments: InstrumentIndex): Unit = this.synchronized {
     // Update the price map.
     var isNewMarket = false
-    val fp = JavaUtils.getOrCompute(priceMap, market, {
+    val fp = getOrCompute(priceMap, market, {
       isNewMarket = true
-      new FixedPrice[Account](price, (market.baseAccount, market.quoteAccount))
+      new FixedPrice[AccountAsset](price, (market.baseAccount, market.quoteAccount))
     })
 
     // If this doesn't introduce a new market to the system, update the price and also set the
@@ -179,15 +191,15 @@ class JPriceIndex(implicit val conversions: Conversions) extends PriceIndex {
       }
     } else {
       // If it does introduce a new market, we have to clear our path caches.
-      pricePathCacheStrict = JavaUtils.hashMap2d[AssetKey, PricePathEntry]
-      pricePathCacheApprox = JavaUtils.hashMap2d[String, PricePathEntry]
-      marketDependencies = JavaUtils.hashMap2d[Account, java.util.Set[PricePathEntry]]
+      pricePathCacheStrict = hashMap2d[AssetKey, PricePathEntry]
+      pricePathCacheApprox = hashMap2d[String, PricePathEntry]
+      marketDependencies = hashMap2d[Account, java.util.Set[PricePathEntry]]
 
       // Also update the market index.
-      JavaUtils.getOrCompute(priceAccountMap, fp.base, fp.quote, fp)
+      getOrCompute(priceAccountMap, fp.base.account, fp.quote.account, fp)
 
       // And the symbols-to-markets index
-      val markets = JavaUtils.getOrCompute(symbolsToMarkets, market.symbol, new util.HashSet[Market]())
+      val markets = getOrCompute(symbolsToMarkets, market.symbol, new util.HashSet[Market]())
       markets.add(market)
     }
   }
@@ -304,10 +316,10 @@ class JPriceIndex(implicit val conversions: Conversions) extends PriceIndex {
 
                        // Every item of this path needs to be a reference to a FixedPrice instance
                        // in `accountsPriceMap`.
-                       val path: Array[FixedPrice[Account]],
+                       val path: Array[FixedPrice[AccountAsset]],
 
                        // Mutable vars
-                       var cachedPrice: Double = 1.0,
+                       var cachedPrice: Num = `1`,
                        var isDirty: Boolean = true)
                       (implicit metrics: Metrics){
     recalc()
@@ -316,7 +328,7 @@ class JPriceIndex(implicit val conversions: Conversions) extends PriceIndex {
 
     private def recalc(): Unit = {
       if (isDirty) {
-        cachedPrice = 1.0
+        cachedPrice = `1`
         if (!isEmpty) {
           var idx = 0
           var acc = from.get
@@ -328,11 +340,11 @@ class JPriceIndex(implicit val conversions: Conversions) extends PriceIndex {
           while (idx < path.length) {
             val fp = path(if (reverse) path.length - idx - 1 else idx)
             if (equiv(acc.security, fp.base.security)) {
-              acc = fp.quote
+              acc = fp.quote.account
               cachedPrice *= fp.price
             } else if (equiv(acc.security, fp.quote.security)) {
-              acc = fp.base
-              cachedPrice *= (1.0 / fp.price)
+              acc = fp.base.account
+              cachedPrice *= (`1` / fp.price)
             } else throw new RuntimeException(s"Invalid price path for accounts $from to $to: ${path.toSeq}")
             idx += 1
           }
@@ -341,25 +353,25 @@ class JPriceIndex(implicit val conversions: Conversions) extends PriceIndex {
       }
     }
 
-    def calcPriceOf(fromKey: AssetKey, toKey: AssetKey) = {
+    def calcPriceOf(fromKey: AssetKey, toKey: AssetKey): Num = {
       recalc()
       if (isEmpty) cachedPrice
       else if (equiv(from.get.security, fromKey.security) && equiv(to.get.security, toKey.security)) cachedPrice
-      else if (equiv(from.get.security, toKey.security) && equiv(to.get.security, fromKey.security)) 1.0 / cachedPrice
+      else if (equiv(from.get.security, toKey.security) && equiv(to.get.security, fromKey.security)) `1` / cachedPrice
       else throw new RuntimeException(s"Invalid keys in priceFor: ($fromKey, $toKey). " +
         s"Expected keys equivalent to ($from, $to)")
     }
   }
 
-  override def getOpt(symbol: String): Option[Double] = {
-    val ret: Double = get(symbol)
-    if (java.lang.Double.isNaN(ret)) None
+  override def getOpt(symbol: String): Option[Num] = {
+    val ret: Num = get(symbol)
+    if (ret.isNaN) None
     else Some(ret)
   }
 
-  override def getOpt(market: Market): Option[Double] = {
-    val ret: Double = get(market)
-    if (java.lang.Double.isNaN(ret)) None
+  override def getOpt(market: Market): Option[Num] = {
+    val ret: Num = get(market)
+    if (ret.isNaN) None
     else Some(ret)
   }
 }

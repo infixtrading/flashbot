@@ -3,6 +3,7 @@ package flashbot.core
 import java.util
 
 import flashbot.models.core.{Account, FixedPrice, Market}
+import flashbot.core.Num._
 import org.jgrapht.alg.shortestpath.DijkstraShortestPath
 import org.jgrapht.graph.SimpleDirectedWeightedGraph
 import org.jgrapht.io.{ComponentNameProvider, DOTExporter}
@@ -48,8 +49,8 @@ object GraphConversions extends Conversions {
     // Add account nodes
     val markets = prices.getMarkets
     val filteredInstruments = instruments.filterMarkets(markets.contains)
-    val accountNodes = filteredInstruments.assetAccounts.map(acc =>
-      acc -> AssetKey(acc.exchange, acc.security)).toMap
+    val accountNodes = filteredInstruments.assetAccounts
+      .map(acc => acc -> AssetKey(acc)).toMap
     accountNodes.values.foreach { node =>
       graph.addVertex(node)
     }
@@ -92,11 +93,11 @@ object GraphConversions extends Conversions {
         val baseAccount = Account(ex, inst.base)
         val market = Market(ex, inst.symbol)
         val price = prices.get(market)
-        if (!java.lang.Double.isNaN(price)) {
+        if (!price.isNaN) {
           val b = accountNodes(baseAccount)
           val q = accountNodes(quoteAccount)
 
-          val fp = new FixedPrice(inst.valueDouble(price), (baseAccount, quoteAccount))
+          val fp = new FixedPrice(inst.value(price), (baseAccount, quoteAccount))
 
           if (graph.addEdge(b, q,
             new PriceEdge(fp))) {
@@ -117,12 +118,12 @@ object GraphConversions extends Conversions {
       (prices.pegs.of(sec) + sec).foreach { sym =>
         // If sym is the sink or source, link it
         if (sym == baseKey.security && baseKey.exchangeOpt.isEmpty) {
-          val e = new Equiv(new FixedPrice(1, (baseKey.withExchange(node.exchangeOpt.get), node)))
+          val e = new Equiv(new FixedPrice(`1`, (baseKey.withExchange(node.exchangeOpt.get), node)))
           graph.addEdge(baseKey, node, e)
           graph.setEdgeWeight(baseKey, node, 0)
         }
         if (sym == quoteKey.security && quoteKey.exchangeOpt.isEmpty) {
-          val e = new Equiv(new FixedPrice(1, (node, quoteKey.withExchange(node.exchangeOpt.get))))
+          val e = new Equiv(new FixedPrice(`1`, (node, quoteKey.withExchange(node.exchangeOpt.get))))
           graph.addEdge(node, quoteKey, e)
           graph.setEdgeWeight(node, quoteKey, 0)
         }
@@ -131,8 +132,8 @@ object GraphConversions extends Conversions {
         (accountsBySymbol.getOrElse(sym, Set.empty) - acc).foreach { a =>
           val x = accountNodes(acc)
           val y = accountNodes(a)
-          graph.addEdge(x, y, new Equiv(new FixedPrice(1, (x, y))))
-          graph.addEdge(y, x, new Equiv(new FixedPrice(1, (y, x))))
+          graph.addEdge(x, y, new Equiv(new FixedPrice(`1`, (x, y))))
+          graph.addEdge(y, x, new Equiv(new FixedPrice(`1`, (y, x))))
           graph.setEdgeWeight(x, y, 0)
           graph.setEdgeWeight(y, x, 0)
         }

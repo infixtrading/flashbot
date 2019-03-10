@@ -7,17 +7,18 @@ import scala.collection.immutable.Queue
 
 sealed trait Action {
   def targetId: TargetId
-  def getSize: Option[Double]
+  def getSize: Option[BigDecimal]
 }
 
 object Action {
 
   case class PostMarketOrder(id: String, targetId: TargetId, side: Side,
-                             size: Option[Double], funds: Option[Double]) extends Action {
+                             size: Option[BigDecimal],
+                             funds: Option[BigDecimal]) extends Action {
     override def getSize = size
   }
   case class PostLimitOrder(id: String, targetId: TargetId, side: Side,
-                            size: Double, price: Double, postOnly: Boolean) extends Action {
+                            size: BigDecimal, price: BigDecimal, postOnly: Boolean) extends Action {
     override def getSize = Some(size)
   }
   case class CancelLimitOrder(targetId: TargetId) extends Action {

@@ -1,5 +1,6 @@
 package flashbot.server
 
+import flashbot.core.Num._
 import flashbot.core._
 import flashbot.models.core.Order._
 import flashbot.models.core._
@@ -29,10 +30,10 @@ class Simulator(base: Exchange, latencyMicros: Long = 0) extends Exchange {
 
   private var books = Map.empty[String, OrderBook]
   private var depths = Map.empty[String, Ladder]
-  private var prices = Map.empty[String, Double]
+  private var prices = Map.empty[String, Num]
 
-  override def makerFee: Double = base.makerFee
-  override def takerFee: Double = base.takerFee
+  override def makerFee: Num = base.makerFee
+  override def takerFee: Num = base.takerFee
 
   override def collect(session: TradingSession,
                        data: Option[MarketData[_]],

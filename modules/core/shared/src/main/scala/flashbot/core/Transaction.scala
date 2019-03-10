@@ -1,7 +1,5 @@
 package flashbot.core
 
-import flashbot.models.core.FixedSize
-
 object Transaction {
   implicit def ordering: Ordering[Transaction] = new Ordering[Transaction] {
     override def compare(x: Transaction, y: Transaction) = x.micros.compareTo(y.micros)

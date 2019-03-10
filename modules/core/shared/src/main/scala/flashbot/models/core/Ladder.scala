@@ -1,5 +1,6 @@
 package flashbot.models.core
 
+import flashbot.core.Num._
 import flashbot.core._
 import flashbot.models.core.Order.{Buy, Sell, Side}
 import io.circe._
@@ -8,8 +9,8 @@ import io.circe.generic.semiauto._
 import scala.collection.immutable.{SortedMap, TreeMap}
 
 case class Ladder(depth: Int,
-                  asks: SortedMap[Double, Double] = TreeMap.empty,
-                  bids: SortedMap[Double, Double] = TreeMap.empty(Ordering.by(-_)),
+                  asks: SortedMap[Num, Num] = TreeMap.empty,
+                  bids: SortedMap[Num, Num] = TreeMap.empty(Ordering.by(-_)),
                   tickSize: Option[Double] = None) {
   import Ladder._
 
@@ -109,8 +110,8 @@ object Ladder {
     */
   def ladderFillOrder(book: Ladder,
                       side: Side,
-                      sizeOpt: Option[Double],
-                      fundsOpt: Option[Double],
+                      sizeOpt: Option[Num],
+                      fundsOpt: Option[Num],
                       limit: Option[Double] = None)
     : Seq[(Double, Double)] = {
 

@@ -74,16 +74,19 @@ case class TradingEngineState(bots: Map[String, BotState] = Map.empty,
     case e: SessionUpdated => e match {
       case ReportUpdated(botId, delta) =>
         copy(bots = bots + (botId -> bots(botId).updateLastSession(_.updateReport(delta))))
+      case PortfolioUpdated(botId, delta) =>
+        copy(bots = bots + (botId -> bots(botId).updateLastSession(???)))
 
-      case BalancesUpdated(botId, account, balance) =>
-        copy(bots = bots + (botId -> bots(botId).updateLastSession(session => session.copy(
-          portfolio = session.portfolio.withAssetBalance(account, balance)
-        ))))
-
-      case PositionUpdated(botId, market, position) =>
-        copy(bots = bots + (botId -> bots(botId).updateLastSession(session => session.copy(
-          portfolio = session.portfolio.withPosition(market, position)
-        ))))
+//
+//      case BalancesUpdated(botId, account, balance) =>
+//        copy(bots = bots + (botId -> bots(botId).updateLastSession(session => session.copy(
+//          portfolio = session.portfolio.withBalance(account, balance)
+//        ))))
+//
+//      case PositionUpdated(botId, market, position) =>
+//        copy(bots = bots + (botId -> bots(botId).updateLastSession(session => session.copy(
+//          portfolio = session.portfolio.withPosition(market, position)
+//        ))))
 
     }
   }

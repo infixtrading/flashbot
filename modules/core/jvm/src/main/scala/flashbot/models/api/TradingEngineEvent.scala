@@ -31,12 +31,8 @@ sealed trait SessionUpdated extends TradingEngineEvent {
 }
 case class ReportUpdated(botId: String,
                          delta: ReportDelta) extends SessionUpdated
-case class BalancesUpdated(botId: String,
-                           account: Account,
-                           balance: Double) extends SessionUpdated
-case class PositionUpdated(botId: String,
-                           market: Market,
-                           position: Position) extends SessionUpdated
+case class PortfolioUpdated(botId: String,
+                            delta: PortfolioDelta) extends SessionUpdated
 
 case class BotConfigured(micros: Long, id: String, config: BotConfig) extends TradingEngineEvent
 

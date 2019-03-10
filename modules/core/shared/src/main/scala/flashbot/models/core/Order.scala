@@ -1,5 +1,6 @@
 package flashbot.models.core
 
+import flashbot.core.Num._
 import flashbot.models.core.Order.Side
 import io.circe.generic.JsonCodec
 import io.circe.syntax._
@@ -86,10 +87,10 @@ object Order {
 
   case class Fill(orderId: String,
                   tradeId: Option[String],
-                  fee: Double,
+                  fee: Num,
                   instrument: String,
-                  price: Double,
-                  size: Double,
+                  price: Num,
+                  size: Num,
                   micros: Long,
                   liquidity: Liquidity,
                   side: Side)
@@ -98,5 +99,5 @@ object Order {
 @JsonCodec
 case class Order(id: String,
                  side: Side,
-                 amount: Double,
-                 price: Option[Double])
+                 amount: Num,
+                 price: Option[Num])

@@ -3,7 +3,7 @@ package flashbot.core
 import java.util.UUID.randomUUID
 import java.util.concurrent.ConcurrentLinkedQueue
 
-import flashbot.models.core.FixedSize
+import flashbot.core.Num._
 import flashbot.models.core.Order.Fill
 import flashbot.models.core._
 import flashbot.util.time
@@ -17,8 +17,8 @@ import scala.util.{Failure, Success, Try}
 abstract class Exchange {
 
   // Fees used for simulation
-  def makerFee: Double
-  def takerFee: Double
+  def makerFee: Num
+  def takerFee: Num
 
   // Exchange API request implementations
   def order(req: OrderRequest): Future[ExchangeResponse]
@@ -26,16 +26,10 @@ abstract class Exchange {
   def fetchPortfolio: Future[(Map[String, Double], Map[String, Position])]
 
   // Settings for order size and price rounding
-  def baseAssetPrecision(pair: Instrument): Int
-  def quoteAssetPrecision(pair: Instrument): Int
-  def lotSize(pair: Instrument): Option[Double] = None
+  def baseAssetPrecision(instrument: Instrument): Int
+  def quoteAssetPrecision(instrument: Instrument): Int
 
-  def round(instrument: Instrument)(size: FixedSize[Double]): FixedSize[Double] =
-    if (size.security == instrument.security.get)
-      size.map(roundBase(instrument))
-    else if (size.security == instrument.settledIn.get)
-      size.map(roundQuote(instrument))
-    else throw new RuntimeException(s"Can't round $size for instrument $instrument")
+  def lotSize(instrument: Instrument): Option[Num] = None
 
   def instruments: Future[Set[Instrument]] = Future.successful(Set.empty)
 
@@ -125,10 +119,11 @@ abstract class Exchange {
     this
   }
 
-  private def roundQuote(instrument: Instrument)(balance: Double): Double = BigDecimal(balance)
-    .setScale(quoteAssetPrecision(instrument), HALF_DOWN).doubleValue()
-  private def roundBase(instrument: Instrument)(balance: Double): Double = BigDecimal(balance)
-    .setScale(baseAssetPrecision(instrument), HALF_DOWN).doubleValue()
+  protected[flashbot] def roundQuote(instrument: Instrument)(balance: BigDecimal): BigDecimal =
+    balance.setScale(quoteAssetPrecision(instrument), HALF_DOWN)
+
+  protected[flashbot] def roundBase(instrument: Instrument)(balance: BigDecimal): BigDecimal =
+    balance.setScale(baseAssetPrecision(instrument), HALF_DOWN)
 
   final def params: ExchangeParams = ExchangeParams(makerFee, takerFee)
 }

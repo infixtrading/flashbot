@@ -60,9 +60,9 @@ class TradingEngine(engineId: String,
     * The portfolio instance which represents your actual balances on all configured exchanges.
     * This isn't persisted in [[TradingEngineState]] for two reasons: One is that this is the only
     * case of shared state between trading sessions, and it would be great if sessions don't have
-    * to block on disk IO in order to safely update it. The other reason is that we can series away
+    * to block on disk IO in order to safely update it. The other reason is that we can get away
     * with it because the global portfolio must be synced from the exchanges on engine startup
-    * anyway, which means we wouldn't series value out of Akka persistence in the first place.
+    * anyway, which means we wouldn't get value out of Akka persistence in the first place.
     */
   val globalPortfolio = new SyncVar[Portfolio]
   private def isInitialized = globalPortfolio.isSet
@@ -650,9 +650,9 @@ class TradingEngine(engineId: String,
             // This object will be called concurrently by strategies running in different
             // threads, which is why we need globalPortfolio to be a SyncVar.
             new PortfolioRef {
-              override def mergePortfolio(partial: Portfolio) = {
-                globalPortfolio.put(globalPortfolio.take().merge(partial))
-              }
+//              override def mergePortfolio(partial: Portfolio) = {
+//                globalPortfolio.put(globalPortfolio.take().merge(partial))
+//              }
               override def getPortfolio(instruments: Option[InstrumentIndex]) =
                 globalPortfolio.get
 

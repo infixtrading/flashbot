@@ -148,13 +148,13 @@ class MarketMaker extends Strategy[MarketMakerParams] with TimeSeriesMixin {
     recordTimeSeries("ulcer", md.micros, ulcerVal)
 
     recordTimeSeries("position", md.micros,
-      ctx.getPortfolio.balance(market.securityAccount).size.amount)
+      ctx.getPortfolio.getBalance(market.securityAccount).size.amount)
 
     recordTimeSeries("cash", md.micros,
-      ctx.getPortfolio.balance(market.settlementAccount).size.amount)
+      ctx.getPortfolio.getBalance(market.settlementAccount).size.amount)
 
     recordTimeSeries("xbt", md.micros,
-      ctx.getPortfolio.balance(Account("bitmex", "xbt")).size.amount)
+      ctx.getPortfolio.getBalance(Account("bitmex", "xbt")).size.amount)
 
     // Record the computed fair price value to a time series so that it's available
     // on dashboards.
@@ -204,13 +204,13 @@ class MarketMaker extends Strategy[MarketMakerParams] with TimeSeriesMixin {
       case Ask => price > bestQuote
       case Bid => price < bestQuote
     }) && {
-      val cost = portfolio.orderCost(market, size, price, Maker)
+      val cost = portfolio.getOrderCost(market, size, price, Maker)
 
       // Determine the account which the cost is in terms of.
       val account = Account(market.exchange, cost.security)
 
       // Now get the available balance of that account.
-      val balance = portfolio.availableBalance(account)
+      val balance = portfolio.getAvailableBalance(account)
 
       balance > cost
     }
@@ -227,7 +227,7 @@ class MarketMaker extends Strategy[MarketMakerParams] with TimeSeriesMixin {
 
     // Now, return the new temporary portfolio so that we can keep looping
     // over it.
-    if (shouldOrder) portfolio.withOrder(Some(id), market, size, price)
+    if (shouldOrder) portfolio.addOrder(Some(id), market, size, price)
     else portfolio
   }
 
