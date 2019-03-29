@@ -1,4 +1,4 @@
-package flashbot.models.core
+package flashbot.models
 
 import flashbot.core.Instrument
 import flashbot.core.Instrument.Derivative

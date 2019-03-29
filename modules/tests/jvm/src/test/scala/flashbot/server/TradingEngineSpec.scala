@@ -11,12 +11,11 @@ import akka.stream.scaladsl.Sink
 import akka.util.Timeout
 import flashbot.core.{Report, _}
 import flashbot.util.time
-import flashbot.models.api._
 import flashbot.util.files.rmRf
 import flashbot.client.FlashbotClient
 import flashbot.core.FlashbotConfig.{BotConfig, StaticBotsConfig}
-import flashbot.models.core.Order._
-import flashbot.models.core._
+import flashbot.models._
+import flashbot.models.Order._
 import io.circe.Printer
 import io.circe.syntax._
 import org.jfree.data.time._

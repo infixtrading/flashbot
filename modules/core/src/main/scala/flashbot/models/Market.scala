@@ -1,4 +1,4 @@
-package flashbot.models.core
+package flashbot.models
 
 import flashbot.core.{DataType, InstrumentIndex, Labelled}
 import flashbot.core.Instrument.CurrencyPair

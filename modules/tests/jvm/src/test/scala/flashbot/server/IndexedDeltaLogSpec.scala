@@ -4,7 +4,7 @@ import org.scalatest._
 import java.io.File
 
 import flashbot.core.Trade
-import flashbot.models.core.Order._
+import flashbot.models.Order._
 
 import scala.concurrent.{Await, Future}
 import scala.concurrent.duration._

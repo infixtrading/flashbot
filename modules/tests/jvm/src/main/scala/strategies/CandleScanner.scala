@@ -6,7 +6,7 @@ import akka.stream.scaladsl.Source
 import flashbot.core.MarketData.BaseMarketData
 import flashbot.core.{EngineLoader, _}
 import flashbot.models.api.{DataOverride, DataSelection}
-import flashbot.models.core.{Candle, Portfolio}
+import flashbot.models.{Candle, Portfolio}
 import io.circe.generic.auto._
 import io.circe.parser._
 

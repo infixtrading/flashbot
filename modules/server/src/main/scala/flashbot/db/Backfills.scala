@@ -2,8 +2,6 @@ package flashbot.db
 
 import java.sql.Timestamp
 
-import flashbot.core.DataType
-import flashbot.models.core.DataPath
 import slick.lifted.Tag
 import slick.jdbc.PostgresProfile.api._
 

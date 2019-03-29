@@ -1,4 +1,4 @@
-package flashbot.models.core
+package flashbot.models
 
 import flashbot.core._
 import flashbot.models.core.Order.{Buy, Fill, Sell, Side}

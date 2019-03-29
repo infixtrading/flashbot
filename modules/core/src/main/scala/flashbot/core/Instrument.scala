@@ -1,8 +1,6 @@
 package flashbot.core
 
-import flashbot.core.Num._
-import flashbot.models.core.Order._
-import flashbot.models.core.{Account, FixedPrice, Portfolio}
+import flashbot.models._
 
 trait Instrument {
 

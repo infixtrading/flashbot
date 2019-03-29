@@ -1,4 +1,4 @@
-package flashbot.models.core
+package flashbot.models
 
 import flashbot.core.{AssetKey, AssetKey}
 import flashbot.util.NumberUtils.round8

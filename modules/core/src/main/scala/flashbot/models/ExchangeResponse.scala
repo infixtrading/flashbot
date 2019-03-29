@@ -1,4 +1,4 @@
-package flashbot.models.core
+package flashbot.models
 
 sealed trait ExchangeResponse
 case object RequestOk extends ExchangeResponse

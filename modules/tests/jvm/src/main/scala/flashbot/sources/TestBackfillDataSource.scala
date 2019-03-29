@@ -6,7 +6,7 @@ import akka.stream.ActorMaterializer
 import akka.stream.scaladsl.Source
 import flashbot.core.DataType.TradesType
 import flashbot.core._
-import flashbot.models.core.Order._
+import flashbot.models.Order._
 
 import scala.collection.immutable
 import scala.concurrent.Future

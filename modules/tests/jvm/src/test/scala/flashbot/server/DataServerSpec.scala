@@ -14,7 +14,7 @@ import flashbot.db._
 import com.typesafe.config.ConfigFactory
 import flashbot.core.FlashbotConfig.{DataSourceConfig, IngestConfig}
 import flashbot.core._
-import flashbot.models.core.Ladder
+import flashbot.models.Ladder
 import org.scalatest.concurrent.{Eventually, IntegrationPatience}
 import org.scalatest.time.{Millis, Seconds, Span}
 import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpecLike}

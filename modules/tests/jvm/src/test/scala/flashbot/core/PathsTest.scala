@@ -2,7 +2,7 @@ package flashbot.core
 
 import org.scalatest.{FlatSpec, Matchers}
 import flashbot.util.stream._
-import flashbot.models.core.{DataPath, OrderBook}
+import flashbot.models.{DataPath, OrderBook}
 
 class PathsTest extends FlatSpec with Matchers {
   "DataPath" should "match correctly" in {

@@ -2,8 +2,8 @@ package flashbot.core
 
 import flashbot.core.Num._
 import flashbot.core.Num.ImplicitConversions._
-import flashbot.models.core.Order._
-import flashbot.models.core.OrderBook
+import flashbot.models.Order._
+import flashbot.models.OrderBook
 import org.scalatest.{FlatSpec, Matchers}
 import io.circe.syntax._
 import io.circe.parser._

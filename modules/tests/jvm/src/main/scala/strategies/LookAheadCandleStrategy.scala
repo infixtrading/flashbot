@@ -9,7 +9,7 @@ import flashbot.core.Instrument.CurrencyPair
 import flashbot.core.MarketData.BaseMarketData
 import flashbot.core.{EngineLoader, _}
 import flashbot.models.api.{DataOverride, DataSelection, OrderTarget}
-import flashbot.models.core._
+import flashbot.models._
 import io.circe.{Decoder, Encoder}
 import io.circe.generic.semiauto._
 import io.circe.parser._

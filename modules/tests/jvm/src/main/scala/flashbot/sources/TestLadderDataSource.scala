@@ -5,7 +5,7 @@ import akka.stream.scaladsl.Source
 import flashbot.core.DataType.{LadderType, TradesType}
 import flashbot.core._
 import flashbot.core.DataType
-import flashbot.models.core.Ladder
+import flashbot.models.Ladder
 
 import scala.concurrent.Future
 import scala.concurrent.duration._

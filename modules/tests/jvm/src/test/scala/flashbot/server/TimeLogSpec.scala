@@ -7,7 +7,7 @@ import flashbot.util.files._
 import flashbot.core.Trade
 import flashbot.server.TimeLog
 import flashbot.server.TimeLog.ScanDuration
-import flashbot.models.core.Order._
+import flashbot.models.Order._
 import net.openhft.chronicle.queue.RollCycles
 import org.scalatest._
 

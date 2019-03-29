@@ -1,4 +1,4 @@
-package flashbot.models.core
+package flashbot.models
 
 import flashbot.core.Num._
 import io.circe.generic.JsonCodec

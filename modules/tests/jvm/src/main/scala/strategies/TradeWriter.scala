@@ -6,7 +6,7 @@ import flashbot.core.MarketData.BaseMarketData
 import flashbot.core.{EngineLoader, _}
 import flashbot.core.VarState.ops._
 import flashbot.models.api.{DataOverride, DataSelection}
-import flashbot.models.core.Portfolio
+import flashbot.models.Portfolio
 import io.circe.generic.semiauto._
 import io.circe.parser._
 

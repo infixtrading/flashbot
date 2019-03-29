@@ -6,7 +6,7 @@ import akka.stream.scaladsl.Source
 import flashbot.core.DataType.TradesType
 import flashbot.core._
 import flashbot.core.DataType
-import flashbot.models.core.Order._
+import flashbot.models.Order._
 
 import scala.concurrent.Future
 import scala.concurrent.duration._

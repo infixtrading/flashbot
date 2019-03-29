@@ -1,4 +1,4 @@
-package flashbot.models.core
+package flashbot.models
 
 final case class DataAddress[T](host: Option[String],
                                 path: DataPath[T]) {

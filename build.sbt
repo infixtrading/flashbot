@@ -299,8 +299,6 @@ lazy val flashbot = project
         |import flashbot.client.FlashbotClient
         |import flashbot.core._
         |import flashbot.models._
-        |import flashbot.models.api._
-        |import flashbot.models.core._
         |
         |import console.Console._
       """.stripMargin

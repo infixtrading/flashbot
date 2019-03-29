@@ -3,7 +3,7 @@ package flashbot.util
 import flashbot.core.Instrument.Derivative
 import flashbot.core.Num._
 import flashbot.exchanges.BitMEX
-import flashbot.models.core.{Order, OrderBook}
+import flashbot.models.{Order, OrderBook}
 import org.scalatest.{FlatSpec, Matchers}
 
 class MarginSpec extends FlatSpec with Matchers {
