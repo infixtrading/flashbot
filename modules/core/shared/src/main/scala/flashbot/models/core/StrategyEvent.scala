@@ -2,7 +2,7 @@ package flashbot.models.core
 
 import flashbot.core.TargetId
 
-sealed trait StrategyEvent
+trait StrategyEvent
 
 /**
   * [[OrderTargetEvent]] represents any state changes to orders from the perspective of
@@ -17,14 +17,4 @@ sealed trait StrategyEvent
   */
 case class OrderTargetEvent(targetId: Option[TargetId], event: OrderEvent) extends StrategyEvent
 
-/**
-  * [[ExchangeErrorEvent]] represents an error emitted by the exchange. The error may be
-  * anything from an order being rejected, rate limiting errors, or timeouts/internal errors
-  * due to the exchange itself going down.
-  *
-  * Check out [[ExchangeError]] to see possible error responses.
-  *
-  * @param error the error emitted by the exchange
-  */
-case class ExchangeErrorEvent(error: ExchangeError) extends StrategyEvent
 

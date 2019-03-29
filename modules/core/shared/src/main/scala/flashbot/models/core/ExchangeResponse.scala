@@ -16,7 +16,12 @@ case object InsufficientFunds extends RejectedReason {
   override def message = "Insufficient funds for order"
 }
 
-sealed trait ExchangeError {
+/**
+  * [[ExchangeError]] represents an error emitted by the exchange. The error may be
+  * anything from an order being rejected, rate limiting errors, or timeouts/internal
+  * errors due to the exchange itself going down.
+  */
+sealed trait ExchangeError extends StrategyEvent {
   def message: String
 }
 

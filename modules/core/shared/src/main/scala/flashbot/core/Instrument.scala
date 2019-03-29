@@ -41,7 +41,7 @@ trait Instrument {
     * The value of one unit of this security/contract in terms of the settlement asset.
     */
 //  def valueDouble(price: Double): Double
-  def value(price: Num): Num
+  def value(price: Double): Double
 }
 
 object Instrument {

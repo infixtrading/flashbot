@@ -13,9 +13,9 @@ import scala.concurrent.Future
 class BitMEX(implicit val system: ActorSystem,
              val mat: Materializer) extends Exchange {
 
-  override def makerFee: Num = -0.00025.num
+  override def makerFee: Num = (-0.00025d).num
 
-  override def takerFee: Num = 0.00075.num
+  override def takerFee: Num = 0.00075d.num
 
   override def cancel(id: String, pair: Instrument): Future[ExchangeResponse] = ???
 

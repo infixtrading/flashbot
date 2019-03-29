@@ -20,7 +20,7 @@ class MarginSpec extends FlatSpec with Matchers {
         }
 
         Order(i.toString, if (qty < 0) Order.Sell else Order.Buy, qty.num.abs, Some(price))
-    }.foldLeft(OrderBook()) { case (book, order) => book.open(order) }, instrument).toDouble())
+    }.foldLeft(OrderBook()) { case (book, order) => book._open(order) }, instrument).toDouble())
   }
 
   def round(d: Double): Double = BigDecimal.valueOf(d)

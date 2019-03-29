@@ -177,7 +177,7 @@ case class FuzzyBook(activeTimeRange: Duration = 1 minute,
         if (micros > time)
           (Seq.empty, copy(
             latestMicros = math.max(latestMicros, micros),
-            orderBook = orderBook.change(id, amount.get),
+            orderBook = orderBook._change(id, amount.get),
             orderTimestamps = orderTimestamps + (id -> orderTimestamps(id))
           ))
         else
@@ -190,7 +190,7 @@ case class FuzzyBook(activeTimeRange: Duration = 1 minute,
         if (micros > time)
           (Seq.empty, copy(
             latestMicros = math.max(latestMicros, micros),
-            orderBook = orderBook.done(id)
+            orderBook = orderBook._done(id)
           ))
         else (Seq(OutdatedData(
           s"Got an outdated delete event for active order $id at $micros micros.")), this)

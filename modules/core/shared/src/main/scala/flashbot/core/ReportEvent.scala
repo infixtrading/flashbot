@@ -1,6 +1,5 @@
 package flashbot.core
 
-import flashbot.core.Num.Num
 import flashbot.core.Report._
 import flashbot.core.ReportDelta._
 import flashbot.models.core._
@@ -17,15 +16,15 @@ object ReportEvent {
                         exchange: String,
                         product: String,
                         micros: Long,
-                        price: Num,
-                        size: Num) extends ReportEvent with Timestamped
+                        price: Double,
+                        size: Double) extends ReportEvent with Timestamped
   object TradeEvent {
     implicit def tradeEventEn: Encoder[TradeEvent] = deriveEncoder[TradeEvent]
     implicit def tradeEventDe: Decoder[TradeEvent] = deriveDecoder[TradeEvent]
   }
 
   case class PriceEvent(market: Market,
-                        price: Num,
+                        price: Double,
                         micros: Long) extends ReportEvent with Timestamped
 
   case class PositionEvent(market: Market,
@@ -33,7 +32,7 @@ object ReportEvent {
                            micros: Long) extends ReportEvent with Timestamped
 
   case class BalanceEvent(account: Account,
-                          balance: Num,
+                          balance: Double,
                           micros: Long) extends ReportEvent with Timestamped
 
   sealed trait CandleEvent extends ReportEvent {

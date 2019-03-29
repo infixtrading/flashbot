@@ -1,26 +1,26 @@
-package flashbot.models.core
+package flashbot.core
 
-import flashbot.core.Num._
 import flashbot.core.{Timestamped, Trade}
+import flashbot.models.api.TradingSessionEvent
 import flashbot.models.core.Order._
 
-sealed trait OrderEvent {
+sealed trait OrderEvent extends TradingSessionEvent {
   val orderId: String
   val product: String
 }
 
 final case class OrderOpen(orderId: String,
                            product: String,
-                           price: Num,
-                           size: Num,
+                           price: Double,
+                           size: Double,
                            side: Side) extends OrderEvent
 
 final case class OrderDone(orderId: String,
                            product: String,
                            side: Side,
                            reason: DoneReason,
-                           price: Option[Num],
-                           remainingSize: Option[Num]) extends OrderEvent {
+                           price: Option[Double],
+                           remainingSize: Option[Double]) extends OrderEvent {
   def orderType: OrderType = (price, remainingSize) match {
     case (Some(_), Some(_)) => LimitOrder
     case (None, None) => Order.MarketOrder
@@ -29,16 +29,16 @@ final case class OrderDone(orderId: String,
 
 final case class OrderChange(orderId: String,
                              product: String,
-                             price: Option[Num],
-                             newSize: Num) extends OrderEvent {
+                             price: Option[Double],
+                             newSize: Double) extends OrderEvent {
   def orderType: OrderType = if (price.isDefined) LimitOrder else Order.MarketOrder
 }
 
 final case class OrderMatch(tradeId: Long,
                             product: String,
                             micros: Long,
-                            size: Num,
-                            price: Num,
+                            size: Double,
+                            price: Double,
                             direction: TickDirection,
                             makerOrderId: String,
                             orderId: String) extends OrderEvent {

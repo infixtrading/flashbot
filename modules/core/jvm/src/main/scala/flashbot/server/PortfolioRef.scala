@@ -1,7 +1,7 @@
 package flashbot.server
 
 import flashbot.core.{InstrumentIndex, TradingSession}
-import flashbot.models.core.{BatchPortfolioUpdate, Portfolio, PortfolioDelta}
+import flashbot.models.core.Portfolio
 import flashbot.util.ParsingUtils
 
 trait PortfolioRef {

@@ -284,3 +284,7 @@ abstract class Strategy[P] extends DataHandler {
 trait DataHandler {
   def aroundHandleData(data: MarketData[_])(implicit ctx: TradingSession): Unit
 }
+
+trait EventHandler {
+  def aroundHandleEvent(event: StrategyEvent)(implicit ctx: TradingSession): Unit
+}

@@ -1,7 +1,6 @@
 package flashbot.core
 
 import flashbot.models.core.Order._
-import flashbot.core.Num._
 
 import scala.language.implicitConversions
 

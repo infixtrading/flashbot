@@ -1,9 +1,9 @@
 package flashbot.core
 
 import TradingSession._
-import flashbot.models.api.OrderTarget
-import flashbot.models.core.Action.{ActionQueue, CancelLimitOrder, PostLimitOrder, PostMarketOrder}
-import flashbot.models.core.{Action, OrderOpen}
+import flashbot.models.api.{OrderCommand, OrderTarget}
+import flashbot.models.core.OrderCommand.{CancelLimitOrder, CommandQueue, PostLimitOrder, PostMarketOrder}
+import flashbot.models.core.OrderOpen
 
 import scala.collection.immutable.Queue
 
@@ -20,17 +20,18 @@ import scala.collection.immutable.Queue
   *                       represents an in-flight OR resting limit order.
   * @param ids an ID manager for linking orders to target ids.
   */
-case class TargetManager(instruments: InstrumentIndex,
-                         targets: Queue[OrderTarget] = Queue.empty,
-                         mountedTargets: Map[TargetId, Action] = Map.empty,
-                         ids: IdManager = IdManager()) {
+class TargetManager(instruments: InstrumentIndex,
+                    targets: Queue[OrderTarget] = Queue.empty,
+                    mountedTargets: Map[TargetId, OrderCommand] = Map.empty) {
+
+  val ids: IdManager = IdManager()
 
   def submitTarget(target: OrderTarget): TargetManager =
     copy(targets = targets.enqueue(target))
 
-  def enqueueActions(exchange: Exchange, currentActions: ActionQueue)
+  def enqueueActions(exchange: Exchange, currentActions: CommandQueue)
                     (implicit ctx: TradingSession,
-                     metrics: Metrics): (TargetManager, ActionQueue) = {
+                     metrics: Metrics): (TargetManager, CommandQueue) = {
 
     if (currentActions.nonEmpty) {
       // If the current actions queue still has actions to work with, then don't do anything.
@@ -115,7 +116,7 @@ case class TargetManager(instruments: InstrumentIndex,
     }
   }
 
-  def initCreateOrder(targetId: TargetId, clientId: String, action: Action): TargetManager = {
+  def initCreateOrder(targetId: TargetId, clientId: String, action: OrderCommand): TargetManager = {
     if (mountedTargets contains targetId) {
       throw new RuntimeException(s"Order target id $targetId already exists.")
     }

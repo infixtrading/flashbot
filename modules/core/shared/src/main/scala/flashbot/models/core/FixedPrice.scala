@@ -1,17 +1,21 @@
 package flashbot.models.core
 
-import flashbot.core.Num._
-import flashbot.core.{HasSecurity, Metrics, PriceIndex}
+import flashbot.core.{AssetKey, AssetKey}
+import flashbot.util.NumberUtils.round8
 
-class FixedPrice[T](var price: Num,
-                    val pair: (T, T),
-                    val flipped: Boolean = false) {
+class FixedPrice[B: AssetKey, Q: AssetKey](var price: Double,
+                                           val pair: (B, Q),
+                                           val flipped: Boolean = false) {
+
+  this.price = round8(price)
+
   def base = pair._1
   def quote = pair._2
 
-  def flip: FixedPrice[T] = new FixedPrice[T](`1` / price, (quote, base), !flipped)
+  def flip: FixedPrice[Q, B] =
+    new FixedPrice[Q, B](1.0 / price, (quote, base), !flipped)
 
-  def setPrice(p: Num): Unit = {
+  def setPrice(p: Double): Unit = {
     this.price = p
   }
 
@@ -46,6 +50,7 @@ class FixedPrice[T](var price: Num,
 //    if (prices.equiv(quote.security, next.base.security))
 //        Some(new FixedPrice(price * next.price, (base, next.quote)))
 //    else None
+
 }
 
 object FixedPrice {

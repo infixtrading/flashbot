@@ -3,10 +3,12 @@ package flashbot.core
 import flashbot.models.core.{Account, FixedPrice}
 
 trait Conversions {
-  def findPricePath(baseKey: AssetKey, quoteKey: AssetKey)
-                   (implicit prices: PriceIndex,
+  def findPricePath[B, Q](baseKey: B, quoteKey: Q)
+                   (implicit baseOps: AssetKey[B],
+                    quoteOps: AssetKey[Q],
+                    prices: PriceIndex,
                     instruments: InstrumentIndex,
-                    metrics: Metrics): Array[FixedPrice[AccountAsset]]
+                    metrics: Metrics): Array[FixedPrice[Account, Account]]
 
 //  def apply(source: AssetKey, target: AssetKey, approx: Boolean)
 //           (implicit prices: PriceIndex,

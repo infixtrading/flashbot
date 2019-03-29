@@ -3,20 +3,22 @@ package flashbot.core
 import java.util
 
 import flashbot.models.core.{Account, FixedPrice, Market}
-import flashbot.core.Num._
 import org.jgrapht.alg.shortestpath.DijkstraShortestPath
 import org.jgrapht.graph.SimpleDirectedWeightedGraph
 import org.jgrapht.io.{ComponentNameProvider, DOTExporter}
+
 import scala.collection.JavaConverters._
+import AssetKey.implicits._
+import flashbot.core.AssetKey.SecurityAsset
 
 object GraphConversions extends Conversions {
-  abstract class Edge[T <: HasSecurity] {
-    def fp: FixedPrice[T]
+  abstract class Edge[B: AssetKey, Q: AssetKey] {
+    def fp: FixedPrice[B, Q]
   }
-  class Equiv(val fp: FixedPrice[AssetKey]) extends Edge[AssetKey] {
+  class Equiv[B: AssetKey, Q: AssetKey](val fp: FixedPrice[B, Q]) extends Edge[B, Q] {
     override def toString = "Equiv"
   }
-  class PriceEdge(val fp: FixedPrice[Account]) extends Edge[Account] {
+  class PriceEdge(val fp: FixedPrice[Account, Account]) extends Edge[Account, Account] {
     override def toString = fp.toString
   }
 
@@ -33,38 +35,42 @@ object GraphConversions extends Conversions {
     *    - For equivalent nodes (Weight 0)
     *      A node is equivalent to another one if their symbols are equal or pegged to each other.
     */
-  override def findPricePath(baseKey: AssetKey, quoteKey: AssetKey)
-                            (implicit prices: PriceIndex,
-                             instruments: InstrumentIndex,
-                             metrics: Metrics): Array[FixedPrice[Account]] = {
+  override def findPricePath[B, Q](baseKey: B, quoteKey: Q)
+                                  (implicit baseOps: AssetKey[B],
+                                   quoteOps: AssetKey[Q],
+                                   prices: PriceIndex,
+                                   instruments: InstrumentIndex,
+                                   metrics: Metrics)
+      : Array[FixedPrice[Account, Account]] = {
 
     val timer = metrics.startTimer("find_price_path")
 
-    val graph = new SimpleDirectedWeightedGraph[AssetKey, Edge[_]](classOf[Edge[_]])
+    val graph = new SimpleDirectedWeightedGraph[Any, Edge[_, _]](classOf[Edge[_, _]])
 
     // Add sink and source symbols
     graph.addVertex(baseKey)
     graph.addVertex(quoteKey)
 
     // Add account nodes
-    val markets = prices.getMarkets
+    val markets = prices.getMarketsJava
     val filteredInstruments = instruments.filterMarkets(markets.contains)
-    val accountNodes = filteredInstruments.assetAccounts
-      .map(acc => acc -> AssetKey(acc)).toMap
-    accountNodes.values.foreach { node =>
+//    val accountNodes = filteredInstruments.assetAccounts
+//      .map(acc => acc -> AssetKey(acc)).toMap
+    val accounts = filteredInstruments.assetAccounts
+    accounts.foreach { node =>
       graph.addVertex(node)
     }
 
-    val componentNameProvider = new ComponentNameProvider[AssetKey] {
-      override def getName(component: AssetKey) = component.toString.replace(""".""", "_")
+    val componentNameProvider = new ComponentNameProvider[Any] {
+      override def getName(component: Any) = component.toString.replace(""".""", "_")
     }
 
-    val vertexLabelProvider = new ComponentNameProvider[AssetKey] {
-      override def getName(component: AssetKey) = component.toString.replace(""".""", "_")
+    val vertexLabelProvider = new ComponentNameProvider[Any] {
+      override def getName(component: Any) = component.toString.replace(""".""", "_")
     }
 
-    val edgeLabelProvider = new ComponentNameProvider[Edge[_]] {
-      override def getName(component: Edge[_]) = component.toString
+    val edgeLabelProvider = new ComponentNameProvider[Edge[_, _]] {
+      override def getName(component: Edge[_, _]) = component.toString
     }
 
     import java.io.StringWriter
@@ -82,7 +88,7 @@ object GraphConversions extends Conversions {
 
 
     // Index accounts by security
-    val accountsBySymbol = accountNodes.keySet.groupBy(_.security)
+    val accountsBySymbol = accounts.groupBy(_.security)
 
     // Add instrument edges
 //    println("Instruments:", instruments.byExchange)
@@ -92,19 +98,19 @@ object GraphConversions extends Conversions {
         val quoteAccount = Account(ex, inst.quote)
         val baseAccount = Account(ex, inst.base)
         val market = Market(ex, inst.symbol)
-        val price = prices.get(market)
+        val price = prices(market)
         if (!price.isNaN) {
-          val b = accountNodes(baseAccount)
-          val q = accountNodes(quoteAccount)
+//          val b = accountNodes(baseAccount)
+//          val q = accountNodes(quoteAccount)
+          val b = baseAccount
+          val q = quoteAccount
 
           val fp = new FixedPrice(inst.value(price), (baseAccount, quoteAccount))
 
-          if (graph.addEdge(b, q,
-            new PriceEdge(fp))) {
+          if (graph.addEdge(b, q, new PriceEdge(fp))) {
           }
 
-          if (graph.addEdge(q, b,
-            new PriceEdge(fp.flip))) {
+          if (graph.addEdge(q, b, new PriceEdge(fp.flip))) {
           }
           graph.setEdgeWeight(b, q, 1)
           graph.setEdgeWeight(q, b, 1)
@@ -113,42 +119,44 @@ object GraphConversions extends Conversions {
     }
 
     // Add equivalent edges
-    accountNodes.foreach { case (acc @ Account(ex, sec), node) =>
+    accounts.foreach { case acc @ Account(ex, sec) =>
       // For the security + each of it's pegs.
-      (prices.pegs.of(sec) + sec).foreach { sym =>
+      (prices.pegs.of(sec) + sec).foreach { sym: String =>
+        val securityNode: SecurityAsset = sym
+//        val nodeEx: Option[String] = implicitly[AssetKey[SecurityAsset]].exchangeOpt(securityNode)
+
         // If sym is the sink or source, link it
-        if (sym == baseKey.security && baseKey.exchangeOpt.isEmpty) {
-          val e = new Equiv(new FixedPrice(`1`, (baseKey.withExchange(node.exchangeOpt.get), node)))
-          graph.addEdge(baseKey, node, e)
-          graph.setEdgeWeight(baseKey, node, 0)
+        if (baseOps.isSymbol && sym == baseOps.security(baseKey)) {
+          val e = new Equiv(new FixedPrice(1.0, (baseKey, acc)))
+          graph.addEdge(baseKey, acc, e)
+          graph.setEdgeWeight(baseKey, acc, 0)
         }
-        if (sym == quoteKey.security && quoteKey.exchangeOpt.isEmpty) {
-          val e = new Equiv(new FixedPrice(`1`, (node, quoteKey.withExchange(node.exchangeOpt.get))))
-          graph.addEdge(node, quoteKey, e)
-          graph.setEdgeWeight(node, quoteKey, 0)
+
+        if (quoteOps.isSymbol && sym == quoteOps.security(quoteKey)) {
+          val e = new Equiv(new FixedPrice(1.0, (acc, quoteKey)))
+          graph.addEdge(acc, quoteKey, e)
+          graph.setEdgeWeight(acc, quoteKey, 0)
         }
 
         // Also link all other accounts for the same symbol
         (accountsBySymbol.getOrElse(sym, Set.empty) - acc).foreach { a =>
-          val x = accountNodes(acc)
-          val y = accountNodes(a)
-          graph.addEdge(x, y, new Equiv(new FixedPrice(`1`, (x, y))))
-          graph.addEdge(y, x, new Equiv(new FixedPrice(`1`, (y, x))))
-          graph.setEdgeWeight(x, y, 0)
-          graph.setEdgeWeight(y, x, 0)
+          graph.addEdge(acc, a, new Equiv(new FixedPrice(1.0, (acc, a))))
+          graph.addEdge(a, acc, new Equiv(new FixedPrice(1.0, (a, acc))))
+          graph.setEdgeWeight(acc, a, 0)
+          graph.setEdgeWeight(a, acc, 0)
         }
       }
     }
 
-    val dijkstras = new DijkstraShortestPath[AssetKey, Edge[_]](graph)
+    val dijkstras = new DijkstraShortestPath[Any, Edge[_, _]](graph)
 
-    var edgeSol: Array[FixedPrice[Account]] = null
+    var edgeSol: Array[FixedPrice[Account, Account]] = null
     try {
       val foo = dijkstras.getPath(baseKey, quoteKey)
-      val sol: util.List[Edge[_]] = foo.getEdgeList
-      val solScala: Seq[Edge[_]] = sol.asScala
+      val sol: util.List[Edge[_, _]] = foo.getEdgeList
+      val solScala: Seq[Edge[_, _]] = sol.asScala
       val priceEdges: Seq[PriceEdge] = solScala.map {
-        case _: Equiv => None
+        case _: Equiv[_, _] => None
         case pe: PriceEdge => Some(pe)
       } collect { case Some(x) => x }
       edgeSol = priceEdges.map(_.fp).toArray

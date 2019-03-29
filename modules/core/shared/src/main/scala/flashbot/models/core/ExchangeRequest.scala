@@ -21,6 +21,5 @@ case class LimitOrderRequest(clientOid: String,
 case class MarketOrderRequest(clientOid: String,
                               side: Side,
                               product: Instrument,
-                              size: Option[Double],
-                              funds: Option[Double]) extends OrderRequest
+                              size: Double) extends OrderRequest
 

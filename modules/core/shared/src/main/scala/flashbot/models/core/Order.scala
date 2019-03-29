@@ -1,19 +1,33 @@
 package flashbot.models.core
 
+import java.util.Objects
+
 import flashbot.core.Num._
+import flashbot.core.{Ask, Bid, QuoteSide}
 import flashbot.models.core.Order.Side
 import io.circe.generic.JsonCodec
 import io.circe.syntax._
-import io.circe.{Decoder, Encoder}
+import io.circe.{Decoder, Encoder, HCursor, Json}
 
 object Order {
-  sealed trait Side
+  sealed trait Side {
+    def toQuote: QuoteSide = this match {
+      case Buy => Bid
+      case Sell => Ask
+    }
+  }
   case object Buy extends Side {
     override def toString: String = "buy"
   }
   case object Sell extends Side {
     override def toString: String = "sell"
   }
+
+  def apply(id: String, side: Side, amount: Num, price: Option[Num] = None): Order =
+    new Order(id, side, amount, price)
+
+  def unapply(order: Order): Option[(String, Side, Num, Option[Num])] =
+    Some((order.id, order.side, order.amount, order.price))
 
   object Side {
     implicit def apply(str: String): Side = str match {
@@ -85,19 +99,38 @@ object Order {
     }
   }
 
-  case class Fill(orderId: String,
-                  tradeId: Option[String],
-                  fee: Num,
-                  instrument: String,
-                  price: Num,
-                  size: Num,
-                  micros: Long,
-                  liquidity: Liquidity,
-                  side: Side)
+  implicit val orderEncoder: Encoder[Order] = new Encoder[Order] {
+    override def apply(o: Order) = Json.obj(
+      "id" -> Json.fromString(o.id),
+      "side" -> o.side.asJson,
+      "amount" -> o.amount.asJson,
+      "price" -> o.price.asJson
+    )
+  }
+
+  implicit val orderDecoder: Decoder[Order] = new Decoder[Order] {
+    override def apply(c: HCursor) = for {
+      id <- c.downField("id").as[String]
+      side <- c.downField("side").as[Side]
+      amount <- c.downField("amount").as[Double]
+      price <- c.downField("price").as[Option[Double]]
+    } yield new Order(id, side, amount, price)
+  }
 }
 
-@JsonCodec
-case class Order(id: String,
-                 side: Side,
-                 amount: Num,
-                 price: Option[Num])
+class Order(val id: String,
+            val side: Side,
+            var amount: Double,
+            val price: Option[Double]) {
+  def setAmount(newAmount: Double): Unit =
+    amount = newAmount
+
+  override def equals(obj: Any) = obj match {
+    case Order(_id, _side, _amount, _price) =>
+      id == _id && side == _side && amount == _amount && price == _price
+    case _ => false
+  }
+
+  override def hashCode() = Objects.hash(id, side, amount, price)
+}
+

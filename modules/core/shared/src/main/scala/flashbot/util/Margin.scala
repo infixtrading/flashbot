@@ -1,62 +1,64 @@
 package flashbot.util
 
+import flashbot.core.Instrument
 import flashbot.core.Instrument.Derivative
-import flashbot.core.Num._
 import flashbot.models.core.{Order, OrderBook}
+import spire.syntax.cfor._
+import NumberUtils._
 
 object Margin {
 
-  /**
-    * ====================================================================
-    *   Below is a reference implementation of order margin calculation.
-    *   Includes println test cases that are verified against BitMEX.
-    * ====================================================================
-    */
+  def calcOrderMargin(pos: Double, leverage: Double,
+                      book: OrderBook, instrument: Derivative): Double = {
 
-  def calcOrderMargin(pos: Num, leverage: Num,
-                      book: OrderBook, instrument: Derivative): Num = {
-    val asks = book.asks.index.toSeq.flatMap(_._2)
-    val bids = book.bids.index.toSeq.flatMap(_._2)
+    val asksArray = book.asksArray
+    val bidsArray = book.bidsArray
 
     val (primary, secondary) =
-      if (pos >= `0`) (asks, bids)
-      else (bids, asks)
+      if (pos >= 0) (asksArray, bidsArray)
+      else (bidsArray, asksArray)
 
-    def sum(seq: Seq[Order], fn: Order => Num): Num = {
-      val x = seq.map(fn).sum.abs
-      if (seq.isEmpty) `0` else x
-    }
+    val primaryQty = sum(primary, orderAmount)
+    val secondaryQty = sum(secondary, orderAmount)
 
-    def percent(remainder: Num, total: Num) =
-      if (total == `0`) `0` else remainder / total
+    val valueFn = orderValue(instrument)
+    val primaryVal = sum(primary, valueFn)
+    val secondaryVal = sum(secondary, valueFn)
 
-    def weight(value: Num, qty: Num): Num =
-      if (qty == `0`) `0` else value / qty
-
-    def merge(valA: Num, qtyA: Num, valB: Num, qtyB: Num) = {
-      val (hv, hq, lv, lq) =
-        if (weight(valA, qtyA) > weight(valB, qtyB))
-          (valA, qtyA, valB, qtyB)
-        else (valB, qtyB, valA, qtyA)
-      val rem = (lq - hq) max `0`
-      val perc = percent(rem, lq)
-      hv + perc * lv
-    }
-
-    def orderValue(order: Order) =
-      instrument.value(order.price.get) * order.amount
-
-    val primaryQty = sum(primary, _.amount)
-    val secondaryQty = sum(secondary, _.amount)
-
-    val primaryVal = sum(primary, orderValue)
-    val secondaryVal = sum(secondary, orderValue)
-
-    val primaryRemainder = (primaryQty - pos.abs) max `0`
+    val primaryRemainder = round8(primaryQty - pos.abs) max 0d
     val primaryPercent = percent(primaryRemainder, primaryQty)
 
     val primaryWeightedVal = primaryVal * primaryPercent
     val merged = merge(primaryWeightedVal, primaryRemainder, secondaryVal, secondaryQty)
-    merged / leverage
+    round8(merged / leverage)
   }
+
+  private def orderAmount(o: Order) = o.amount
+  private def orderValue(instrument: Instrument): Order => Double =
+    o => instrument.value(o.price.get) * o.amount
+
+  private def percent(remainder: Double, total: Double): Double =
+    if (total == 0d) 0d else remainder / total
+
+  private def weight(value: Double, qty: Double): Double =
+    if (qty == 0d) 0d else value / qty
+
+  private def merge(valA: Double, qtyA: Double, valB: Double, qtyB: Double) = {
+    val (hv, hq, lv, lq) =
+      if (weight(valA, qtyA) > weight(valB, qtyB))
+        (valA, qtyA, valB, qtyB)
+      else (valB, qtyB, valA, qtyA)
+    val rem = round8(lq - hq) max 0d
+    val perc = percent(rem, lq)
+    hv + perc * lv
+  }
+
+  private def sum(arr: Array[Order], fn: Order => Double): Double = {
+    var sum: Double = 0
+    cfor(0)(_ < arr.length, _ + 1) { i =>
+      sum += fn(arr(i))
+    }
+    round8(sum)
+  }
+
 }

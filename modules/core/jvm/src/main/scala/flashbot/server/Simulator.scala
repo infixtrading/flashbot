@@ -1,6 +1,5 @@
 package flashbot.server
 
-import flashbot.core.Num._
 import flashbot.core._
 import flashbot.models.core.Order._
 import flashbot.models.core._
@@ -30,10 +29,10 @@ class Simulator(base: Exchange, latencyMicros: Long = 0) extends Exchange {
 
   private var books = Map.empty[String, OrderBook]
   private var depths = Map.empty[String, Ladder]
-  private var prices = Map.empty[String, Num]
+  private var prices = Map.empty[String, Double]
 
-  override def makerFee: Num = base.makerFee
-  override def takerFee: Num = base.takerFee
+  override def makerFee: Double = base.makerFee
+  override def takerFee: Double = base.takerFee
 
   override def collect(session: TradingSession,
                        data: Option[MarketData[_]],
@@ -63,10 +62,10 @@ class Simulator(base: Exchange, latencyMicros: Long = 0) extends Exchange {
                 val immediateFills =
                   if (depths.isDefinedAt(product))
                     Ladder.ladderFillOrder(depths(product), side, Some(size), None, Some(price))
-                      .map { case (fillPrice, fillQuantity) =>
-                        Fill(clientOid, Some(clientOid), takerFee, product, fillPrice, fillQuantity,
-                          evTime, Taker, side)
-                      }
+//                      .map { case (fillPrice, fillQuantity) =>
+//                        Fill(clientOid, Some(clientOid), takerFee, product, fillPrice, fillQuantity,
+//                          evTime, Taker, side)
+//                      }
                   else if (prices.isDefinedAt(product)) {
                     side match {
                       case Buy if price > prices(product) =>
@@ -93,7 +92,7 @@ class Simulator(base: Exchange, latencyMicros: Long = 0) extends Exchange {
                   if (remainingSize > 0) {
                     myOrders = myOrders + (product.symbol ->
                       myOrders.getOrElse(product, OrderBook())
-                        .open(clientOid, price, remainingSize, side))
+                        ._open(clientOid, price, remainingSize, side))
                     events :+= OrderOpen(clientOid, product, price, remainingSize, side)
                   } else {
                     events :+= OrderDone(clientOid, product, side, Filled, Some(price), Some(0))
@@ -158,7 +157,7 @@ class Simulator(base: Exchange, latencyMicros: Long = 0) extends Exchange {
     def processMatchedOrders(topic: String, micros: Long, orders: Iterable[Order]): Unit = {
       orders.foreach { order =>
         // Remove order from private book
-        myOrders = myOrders + (topic -> myOrders(topic).done(order.id))
+        myOrders = myOrders + (topic -> myOrders(topic)._done(order.id))
 
         // Emit OrderDone event
         events :+= OrderDone(order.id, topic, order.side, Filled, order.price, Some(0))
@@ -203,7 +202,7 @@ class Simulator(base: Exchange, latencyMicros: Long = 0) extends Exchange {
 
           filledOrders.foreach { order =>
             // Remove order from private book
-            myOrders = myOrders + (topic -> myOrders(topic).done(order.id))
+            myOrders = myOrders + (topic -> myOrders(topic)._done(order.id))
 
             // Emit OrderDone event
             events :+= OrderDone(order.id, topic, order.side, Filled, order.price, Some(0))

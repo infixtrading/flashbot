@@ -18,11 +18,11 @@ trait PriceIndex {
     * Calculate price using only the prices on the referenced exchanges if `strict`
     * is true, but use all available exchanges otherwise.
     */
-  def calcPrice(source: AssetKey, target: AssetKey, strict: Boolean)
-               (implicit instruments: InstrumentIndex, metrics: Metrics): Num
+  def calcPrice[B: AssetKey, Q: AssetKey](source: B, target: Q, strict: Boolean)
+               (implicit instruments: InstrumentIndex, metrics: Metrics): Double
 
-  def calcPrice(source: AssetKey, target: AssetKey)
-               (implicit instruments: InstrumentIndex, metrics: Metrics): Num =
+  def calcPrice[B: AssetKey, Q: AssetKey](source: B, target: Q)
+               (implicit instruments: InstrumentIndex, metrics: Metrics): Double =
     calcPrice(source, target, strict = false)
 
   /**
@@ -30,21 +30,22 @@ trait PriceIndex {
     */
   def equiv(a: String, b: String)(implicit metrics: Metrics): Boolean
 
-  protected[flashbot] def setPrice(market: Market, price: Num)
+  protected[flashbot] def setPrice(market: Market, price: Double)
                                   (implicit instruments: InstrumentIndex): Unit
 
-  def get(symbol: String): Num
-  def get(market: Market): Num
+//  def get(symbol: String): Num
+//  def get(market: Market): Num
 
-  def apply(symbol: String): Num = get(symbol)
-  def apply(market: Market): Num = get(market)
+  def apply(symbol: String): Double
+  def apply(market: Market): Double
 
-  def getOpt(symbol: String): Option[Num]
-  def getOpt(market: Market): Option[Num]
+  // TODO: Rename these to `get`
+  def getOpt(symbol: String): Option[Double]
+  def getOpt(market: Market): Option[Double]
 
   def pegs: Pegs
 
-  def getMarkets: Set[Market]
+  def getMarketsJava: java.util.Set[Market]
 }
 
 

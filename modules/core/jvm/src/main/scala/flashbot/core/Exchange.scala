@@ -3,40 +3,38 @@ package flashbot.core
 import java.util.UUID.randomUUID
 import java.util.concurrent.ConcurrentLinkedQueue
 
-import flashbot.core.Num._
-import flashbot.models.core.Order.Fill
+import flashbot.models.api.OrderCommand.PostOrderCommand
 import flashbot.models.core._
 import flashbot.util.time
 import io.circe.Json
 
 import scala.concurrent.Future
 import scala.concurrent.ExecutionContext.Implicits.global
-import scala.math.BigDecimal.RoundingMode.HALF_DOWN
 import scala.util.{Failure, Success, Try}
 
 abstract class Exchange {
 
   // Fees used for simulation
-  def makerFee: Num
-  def takerFee: Num
+  def makerFee: Double
+  def takerFee: Double
 
   // Exchange API request implementations
-  def order(req: OrderRequest): Future[ExchangeResponse]
-  def cancel(id: String, pair: Instrument): Future[ExchangeResponse]
+  def order(cmd: PostOrderCommand): Future[ExchangeResponse]
+  def cancel(id: String, instrument: Instrument): Future[ExchangeResponse]
   def fetchPortfolio: Future[(Map[String, Double], Map[String, Position])]
 
   // Settings for order size and price rounding
   def baseAssetPrecision(instrument: Instrument): Int
   def quoteAssetPrecision(instrument: Instrument): Int
 
-  def lotSize(instrument: Instrument): Option[Num] = None
+  def lotSize(instrument: Instrument): Option[Double] = None
 
   def instruments: Future[Set[Instrument]] = Future.successful(Set.empty)
 
   def genOrderId: String = randomUUID.toString
 
-  protected[flashbot] def _order(req: OrderRequest): Unit = {
-    handleResponse(order(req))
+  protected[flashbot] def _order(id: String, cmd: PostOrderCommand): Unit = {
+    handleResponse(order(cmd))
   }
 
   protected[flashbot] def _cancel(id: String, instrument: Instrument): Unit = {
@@ -110,7 +108,7 @@ abstract class Exchange {
     */
   protected[flashbot] def collect(session: TradingSession,
                                   data: Option[MarketData[_]],
-                                  tick: Option[Tick]): (Seq[Fill], Seq[OrderEvent], Seq[ExchangeError]) =
+                                  tick: Option[Tick]): (List[Fill], List[OrderEvent], List[ExchangeError]) =
     (collectQueue(fills), collectQueue(events), collectQueue(errors))
 
   private var jsonParams: Option[Json] = _

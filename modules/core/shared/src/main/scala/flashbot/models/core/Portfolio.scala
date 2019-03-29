@@ -4,23 +4,23 @@ import flashbot.core.DeltaFmt.HasUpdateEvent
 import flashbot.core.Instrument.Derivative
 import flashbot.core._
 import flashbot.core.FixedSize._
-import flashbot.core.Num._
 import flashbot.models.core.Order.{Buy, Fill, Liquidity, Maker, Sell, Taker}
 import flashbot.util.Margin
+import flashbot.util.NumberUtils._
 import io.circe.generic.semiauto._
 import io.circe.{Decoder, Encoder}
 
 import scala.collection.immutable.Map
 import scala.collection.mutable
-import scala.collection.JavaConverters._
 import scala.language.postfixOps
 
 /**
-  * Keeps track of asset balances and positions across all exchanges. Calculates equity and PnL.
+  * Keeps track of asset balances and positions across all exchanges.
+  * Calculates equity and PnL.
   */
-class Portfolio(private val assets: java.util.HashMap[Account, Num],
-                private val positions: java.util.HashMap[Market, Position],
-                private val orders: java.util.HashMap[Market, OrderBook],
+class Portfolio(private val assets: debox.Map[Account, Double],
+                private val positions: debox.Map[Market, Position],
+                private val orders: debox.Map[Market, OrderBook],
                 protected[flashbot] var lastUpdate: Option[PortfolioDelta])
     extends HasUpdateEvent[Portfolio, PortfolioDelta] {
 
@@ -46,17 +46,21 @@ class Portfolio(private val assets: java.util.HashMap[Account, Num],
     delta match {
       case BalanceUpdated(account, None) =>
         assets.remove(account)
+
       case BalanceUpdated(account, Some(balance)) =>
         assets.put(account, balance)
 
       case PositionUpdated(market, None) =>
         positions.remove(market)
+
       case PositionUpdated(market, Some(position)) =>
         positions.put(market, position)
 
       case OrdersUpdated(market, bookDelta) =>
+        orders.get(market).update(bookDelta)
 
       case BatchPortfolioUpdate(deltas) =>
+        deltas.foreach(delta => this.update(delta))
     }
 
     if (recordingBuffer.isDefined) recordingBuffer.get.append(delta)
@@ -65,14 +69,14 @@ class Portfolio(private val assets: java.util.HashMap[Account, Num],
     this
   }
 
-  def getBalance(account: Account): Num = assets.getOrDefault(account, `0`)
+  def getBalance(account: Account): Double = assets.getOrDefault(account, `0`)
 
   def getBalanceAs(account: Account): FixedSize = getBalance(account).of(account)
 
-  def withBalance(account: Account, balance: Num): Portfolio =
+  def withBalance(account: Account, balance: Double): Portfolio =
     step(BalanceUpdated(account, Some(balance)))
 
-  def updateAssetBalance(account: Account, fn: Num => Num): Portfolio =
+  def updateAssetBalance(account: Account, fn: Double => Double): Portfolio =
     withBalance(account, fn(getBalance(account)))
 
   /**
@@ -80,9 +84,9 @@ class Portfolio(private val assets: java.util.HashMap[Account, Num],
     * a specific asset that should would be placed on hold or used towards the order
     * margin by the exchange.
     */
-  def getOrderCost(market: Market, size: Num, price: Num, liquidity: Liquidity)
+  def getOrderCost(market: Market, size: Double, price: Double, liquidity: Liquidity)
                   (implicit instruments: InstrumentIndex,
-                   exchangesParams: Map[String, ExchangeParams]): Num = {
+                   exchangesParams: Map[String, ExchangeParams]): Double = {
     assert(size != `0`, "Order size cannot be 0")
 
     val fee = liquidity match {
@@ -116,12 +120,12 @@ class Portfolio(private val assets: java.util.HashMap[Account, Num],
     * market. If the current position is short
     */
   def getOrderMargin(market: Market)
-                    (implicit instruments: InstrumentIndex): Num = {
+                    (implicit instruments: InstrumentIndex): Double = {
     instruments(market) match {
       case derivative: Derivative =>
         val position = positions.get(market)
-        Margin.calcOrderMargin(position.size,
-          position.leverage, orders(market), derivative)
+        Margin.calcOrderMargin(position.size, position.leverage,
+          orders(market), derivative)
     }
   }
 
@@ -131,9 +135,9 @@ class Portfolio(private val assets: java.util.HashMap[Account, Num],
   def getPositionMargin(market: Market)
                        (implicit instruments: InstrumentIndex,
                         prices: PriceIndex,
-                        metrics: Metrics): Num = {
+                        metrics: Metrics): Double = {
     val instrument = instruments(market).asInstanceOf[Derivative]
-    val position = positions.get(market)
+    val position = positions(market)
     position.initialMargin(instrument) + getPositionPnl(market)
   }
 
@@ -145,24 +149,23 @@ class Portfolio(private val assets: java.util.HashMap[Account, Num],
   def getAvailableBalance(account: Account)
                          (implicit instruments: InstrumentIndex,
                           prices: PriceIndex,
-                          metrics: Metrics): Num = {
+                          metrics: Metrics): Double = {
     var sum = getBalance(account)
-    positions.keySet().stream().filter(_.settlementAccount == account)
-      .forEach { market =>
-        sum += (
-          getPositionPnl(market) -
+    positions.foreachKey { market =>
+      if (market.settlementAccount == account) {
+        sum += (getPositionPnl(market) -
           getOrderMargin(market) -
-          getPositionMargin(market)
-        )
+          getPositionMargin(market))
       }
+    }
 //    val pnl = markets.map(getPositionPnl(_)).foldLeft(`0`)(_ + _)
 //    val oMargin = markets.map(getOrderMargin(_)).foldLeft(`0`)(_ + _)
 //    val pMargin = markets.map(getPositionMargin(_)).foldLeft(`0`)(_ + _)
-    sum
+    round8(sum)
   }
 
-  def addOrder(id: Option[String], market: Market, size: Num, price: Num): Portfolio = {
-    var book = orders.get(market)
+  def addOrder(id: Option[String], market: Market, size: Double, price: Double): Portfolio = {
+    var book = orders(market)
     if (book == null) book = OrderBook()
     val side = if (size > `0`) Order.Buy else Order.Sell
 
@@ -182,16 +185,16 @@ class Portfolio(private val assets: java.util.HashMap[Account, Num],
 
   def fillOrder(market: Market, fill: Fill)
                (implicit instruments: InstrumentIndex,
-                exchangeParams: Map[String, ExchangeParams]): Portfolio = {
+                exchangeParams: java.util.Map[String, ExchangeParams]): Portfolio = {
     val size = if (fill.side == Buy) fill.size else -fill.size
 
     // Derivatives will update realized pnl on fills.
-    if (positions.containsKey(market)) {
+    if (positions.contains(market)) {
 
       // If this fill is opening a position, update the settlement account with the
       // realized pnl from the fee.
       val instrument = instruments(market).asInstanceOf[Derivative]
-      val position = positions.get(market)
+      val position = positions(market)
       val (newPosition, realizedPnl) =
         position.updateSize(position.size + size, instrument, fill.price)
       val feeCost = instrument.value(fill.price) * fill.size * fill.fee
@@ -217,13 +220,12 @@ class Portfolio(private val assets: java.util.HashMap[Account, Num],
   def getPositionPnl(market: Market)
                     (implicit prices: PriceIndex,
                      instruments: InstrumentIndex,
-                     metrics: Metrics): Num = {
-    val position = positions.get(market)
+                     metrics: Metrics): Double = {
+    val position = positions(market)
     instruments(market) match {
       case instrument: Derivative =>
-        val entryPrice = position.entryPrice.get
         val price = prices.calcPrice(market.baseAccount, market.quoteAccount)
-        instrument.pnl(position.size, entryPrice, price)
+        instrument.pnl(position.size, position.entryPrice, price)
     }
   }
 

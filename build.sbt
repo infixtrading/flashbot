@@ -399,6 +399,10 @@ lazy val core = coreBase.jvm.settings(
     "com.lihaoyi" %% "fansi" % "0.2.5",
     "de.sciss" %% "fingertree" % "1.5.4",
     "com.twitter" %% "chill-akka" % "0.9.3",
+
+    // High performance data structures
+    "org.spire-math" %% "debox" % "0.8.0",
+    "it.unimi.dsi" % "fastutil" % "8.2.2",
     
     // For Java support
     "com.fasterxml.jackson.core" % "jackson-core" % "2.9.8",
