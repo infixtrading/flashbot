@@ -1,3 +1,4 @@
+package flashbot.core
 case class Market(exchange: String, symbol: String) extends Labelled {
   override def toString = s"$exchange.$symbol"
   override def label = {

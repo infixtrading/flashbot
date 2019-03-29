@@ -1,3 +1,7 @@
+package flashbot.core;
+
+import io.circe.generic.JsonCodec;
+
 /**
   * Specifies a start and end time in micros. This differs from from/to in DataSelection in that it
   * has no semantics for polling.

@@ -1,3 +1,4 @@
+package flashbot.core
 /**
   * Keeps track of asset balances and positions across all exchanges.
   * Calculates equity and PnL.

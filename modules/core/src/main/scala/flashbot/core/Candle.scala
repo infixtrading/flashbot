@@ -1,3 +1,5 @@
+package flashbot.core
+
 case class Candle(micros: Long,
                   open: Double,
                   high: Double,

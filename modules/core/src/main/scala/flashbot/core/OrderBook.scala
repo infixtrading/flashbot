@@ -1,3 +1,5 @@
+package flashbot.core
+        
 /**
   * A mutable order book.
   */

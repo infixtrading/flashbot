@@ -1,3 +1,5 @@
+package flashbot.core
+        
 class FixedPrice[B: AssetKey, Q: AssetKey](var price: Double,
                                            val pair: (B, Q),
                                            val flipped: Boolean = false) {

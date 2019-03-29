@@ -1,3 +1,4 @@
+package flashbot.core
 /**
   * A description of a continuous set of data.
   *

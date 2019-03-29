@@ -1,3 +1,4 @@
+package flashbot.core
 class Ladder(val depth: Int, val tickSize: Option[Double] = None) {
   import Ladder._
 

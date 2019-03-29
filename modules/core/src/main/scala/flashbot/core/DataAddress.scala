@@ -1,3 +1,5 @@
+package flashbot.core
+
 final case class DataAddress[T](host: Option[String],
                                 path: DataPath[T]) {
   def withHost(host: String): DataAddress[T] = copy(host = Some(host))

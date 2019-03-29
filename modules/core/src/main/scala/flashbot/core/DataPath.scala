@@ -1,3 +1,5 @@
+package flashbot.core
+
 case class DataPath[+T](source: String, topic: String, datatype: DataType[T]) {
   override def toString: String = List(source, topic, datatype.toString).mkString("/")
 
