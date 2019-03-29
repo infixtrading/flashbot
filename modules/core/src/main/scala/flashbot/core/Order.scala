@@ -1,4 +1,5 @@
 package flashbot.core
+
 class Order(val id: String,
             val side: Side,
             var amount: Double,

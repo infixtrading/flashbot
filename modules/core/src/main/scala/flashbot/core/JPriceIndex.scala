@@ -3,7 +3,6 @@ package flashbot.core
 import java.util
 import java.util.Collections
 
-import flashbot.models.core.{Account, FixedPrice, Market}
 import flashbot.util.MapUtil._
 
 class JPriceIndex(val conversions: Conversions) extends PriceIndex {

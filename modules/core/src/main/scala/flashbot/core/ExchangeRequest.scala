@@ -1,13 +1,12 @@
-package flashbot.models.core
+package flashbot.core
 
 import flashbot.core.Instrument
-import flashbot.models.core.Order.Side
 
 sealed trait ExchangeRequest
 
 sealed trait OrderRequest extends ExchangeRequest {
   val clientOid: String
-  val side: Side
+  val side: Order.Side
   val product: Instrument
 }
 

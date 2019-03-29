@@ -3,7 +3,7 @@ package flashbot.core
 import flashbot.models.api.TradingSessionEvent
 import flashbot.models.api.OrderCommand.{PostLimitOrder, PostMarketOrder, PostOrderCommand}
 import flashbot.models.core.Market
-import flashbot.models.core.Order.Side
+import Order.Side
 
 abstract class OrderRef {
 

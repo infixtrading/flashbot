@@ -1,7 +1,6 @@
 package flashbot.core
 
 import flashbot.core.LadderSpread.SpreadConfig
-import flashbot.models.core.Ladder
 
 class LadderSpread(val config: SpreadConfig) {
 
