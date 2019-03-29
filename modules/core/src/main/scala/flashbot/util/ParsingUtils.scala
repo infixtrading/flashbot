@@ -1,7 +1,7 @@
 package flashbot.util
 
 import flashbot.core.InstrumentIndex
-import flashbot.models.core.{Account, Market, Portfolio, Position}
+import flashbot.models.core.{Account, Market, Portfolio}
 
 import scala.util.parsing.combinator.RegexParsers
 

@@ -1,9 +1,7 @@
 package flashbot.util
 
-import java.util
-import java.util.concurrent.{CompletableFuture, CompletionStage}
+import java.util.concurrent.CompletableFuture
 
-import scala.collection.JavaConverters._
 import scala.compat.java8.FutureConverters
 
 /**
@@ -20,4 +18,3 @@ object JavaUtils {
   def toJava[T](set: Set[T]): java.util.Set[T] = set.asJava
 
 }
-
