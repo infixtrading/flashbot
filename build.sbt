@@ -1,7 +1,4 @@
 import ReleaseTransformations._
-import microsites.ConfigYml
-import microsites.ExtraMdFileConfig
-import sbtcrossproject.{ CrossProject, CrossType }
 import scala.xml.{ Elem, Node => XmlNode, NodeSeq => XmlNodeSeq }
 import scala.xml.transform.{ RewriteRule, RuleTransformer }
 
@@ -61,7 +58,7 @@ lazy val dataStores = List(
   "net.openhft" % "chronicle-map" % "3.16.4",
 
   "com.typesafe.akka" %% "akka-persistence" % akkaVersion,
-  "org.iq80.leveldb"            % "leveldb"          % "0.7",
+  "org.iq80.leveldb"          % "leveldb"          % "0.7",
   "org.fusesource.leveldbjni" % "leveldbjni-all" % "1.8"
 )
 
@@ -167,16 +164,17 @@ def flashbotProject(path: String)(project: Project) = {
   )
 }
 
-def crossModule(path: String, mima: Option[String], crossType: CrossType = CrossType.Full) = {
-  val id = path.split("-").reduce(_ + _.capitalize)
-  CrossProject(id, file(s"modules/$path"))(JVMPlatform, JSPlatform)
-    .crossType(crossType)
-    .settings(allFBSettings)
-    .configure(flashbotProject(path))
-    .jvmSettings(
-      mimaPreviousArtifacts := mima.map("com.infixtrading" %% moduleName.value % _).toSet
-    )
-}
+//
+//def crossModule(path: String, mima: Option[String], crossType: CrossType = CrossType.Full) = {
+//  val id = path.split("-").reduce(_ + _.capitalize)
+//  CrossProject(id, file(s"modules/$path"))(JVMPlatform, JSPlatform)
+//    .crossType(crossType)
+//    .settings(allFBSettings)
+//    .configure(flashbotProject(path))
+//    .jvmSettings(
+//      mimaPreviousArtifacts := mima.map("com.infixtrading" %% moduleName.value % _).toSet
+//    )
+//}
 
 def flashbotModule(path: String, mima: Option[String]): Project = {
   val id = path.split("-").reduce(_ + _.capitalize)
@@ -184,12 +182,6 @@ def flashbotModule(path: String, mima: Option[String]): Project = {
     .configure(flashbotProject(path))
     .settings(mimaPreviousArtifacts := mima.map("com.infixtrading" %% moduleName.value % _).toSet)
 }
-
-/**
- * We omit all Scala.js projects from Unidoc generation.
- */
-def noDocProjects(sv: String): Seq[ProjectReference] =
-  (crossModules.map(_._2) :+ tests).map(p => p: ProjectReference)
 
 lazy val docSettings = allFBSettings ++ Seq(
   micrositeName := "flashbot",
@@ -234,8 +226,8 @@ lazy val docSettings = allFBSettings ++ Seq(
     _.filterNot(Set("-Yno-predef"))
   },
   git.remoteRepo := "git@github.com:infixtrading/flashbot.git",
-  unidocProjectFilter in (ScalaUnidoc, unidoc) :=
-    inAnyProject -- inProjects(noDocProjects(scalaVersion.value): _*),
+//  unidocProjectFilter in (ScalaUnidoc, unidoc) :=
+//    inAnyProject -- inProjects(noDocProjects(scalaVersion.value): _*),
   includeFilter in makeSite := "*.html" | "*.css" | "*.png" | "*.jpg" | "*.gif" | "*.svg" |
     "*.js" | "*.swf" | "*.yml" | "*.md"
 )
@@ -255,25 +247,25 @@ lazy val docSettings = allFBSettings ++ Seq(
 //  .enablePlugins(MicrositesPlugin)
 //  .enablePlugins(ScalaUnidocPlugin)
 
-lazy val crossModules = Seq[(Project, Project)](
-  (core, coreJS),
-//  (testing, testingJS),
-  (tests, testsJS),
-)
+//lazy val crossModules = Seq[(Project, Project)](
+//  (core, coreJS),
+////  (testing, testingJS),
+//  (tests, testsJS),
+//)
 
-lazy val jsModules = Seq[Project](scalajs)
-lazy val jvmModules = Seq[Project](server, client, testing)
+//lazy val jsModules = Seq[Project](scalajs)
+//lazy val jvmModules = Seq[Project](server, client, testing)
 //lazy val fbDocsModules = Seq[Project](docs)
 
-lazy val jvmProjects: Seq[Project] = crossModules.map(_._1) ++ jvmModules
+lazy val jvmProjects: Seq[Project] = Seq[Project](server, client, testing)
 
-lazy val jsProjects: Seq[Project] =
-  (crossModules.map(_._2) ++ jsModules)
-
-lazy val aggregatedProjects: Seq[ProjectReference] = (
-  crossModules.flatMap(cp => Seq(cp._1, cp._2)) ++
-    jsModules ++ jvmModules
-).map(p => p: ProjectReference)
+//lazy val jsProjects: Seq[Project] =
+//  (crossModules.map(_._2) ++ jsModules)
+//
+//lazy val aggregatedProjects: Seq[ProjectReference] = (
+//  crossModules.flatMap(cp => Seq(cp._1, cp._2)) ++
+//    jsModules ++ jvmModules
+//).map(p => p: ProjectReference)
 
 lazy val macroSettings: Seq[Setting[_]] = Seq(
   libraryDependencies ++= Seq(
@@ -314,7 +306,7 @@ lazy val flashbot = project
       """.stripMargin
   )
   .settings(fork in run := true)
-  .aggregate(aggregatedProjects: _*)
+  .aggregate(core, server, testing)
   .dependsOn(core, server, testing)
 
 //lazy val numbersTestingBase = circeCrossModule("numbers-testing", previousCirceVersion, CrossType.Pure).settings(
@@ -382,8 +374,8 @@ lazy val flashbot = project
 
 
 
-lazy val coreBase = crossModule("core", previousFBVersion)
-lazy val core = coreBase.jvm.settings(
+//lazy val coreBase = crossModule("core", previousFBVersion)
+lazy val core = flashbotModule("core", previousFBVersion).settings(
   libraryDependencies ++= (configDeps ++ akkaDeps ++ timeSeriesDeps ++ 
         networkDeps ++ serviceDeps ++ statsDeps ++ Seq(
     "com.github.andyglow" % "scala-jsonschema-core_2.12" % "0.0.8",
@@ -409,7 +401,7 @@ lazy val core = coreBase.jvm.settings(
     "com.kjetland" %% "mbknor-jackson-jsonschema" % "1.0.32"
   ))
 )
-lazy val coreJS = coreBase.js
+//lazy val coreJS = coreBase.js
 
 
 lazy val server = flashbotModule("server", previousFBVersion).settings(
@@ -423,12 +415,11 @@ lazy val server = flashbotModule("server", previousFBVersion).settings(
     ))
 ).dependsOn(core, client)
 
-lazy val client = flashbotModule("client", previousFBVersion)
-  .dependsOn(core)
+lazy val client = flashbotModule("client", previousFBVersion).dependsOn(core)
 
-lazy val scalajs = flashbotModule("scalajs", None).enablePlugins(ScalaJSPlugin).dependsOn(coreJS)
+//lazy val scalajs = flashbotModule("scalajs", None).enablePlugins(ScalaJSPlugin).dependsOn(coreJS)
 
-lazy val testingBase = crossModule("testing", previousFBVersion)
+lazy val testing = flashbotModule("testing", previousFBVersion)
   .settings(noPublishSettings: _*)
   .settings(
     scalacOptions ~= {
@@ -436,12 +427,12 @@ lazy val testingBase = crossModule("testing", previousFBVersion)
     },
     libraryDependencies ++= Seq(
     )
-  ).dependsOn(coreBase)
+  ).dependsOn(core)
 
-lazy val testing = testingBase.jvm.dependsOn(server, client)
-lazy val testingJS = testingBase.js
+//lazy val testing = testingBase.jvm.dependsOn(server, client)
+//lazy val testingJS = testingBase.js
 
-lazy val testsBase = crossModule("tests", previousFBVersion)
+lazy val tests = flashbotModule("tests", previousFBVersion)
   .settings(noPublishSettings: _*)
   .settings(
     scalacOptions ~= {
@@ -456,10 +447,10 @@ lazy val testsBase = crossModule("tests", previousFBVersion)
 //    sourceGenerators in Test += (sourceManaged in Test).map(Boilerplate.genTests).taskValue,
 //    unmanagedResourceDirectories in Compile +=
 //      file("modules/tests") / "shared" / "src" / "main" / "resources"
-  ).dependsOn(coreBase)
+  ).dependsOn(core)
 
-lazy val tests = testsBase.jvm.dependsOn(server, client)
-lazy val testsJS = testsBase.js.dependsOn(scalajs)
+//lazy val tests = testsBase.jvm.dependsOn(server, client)
+//lazy val testsJS = testsBase.js.dependsOn(scalajs)
 
 lazy val publishSettings = Seq(
   releaseCrossBuild := true,
@@ -530,7 +521,7 @@ lazy val noPublishSettings = Seq(
 lazy val CompileTime = config("compile-time")
 
 val jvmTestProjects = jvmProjects
-val jsTestProjects = jsProjects.filterNot(Set(scalajs))
+//val jsTestProjects = jsProjects.filterNot(Set(scalajs))
 
 //val formatCommands = ";scalafmtCheck;test:scalafmtCheck;scalafmtSbtCheck;scalastyle"
 val formatCommands = ""
@@ -540,9 +531,9 @@ addCommandAlias(
   "validateJVM",
   ";buildJVM" + jvmTestProjects.map(";" + _.id + "/test").mkString + formatCommands
 )
-addCommandAlias("buildJS", jsProjects.map(";" + _.id + "/compile").mkString)
-addCommandAlias(
-  "validateJS",
-  ";buildJS" + jsTestProjects.map(";" + _.id + "/test").mkString + formatCommands
-)
+//addCommandAlias("buildJS", jsProjects.map(";" + _.id + "/compile").mkString)
+//addCommandAlias(
+//  "validateJS",
+//  ";buildJS" + jsTestProjects.map(";" + _.id + "/test").mkString + formatCommands
+//)
 addCommandAlias("validate", ";validateJVM;validateJS")
