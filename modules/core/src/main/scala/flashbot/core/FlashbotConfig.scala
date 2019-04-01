@@ -1,7 +1,7 @@
 package flashbot.core
 
 import com.typesafe.config.{Config, ConfigFactory}
-import flashbot.models.core._
+import flashbot.models._
 import flashbot.util.time
 import io.circe.{Decoder, Encoder, HCursor, Json}
 import io.circe.generic.extras._

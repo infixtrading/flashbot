@@ -1,6 +1,6 @@
 package flashbot.core
 
-import flashbot.models.core.{Account, FixedPrice}
+import flashbot.models.{Account, FixedPrice}
 
 trait Conversions {
   def findPricePath[B, Q](baseKey: B, quoteKey: Q)

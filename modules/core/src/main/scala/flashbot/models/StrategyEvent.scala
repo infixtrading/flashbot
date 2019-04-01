@@ -1,6 +1,6 @@
 package flashbot.models
 
-import flashbot.core.TargetId
+import flashbot.core.{OrderEvent, TargetId}
 
 trait StrategyEvent
 

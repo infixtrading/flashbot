@@ -6,7 +6,6 @@ import flashbot.core.Exchange
 import io.circe.Json
 import flashbot.core.Instrument.CurrencyPair
 import flashbot.core.Instrument
-import flashbot.models.core._
 
 import scala.concurrent.Future
 

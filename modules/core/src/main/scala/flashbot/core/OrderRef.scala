@@ -1,18 +1,41 @@
 package flashbot.core
 
-import flashbot.models.api.TradingSessionEvent
-import flashbot.models.api.OrderCommand.{PostLimitOrder, PostMarketOrder, PostOrderCommand}
-import flashbot.models.core.Market
-import flashbot.models.core.Order.Side
+import flashbot.models._
+import flashbot.models.OrderCommand.{PostLimitOrder, PostMarketOrder, PostOrderCommand}
+import flashbot.models.Order.Side
+import flashbot.util.NumberUtils
+
+import java.util.UUID.randomUUID
+
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.util.{Failure, Success}
 
 abstract class OrderRef {
 
   implicit protected[flashbot] var ctx: TradingSession = _
+  implicit protected[flashbot] var parent: OrderRef = _
 
-  def key: String = ""
+  protected[flashbot] var _tag: String = ""
+  final def tag = _tag
 
-  def submit(): Unit
-  def cancel(): Unit
+  lazy val id: String = randomUUID.toString
+
+  val children = new OrderIndex
+
+  // Will be set by the session
+  protected[flashbot] var seqNr: Long = -1
+
+  final private lazy val tagWithSeqNr: String =
+    if (!tag.isEmpty && seqNr == 0) tag
+    else if (!tag.isEmpty) s"$tag-$seqNr"
+    else seqNr.toString
+
+  final lazy val key: String =
+    if (parent == null) tagWithSeqNr
+    else s"${parent.key}/$tagWithSeqNr"
+
+  def handleSubmit(): Unit
+  def handleCancel(): Unit
 
   private var dirty: Boolean = false
   lazy val receivedCallbacks: debox.Buffer[OrderReceived => Unit] = debox.Buffer.empty
@@ -20,6 +43,7 @@ abstract class OrderRef {
   lazy val doneCallbacks: debox.Buffer[OrderDone => Unit] = debox.Buffer.empty
   lazy val matchCallbacks: debox.Buffer[OrderMatch => Unit] = debox.Buffer.empty
   lazy val changeCallbacks: debox.Buffer[OrderChange => Unit] = debox.Buffer.empty
+  lazy val errorCallbacks: debox.Buffer[OrderError => Unit] = debox.Buffer.empty
 
   final def onReceived(callback: OrderReceived => Unit): OrderRef = {
     bindAndRegister(receivedCallbacks, callback)
@@ -46,7 +70,10 @@ abstract class OrderRef {
     this
   }
 
-  final protected def genId(): String = ???
+  final def onError(callback: OrderError => Unit): OrderRef = {
+    bindAndRegister(errorCallbacks, callback)
+    this
+  }
 
   private def bindAndRegister[T <: TradingSessionEvent](buf: debox.Buffer[T => Unit], cb: T => Unit) = {
     dirty = true
@@ -60,7 +87,7 @@ abstract class OrderRef {
     ctx.scope = proto
   }
 
-  protected def onEvent(event: TradingSessionEvent): Unit = {
+  protected def handleEvent(event: OrderEvent): Unit = {
     if (!dirty)
       return
 
@@ -75,29 +102,110 @@ abstract class OrderRef {
         matchCallbacks.foreach(_.apply(ev))
       case ev: OrderChange =>
         changeCallbacks.foreach(_.apply(ev))
+      case ev: OrderError =>
+        errorCallbacks.foreach(_.apply(ev))
     }
+  }
+
+  protected[flashbot] def _handleEvent(event: OrderEvent): Unit = handleEvent(event)
+}
+
+class PersistentQuote(val market: Market,
+                      val side: Side,
+                      var size: Double,
+                      var price: Double) extends OrderRef {
+
+  private val qtys = debox.Map.empty[String, Double]
+
+  private def currentTotal = {
+    var total = 0d
+    qtys.foreachValue(total += _)
+    total
+  }
+
+  override def handleSubmit() = {
+    submitRemainder()
+  }
+
+  private def submitRemainder(): OrderRef = {
+    val remainder: Double = NumberUtils.round8(size - currentTotal)
+    ctx.submit(new LimitOrder(market, side, remainder, price))
+      .onOpen { ev =>
+        qtys.update(ev.orderId, ev.size)
+      }
+      .onChange { ev =>
+        qtys.update(ev.orderId, ev.newSize)
+        submitRemainder()
+      }
+      .onMatch { ev =>
+        qtys.update(ev.orderId, NumberUtils.round8(qtys(ev.orderId) - ev.size))
+        submitRemainder()
+      }
+      .onDone { ev =>
+        qtys.remove(ev.orderId)
+        submitRemainder()
+      }
+  }
+
+  override def handleCancel() = {
+    qtys.foreachKey(ctx.cancel)
+  }
+
+  def updatePrice(newPrice: Double) = {
+    price = newPrice
+    submitRemainder()
+  }
+
+  def updateSize(newSize: Double) = {
+    size = newSize
+    submitRemainder()
   }
 }
 
-abstract class ManagedOrder[P] extends OrderRef
-
 sealed abstract class BuiltInOrder extends OrderRef {
+
   def market: Market
   def side: Side
   def size: Double
 
   final lazy val exchange = ctx.exchanges(market.exchange)
-  final lazy val id: String = exchange.genOrderId
+  override final lazy val id: String = exchange.genOrderId
 
-  override def submit() = {
-    exchange._order(id, submitCmd)
+  private var exchangeId: String = _
+
+  override def handleSubmit() = {
+    // Submit the order directly to the exchange.
+    exchange.order(submitCmd) onComplete {
+
+      case Success(RequestOk) => // Do nothing on success
+
+      case Success(RequestFailed(cause: ExchangeError)) => cause match {
+        case err @ OrderRejectedError(request, reason) =>
+          ctx.emit(OrderRejected(id, market.symbol, reason, err))
+        case err: ExchangeError =>
+          ctx.emit(OrderException(id, market.symbol, err))
+      }
+
+      // This is an unexpected network error.
+      // Most likely the internet or exchange is down.
+      case Failure(err) =>
+        ctx.emit(OrderException(id, market.symbol, err))
+    }
   }
 
-  override def cancel() = {
-    exchange._cancel(id, ctx.instruments(market))
+  override def handleCancel() = {
+    exchange.cancel(exchangeId, ctx.instruments(market)) onComplete {
+      case Success(RequestOk) => // Do nothing on success
+
+      case Success(RequestFailed(cause: ExchangeError)) =>
+        ctx.emit(CancelError(id, market.symbol, cause))
+
+      case Failure(err) =>
+        ctx.emit(OrderException(id, market.symbol, err))
+    }
   }
 
-  def submitCmd: PostOrderCommand
+  def submitCmd: PostOrderRequest
 }
 
 class LimitOrder(val market: Market,
@@ -105,14 +213,14 @@ class LimitOrder(val market: Market,
                  val size: Double,
                  val price: Double,
                  val postOnly: Boolean = false) extends BuiltInOrder {
-  override def submitCmd = PostLimitOrder(id, side, size, price, postOnly)
+  override def submitCmd = LimitOrderRequest(id, side, ctx.instruments(market), size, price, postOnly)
 }
 
 class MarketOrder(val market: Market,
                   val side: Side,
                   val size: Double) extends BuiltInOrder {
-  override def cancel() =
-    throw new UnsupportedOperationException("Market orders do not support cancellations.")
+  override def submitCmd = MarketOrderRequest(id, side, ctx.instruments(market), size)
 
-  override def submitCmd = PostMarketOrder(id, side, size)
+  override def handleCancel() =
+    throw new UnsupportedOperationException("Market orders do not support cancellations.")
 }

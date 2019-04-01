@@ -2,17 +2,13 @@ package flashbot.core
 
 import akka.actor.{ActorRef, ActorSystem}
 import akka.stream.Materializer
-import akka.util.Timeout
 import akka.pattern.ask
 import flashbot.core.FlashbotConfig.ExchangeConfig
 import flashbot.core.Instrument.CurrencyPair
-import flashbot.models.api.MarketDataIndexQuery
-import flashbot.models.core.{DataPath, Market}
+import flashbot.models.{DataPath, Market, MarketDataIndexQuery}
 import flashbot.util.time.FlashbotTimeout
 
 import scala.concurrent.{ExecutionContext, Future}
-//import scala.concurrent.ExecutionContext.Implicits.global
-import scala.concurrent.duration._
 import scala.language.postfixOps
 import scala.util.{Failure, Success, Try}
 
@@ -21,7 +17,8 @@ import scala.util.{Failure, Success, Try}
   * instance exists per TradingEngine instance.
   */
 class EngineLoader(val getExchangeConfigs: () => Map[String, ExchangeConfig],
-                   dataServer: ActorRef, strategyClassNames: Map[String, String])
+                   dataServer: ActorRef,
+                   protected[flashbot] val strategyClassNames: Map[String, String])
                   (implicit system: ActorSystem, mat: Materializer) {
   implicit val timeout = FlashbotTimeout.default
   implicit val ec: ExecutionContext = system.dispatcher
@@ -41,7 +38,7 @@ class EngineLoader(val getExchangeConfigs: () => Map[String, ExchangeConfig],
       (dataServer ? MarketDataIndexQuery).mapTo[Map[Long, DataPath[Any]]]
   } yield index.values.map(_.market).toSet
 
-  protected[flashbot] def loadNewExchange(name: String): Try[Exchange] = {
+  protected[flashbot] def loadNewExchange(name: String, ctx: TradingSession = null): Try[Exchange] = {
 
     val config = getExchangeConfigs().get(name)
     if (config.isEmpty) {

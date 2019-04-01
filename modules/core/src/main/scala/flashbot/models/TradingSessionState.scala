@@ -1,7 +1,6 @@
-package flashbot.models.api
+package flashbot.models
 
 import flashbot.core.{Report, ReportDelta}
-import flashbot.models.core.{Portfolio, TradingSessionMode}
 import io.circe.Json
 
 case class TradingSessionState(id: String,

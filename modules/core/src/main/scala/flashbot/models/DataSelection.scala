@@ -1,9 +1,9 @@
-package flashbot.models.api
+package flashbot.models
 
 import java.time.Instant
 
 import flashbot.util.time._
-import flashbot.models.core.{DataPath, TimeRange}
+import flashbot.models.{DataPath, TimeRange}
 
 import scala.concurrent.duration.FiniteDuration
 import scala.util.{Failure, Success, Try}

@@ -2,23 +2,18 @@ package flashbot.strategies
 
 import flashbot.core.DataType.{CandlesType, TradesType}
 import flashbot.core._
-import flashbot.core.AssetKey._
-import flashbot.core.Num._
-import flashbot.models.core.{Candle, DataPath, Market, Portfolio}
+import flashbot.models.{Candle, DataPath, Market, Portfolio}
 import FixedSize._
 import EthPairsTrade._
-import akka.NotUsed
 import akka.actor.ActorRef
 import akka.stream.Materializer
-import akka.stream.scaladsl.Source
 import com.github.andyglow.jsonschema.AsCirce._
 import flashbot.core.Instrument.CurrencyPair
 import flashbot.core.MarketData.BaseMarketData
-import flashbot.models.api.{DataOverride, DataSelection}
-import flashbot.stats.{Cointegration, KalmanFilter}
+import flashbot.models.{DataOverride, DataSelection}
+import flashbot.stats.Cointegration
 import io.circe.generic.JsonCodec
 import io.circe.parser._
-import org.la4j.Matrix
 
 import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration._

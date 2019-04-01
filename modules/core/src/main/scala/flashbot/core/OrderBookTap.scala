@@ -1,10 +1,9 @@
 package flashbot.core
 
 import java.util.UUID
-
 import breeze.stats.distributions.Gaussian
-import flashbot.models.core.Order.{Buy, Sell, Side}
-import flashbot.models.core.{Order, OrderBook}
+import flashbot.models.Order.{Buy, Sell, Side}
+import flashbot.models.{Order, OrderBook}
 
 import scala.util.Random
 

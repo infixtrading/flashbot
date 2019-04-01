@@ -3,11 +3,8 @@ package flashbot.core
 import java.time.{Instant, ZoneOffset, ZonedDateTime}
 
 import flashbot.core.ReportEvent.{CandleAdd, CandleUpdate}
-import flashbot.core.Num._
-import flashbot.models.core._
 import flashbot.server.ServerMetrics
 import flashbot.util.time._
-import org.ta4j.core.BaseTimeSeries.SeriesBuilder
 import org.ta4j.core.indicators.AbstractIndicator
 import org.ta4j.core.{Bar, BaseBar, BaseTimeSeries, TimeSeries}
 import org.ta4j.core.indicators.helpers.ClosePriceIndicator
@@ -154,7 +151,7 @@ trait TimeSeriesMixin extends DataHandler { self: Strategy[_] =>
   def priceKey(exchange: String, product: String): String = s"$exchange.$product"
   def priceKey(market: Market): String = priceKey(market.exchange, market.symbol)
 
-  abstract override def aroundHandleData(md: MarketData[_])(implicit ctx: TradingSession) = {
+  abstract override def aroundOnData(md: MarketData[_])(implicit ctx: TradingSession) = {
     md.data match {
       case trade: Trade =>
         recordTrade((md.source, md.topic), md.micros, trade.price, Some(trade.size))
@@ -165,7 +162,7 @@ trait TimeSeriesMixin extends DataHandler { self: Strategy[_] =>
       case _ =>
     }
 
-    super.aroundHandleData(md)
+    super.aroundOnData(md)
 
     val t1 = ServerMetrics.startTimer("ts_equity_calc", Map("strategy" -> self.title))
     val initialPortfolio = self.getInitialPortfolio()

@@ -1,6 +1,6 @@
 package flashbot.server
 
-import java.util.concurrent.{Executors, ThreadPoolExecutor}
+import java.util.concurrent.Executors
 
 import akka.stream.Materializer
 import akka.stream.scaladsl.{RestartSource, Sink, Source}

@@ -4,7 +4,7 @@ import akka.stream.{ActorMaterializer, Materializer}
 import flashbot.core.Instrument.CurrencyPair
 import flashbot.core.Exchange
 import flashbot.core.Instrument
-import flashbot.models.core.OrderRequest
+import flashbot.models.PostOrderRequest
 
 import scala.concurrent.Future
 
@@ -13,7 +13,7 @@ class Bitfinex(implicit val system: ActorSystem,
 
   override def makerFee = .0000
   override def takerFee = .0000
-  override def order(req: OrderRequest) = ???
+  override def order(req: PostOrderRequest) = ???
   override def cancel(id: String, pair: Instrument) = ???
 
 

@@ -1,9 +1,8 @@
 package flashbot.strategies
 
 import flashbot.core._
-import flashbot.core.Num._
 import flashbot.core.FixedSize._
-import flashbot.models.core._
+import flashbot.models.{DataPath, Market, Portfolio}
 import io.circe.generic.JsonCodec
 import io.circe.parser._
 import org.ta4j.core.indicators.SMAIndicator
@@ -32,10 +31,10 @@ class DMACStrategy extends Strategy[DMACParams] with TimeSeriesMixin {
     Future.successful(Seq(DataPath(market, "candles_1m")))
 
   var isLong = false
-  var enteredAt: Num = `-1`
+  var enteredAt: Double = -1d
 
-  val stopLoss = .97.num
-  val takeProfit = 1.02.num
+  val stopLoss = .97d
+  val takeProfit = 1.02d
 
   override def handleData(data: MarketData[_])(implicit ctx: TradingSession) = {
     val portfolio = ctx.getPortfolio

@@ -1,50 +1,49 @@
 package flashbot.server
 
 import flashbot.core._
-import flashbot.models.core.Order._
-import flashbot.models.core._
+import flashbot.models.Order.{Buy, Sell, Taker}
+import flashbot.models.OrderCommand.PostOrderCommand
+import flashbot.models._
+import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap
 
 import scala.collection.immutable.Queue
-import scala.concurrent.Future
+import scala.collection.mutable
+import scala.concurrent.{Future, Promise}
 
 /**
   * The simulator is an exchange used for backtesting and paper trading. It takes an instance of a
   * real exchange as a parameter to use as a base implementation, but it simulates all API
   * interactions so that no network requests are actually made.
   */
-class Simulator(base: Exchange, latencyMicros: Long = 0) extends Exchange {
+class Simulator(base: Exchange, ctx: TradingSession, latencyMicros: Long = 0) extends Exchange {
 
-  private var _syntheticCurrentMicros: Option[Long] = None
-  override protected[flashbot] def syntheticCurrentMicros: Option[Long] = _syntheticCurrentMicros
+//  private var syntheticCurrentMicros: Long = 0
 
-  sealed trait APIRequest {
-    def requestTime: Long
-  }
-  case class OrderReq(requestTime: Long, req: OrderRequest) extends APIRequest
-  case class CancelReq(requestTime: Long, id: String, pair: Instrument) extends APIRequest
+//  sealed trait APIRequest {
+//    def requestTime: Long
+//  }
+//  case class OrderReq(requestTime: Long, req: OrderRequest) extends APIRequest
+//  case class CancelReq(requestTime: Long, id: String, pair: Instrument) extends APIRequest
 
-  private var apiRequestQueue = Queue.empty[APIRequest]
+//  private var apiRequestQueue = Queue.empty[APIRequest]
 
-  private var myOrders = Map.empty[String, OrderBook]
+  private var myOrders = new java.util.HashMap[String, OrderBook]
 
-  private var books = Map.empty[String, OrderBook]
-  private var depths = Map.empty[String, Ladder]
-  private var prices = Map.empty[String, Double]
+  private var books = new java.util.HashMap[String, OrderBook]
+  private var depths = new java.util.HashMap[String, Ladder]
+  private var prices = new java.util.HashMap[String, Double]
 
   override def makerFee: Double = base.makerFee
   override def takerFee: Double = base.takerFee
 
-  override def collect(session: TradingSession,
-                       data: Option[MarketData[_]],
-                       tick: Option[Tick]):
-        (Seq[Order.Fill], Seq[OrderEvent], Seq[ExchangeError]) = {
-    var fills = Seq.empty[Order.Fill]
-    var events = Seq.empty[OrderEvent]
-    var errors = Seq.empty[ExchangeError]
+  override def marketDataUpdate(data: Option[MarketData[_]]): Unit = {
+//    var fills = Seq.empty[Fill]
+//    var events = Seq.empty[OrderEvent]
+//    var errors = Seq.empty[ExchangeError]
 
     // Update the current time, based on the time of the incoming market data.
-    val incomingTime = data.map(_.micros).getOrElse(tick.get.micros)
-    _syntheticCurrentMicros = Some(math.max(incomingTime, syntheticCurrentMicros.getOrElse(0L)))
+//    val incomingTime = data.map(_.micros).getOrElse(tick.get.micros)
+//    _syntheticCurrentMicros = Some(math.max(incomingTime, syntheticCurrentMicros.getOrElse(0L)))
 
     // Dequeue and process API requests that have passed the latency threshold
     while (apiRequestQueue.headOption
@@ -81,7 +80,7 @@ class Simulator(base: Exchange, latencyMicros: Long = 0) extends Exchange {
                   }
 
                 if (immediateFills.nonEmpty && postOnly) {
-                  errors :+= OrderRejected(req, PostOnlyConstraint)
+                  errors :+= OrderRejectedError(req, PostOnlyConstraint)
                 } else {
                   fills ++= immediateFills
 
@@ -243,17 +242,111 @@ class Simulator(base: Exchange, latencyMicros: Long = 0) extends Exchange {
       case _ =>
     }
 
-    (fills, events, errors)
   }
 
-  override def order(req: OrderRequest): Future[ExchangeResponse] = {
-    apiRequestQueue = apiRequestQueue.enqueue(OrderReq(syntheticCurrentMicros.get, req))
-    Future.successful(RequestOk)
+  override def order(req: PostOrderRequest): Future[ExchangeResponse] = {
+    simulateSendRequest(req)
   }
 
   override def cancel(id: String, pair: Instrument): Future[ExchangeResponse] = {
-    apiRequestQueue = apiRequestQueue.enqueue(CancelReq(syntheticCurrentMicros.get, id, pair))
-    Future.successful(RequestOk)
+    simulateSendRequest(CancelOrderRequest(id, pair))
+  }
+
+  var reqCounter: Long = -1
+  val rspPromises = new Long2ObjectOpenHashMap[Promise[ExchangeResponse]]()
+
+  private def simulateSendRequest(req: ExchangeRequest): Future[ExchangeResponse] = {
+    reqCounter += 1
+    val promise = Promise[ExchangeResponse]()
+    rspPromises.put(reqCounter, promise)
+    ctx.setTimeout(latencyMicros, SimulatedRequest(reqCounter, this, req))
+    promise.future
+  }
+
+  override protected[flashbot] def simulateReceiveRequest(sreq: SimulatedRequest): Unit = {
+    val rsp: ExchangeResponse = sreq.request match {
+      /**
+        * Limit orders may be filled (fully or partially) immediately. If not immediately
+        * fully filled, the remainder is placed on the resting order book.
+        */
+      case req @ LimitOrderRequest(clientOid, side, product, size, price, postOnly) =>
+
+        // If `postOnly` is set, before we mutate the book, check if immediate
+        // fills are possible. If so, that's a request error.
+        if (postOnly && depths.containsKey(product)) {
+
+        }
+
+        val immediateFills =
+          if (depths.containsKey(product))
+            Ladder.ladderFillOrder(depths.get(product), side, size, price)
+//                      .map { case (fillPrice, fillQuantity) =>
+//                        Fill(clientOid, Some(clientOid), takerFee, product, fillPrice, fillQuantity,
+//                          evTime, Taker, side)
+//                      }
+          else if (prices.containsKey(product)) {
+            side match {
+              case Buy if price > prices.get(product) =>
+                Seq(Fill(clientOid, Some(clientOid), takerFee, product, prices.get(product),
+                  size, evTime, Taker, side))
+              case Sell if price < prices.get(product) =>
+                Seq(Fill(clientOid, Some(clientOid), takerFee, product, prices.get(product),
+                  size, evTime, Taker, side))
+              case _ => Seq()
+            }
+          } else {
+            throw new RuntimeException(s"Not enough data to simulate limit orders for $product.")
+          }
+
+        if (immediateFills.nonEmpty && postOnly) {
+          errors :+= OrderRejectedError(req, PostOnlyConstraint)
+        } else {
+          fills ++= immediateFills
+
+          events :+= OrderReceived(clientOid, product, Some(clientOid), Order.LimitOrder)
+
+          // Either complete or open the limit order
+          val remainingSize = size - immediateFills.map(_.size).sum
+          if (remainingSize > 0) {
+            myOrders = myOrders + (product.symbol ->
+              myOrders.getOrElse(product, OrderBook())
+                ._open(clientOid, price, remainingSize, side))
+            events :+= OrderOpen(clientOid, product, price, remainingSize, side)
+          } else {
+            events :+= OrderDone(clientOid, product, side, Filled, Some(price), Some(0))
+          }
+        }
+
+      /**
+        * Market orders need to be filled immediately.
+        */
+      case MarketOrderRequest(clientOid, side, product, size, funds) =>
+        if (depths.isDefinedAt(product)) {
+          fills = fills ++
+            Ladder.ladderFillOrder(depths(product), side, size, funds.map(_ * (1 - takerFee)))
+              .map { case (price, quantity) => Fill(clientOid, Some(clientOid), takerFee,
+                product, price, quantity, evTime, Taker, side)}
+
+        } else if (prices.isDefinedAt(product)) {
+          // We may not have aggregate book data, in that case, simply use the last price.
+          fills = fills :+ Fill(
+            clientOid, Some(clientOid), takerFee, product, prices(product),
+            if (side == Buy) size.getOrElse(funds.get * (1 - takerFee) / prices(product))
+            else size.get,
+            evTime, Taker, side
+          )
+
+        } else {
+          throw new RuntimeException(s"No pricing $product data available for simulation")
+        }
+
+        events = events :+
+          OrderReceived(clientOid, product, Some(clientOid), Order.MarketOrder) :+
+          OrderDone(clientOid, product, side, Filled, None, None)
+    }
+
+    val prom = rspPromises.remove(sreq.reqId)
+    prom.success(rsp)
   }
 
   override def baseAssetPrecision(pair: Instrument): Int = base.baseAssetPrecision(pair)

@@ -14,7 +14,6 @@ import flashbot.core.DataSource.IngestGroup
 import flashbot.core.DataType.{CandlesType, LadderType, OrderBookType, TradesType}
 import flashbot.core.Instrument.CurrencyPair
 import flashbot.core._
-import flashbot.models.core._
 import flashbot.util.time.TimeFmt
 import flashbot.util.stream._
 import flashbot.util
@@ -29,8 +28,6 @@ import org.java_websocket.handshake.ServerHandshake
 import com.softwaremill.sttp._
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import flashbot.core.DataType
-import flashbot.models.core.Order._
-import flashbot.models.core.OrderBook
 import flashbot.server.RequestService._
 
 import scala.concurrent.{ExecutionContext, Future, Promise, blocking}

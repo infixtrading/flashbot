@@ -3,9 +3,9 @@ package flashbot.core
 import java.util.UUID.randomUUID
 import java.util.concurrent.ConcurrentLinkedQueue
 
-import flashbot.models.api.OrderCommand.PostOrderCommand
-import flashbot.models.core._
-import flashbot.util.time
+import flashbot.models.OrderCommand.PostOrderCommand
+import flashbot.models._
+import flashbot.util.{NumberUtils, time}
 import io.circe.Json
 
 import scala.concurrent.Future
@@ -19,7 +19,7 @@ abstract class Exchange {
   def takerFee: Double
 
   // Exchange API request implementations
-  def order(cmd: PostOrderCommand): Future[ExchangeResponse]
+  def order(req: PostOrderRequest): Future[ExchangeResponse]
   def cancel(id: String, instrument: Instrument): Future[ExchangeResponse]
   def fetchPortfolio: Future[(Map[String, Double], Map[String, Position])]
 
@@ -33,15 +33,19 @@ abstract class Exchange {
 
   def genOrderId: String = randomUUID.toString
 
-  protected[flashbot] def _order(id: String, cmd: PostOrderCommand): Unit = {
-    handleResponse(order(cmd))
-  }
+//  protected[flashbot] def _order(id: String, cmd: PostOrderCommand): Unit = {
+//    handleResponse(order(cmd))
+//  }
+//
+//  protected[flashbot] def _cancel(id: String, instrument: Instrument): Unit = {
+//    handleResponse(cancel(id, instrument))
+//  }
 
-  protected[flashbot] def _cancel(id: String, instrument: Instrument): Unit = {
-    handleResponse(cancel(id, instrument))
-  }
+//  protected[flashbot] def syntheticCurrentMicros: Option[Long] = None
 
-  protected[flashbot] def syntheticCurrentMicros: Option[Long] = None
+  protected[flashbot] def simulateReceiveRequest(req: SimulatedRequest): Unit = {
+    throw new RuntimeException("Base exchange cannot simulate requests.")
+  }
 
   private def handleResponse(fut: Future[ExchangeResponse]): Unit = {
 
@@ -67,49 +71,53 @@ abstract class Exchange {
     }
   }
 
-  protected[flashbot] var tick: Long => Unit = (nowMicros: Long) => {
-    throw new RuntimeException("The default tick function should never be called")
-  }
-  protected[flashbot] def setTickFn(fn: Long => Unit): Unit = {
-    tick = fn
-  }
+//  protected[flashbot] var eventHandler: TradingSessionEvent => Unit = _ => {
+//    throw new RuntimeException("Exchange event handler not defined")
+//  }
+//
+//  protected[flashbot] var tick: Long => Unit = (nowMicros: Long) => {
+//    throw new RuntimeException("The default tick function should never be called")
+//  }
+//  protected[flashbot] def setTickFn(fn: Long => Unit): Unit = {
+//    tick = fn
+//  }
 
-  private val fills = new ConcurrentLinkedQueue[Fill]()
-  def fill(f: Fill): Unit = {
-    fills.add(f)
-    tick(syntheticCurrentMicros.getOrElse(time.currentTimeMicros))
-  }
+//  private val fills = new ConcurrentLinkedQueue[Fill]()
+//  def fill(f: Fill): Unit = {
+//    fills.add(f)
+//    tick(syntheticCurrentMicros.getOrElse(time.currentTimeMicros))
+//  }
+//
+//  private val events = new ConcurrentLinkedQueue[OrderEvent]()
+//  def event(e: OrderEvent): Unit = {
+//    events.add(e)
+//    tick(syntheticCurrentMicros.getOrElse(time.currentTimeMicros))
+//  }
+//
+//  private val errors = new ConcurrentLinkedQueue[ExchangeError]()
+//  private def error(err: ExchangeError): Unit = {
+//    errors.add(err)
+//    tick(syntheticCurrentMicros.getOrElse(time.currentTimeMicros))
+//  }
 
-  private val events = new ConcurrentLinkedQueue[OrderEvent]()
-  def event(e: OrderEvent): Unit = {
-    events.add(e)
-    tick(syntheticCurrentMicros.getOrElse(time.currentTimeMicros))
-  }
-
-  private val errors = new ConcurrentLinkedQueue[ExchangeError]()
-  private def error(err: ExchangeError): Unit = {
-    errors.add(err)
-    tick(syntheticCurrentMicros.getOrElse(time.currentTimeMicros))
-  }
-
-  private def collectQueue[T](queue: ConcurrentLinkedQueue[T]): Seq[T] = {
-    var seq = Seq.empty[T]
-    var item = Option(queue.poll())
-    while (item.isDefined) {
-      seq :+= item.get
-      item = Option(queue.poll())
-    }
-    seq
-  }
+//  private def collectQueue[T](queue: ConcurrentLinkedQueue[T]): Seq[T] = {
+//    var seq = Seq.empty[T]
+//    var item = Option(queue.poll())
+//    while (item.isDefined) {
+//      seq :+= item.get
+//      item = Option(queue.poll())
+//    }
+//    seq
+//  }
 
   /**
     * The internal function that returns user data by the exchange in its current state for
     * the given trading session.
     */
-  protected[flashbot] def collect(session: TradingSession,
-                                  data: Option[MarketData[_]],
-                                  tick: Option[Tick]): (List[Fill], List[OrderEvent], List[ExchangeError]) =
-    (collectQueue(fills), collectQueue(events), collectQueue(errors))
+//  protected[flashbot] def collect(session: TradingSession,
+//                                  data: Option[MarketData[_]],
+//                                  tick: Option[Tick]): (List[Fill], List[OrderEvent], List[ExchangeError]) =
+//    (collectQueue(fills), collectQueue(events), collectQueue(errors))
 
   private var jsonParams: Option[Json] = _
   def withParams(json: Option[Json]): Exchange = {
@@ -117,12 +125,14 @@ abstract class Exchange {
     this
   }
 
-  protected[flashbot] def roundQuote(instrument: Instrument)(balance: BigDecimal): BigDecimal =
-    balance.setScale(quoteAssetPrecision(instrument), HALF_DOWN)
+  protected[flashbot] def roundQuote(instrument: Instrument)(balance: Double): Double =
+    NumberUtils.round(balance, quoteAssetPrecision(instrument))
 
-  protected[flashbot] def roundBase(instrument: Instrument)(balance: BigDecimal): BigDecimal =
-    balance.setScale(baseAssetPrecision(instrument), HALF_DOWN)
+  protected[flashbot] def roundBase(instrument: Instrument)(balance: Double): Double =
+    NumberUtils.round(balance, baseAssetPrecision(instrument))
 
   final def params: ExchangeParams = ExchangeParams(makerFee, takerFee)
+
+
 }
 

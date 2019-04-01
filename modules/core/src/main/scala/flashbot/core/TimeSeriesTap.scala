@@ -6,7 +6,7 @@ import akka.NotUsed
 import akka.stream.scaladsl.{Flow, Sink, Source}
 import akka.stream.{Materializer, OverflowStrategy}
 import breeze.stats.distributions.Gaussian
-import flashbot.models.core.{Candle, TimeRange}
+import flashbot.models.{Candle, TimeRange}
 
 import scala.concurrent.duration._
 import scala.concurrent.ExecutionContext.Implicits.global

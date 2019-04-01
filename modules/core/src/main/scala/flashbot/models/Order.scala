@@ -2,9 +2,8 @@ package flashbot.models
 
 import java.util.Objects
 
-import flashbot.core.Num._
 import flashbot.core.{Ask, Bid, QuoteSide}
-import flashbot.models.core.Order.Side
+import flashbot.models.Order.Side
 import io.circe.generic.JsonCodec
 import io.circe.syntax._
 import io.circe.{Decoder, Encoder, HCursor, Json}

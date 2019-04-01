@@ -1,8 +1,6 @@
 package flashbot.models
 
-import flashbot.core.Instrument
 import flashbot.core.Instrument.Derivative
-import io.circe.generic.JsonCodec
 
 /**
   * Positions are used to calculate the portfolio equity and PnL.

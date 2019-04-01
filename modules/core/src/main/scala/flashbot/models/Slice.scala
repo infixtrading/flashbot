@@ -1,6 +1,6 @@
 package flashbot.models
 
-import flashbot.models.core.Slice.SliceId
+import flashbot.models.Slice.SliceId
 
 /**
   * A description of a continuous set of data.

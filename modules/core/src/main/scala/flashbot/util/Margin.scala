@@ -2,7 +2,7 @@ package flashbot.util
 
 import flashbot.core.Instrument
 import flashbot.core.Instrument.Derivative
-import flashbot.models.core.{Order, OrderBook}
+import flashbot.models.{Order, OrderBook}
 import spire.syntax.cfor._
 import NumberUtils._
 

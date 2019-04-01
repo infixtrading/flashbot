@@ -7,8 +7,7 @@ import akka.NotUsed
 import akka.actor.ActorRef
 import akka.stream.Materializer
 import akka.stream.scaladsl.Source
-import flashbot.models.api.{DataOverride, DataSelection}
-import flashbot.models.core.{DataPath, Portfolio, StrategyEvent}
+import flashbot.models.{DataPath, Portfolio, StrategyEvent, DataOverride, DataSelection}
 import flashbot.util.JavaUtils
 
 import scala.collection.JavaConverters._
@@ -48,7 +47,7 @@ abstract class JavaStrategy[P] extends Strategy[P] with TimeSeriesMixin {
   final override def handleData(data: MarketData[_])(implicit ctx: TradingSession) = jHandleData(data)
   def jHandleData(data: MarketData[_])(implicit ctx: TradingSession): Unit
 
-  final override def handleEvent(event: StrategyEvent)(implicit ctx: TradingSession) = jHandleEvent(event)
+  final override def onEvent(event: StrategyEvent)(implicit ctx: TradingSession) = jHandleEvent(event)
   def jHandleEvent(event: StrategyEvent)(implicit ctx: TradingSession): Unit
 
   final override def resolveMarketData[T](selection: DataSelection[T],

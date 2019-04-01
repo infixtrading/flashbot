@@ -1,6 +1,6 @@
 package flashbot.core
 
-import flashbot.models.core.Market
+import flashbot.models.Market
 
 final case class TargetId(market: Market, key: String) {
   def instrument(implicit idx: InstrumentIndex) = idx(market)

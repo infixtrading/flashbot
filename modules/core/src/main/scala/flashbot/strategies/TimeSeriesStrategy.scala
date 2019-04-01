@@ -1,10 +1,8 @@
 package flashbot.strategies
 
 import flashbot.core.{MarketData, Strategy, _}
-import flashbot.models.core.{DataPath, Portfolio}
-import io.circe.Decoder
+import flashbot.models.{DataPath, Portfolio}
 import io.circe.generic.JsonCodec
-import io.circe.generic.semiauto._
 import io.circe.parser._
 import TimeSeriesStrategy._
 import flashbot.server.ServerMetrics

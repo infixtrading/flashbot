@@ -1,10 +1,7 @@
-package flashbot.models.api
+package flashbot.models
 
 import flashbot.core.FlashbotConfig.BotConfig
 import flashbot.core.ReportEvent
-import flashbot.models.core.Portfolio
-
-import scala.concurrent.duration.Duration
 
 sealed trait TradingEngineCommand
 

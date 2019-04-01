@@ -1,6 +1,4 @@
-package flashbot.models.api
-
-import flashbot.models.core.DataPath
+package flashbot.models
 
 sealed trait DataServerMessage
 

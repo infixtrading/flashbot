@@ -1,7 +1,6 @@
 package flashbot.core
 
-import flashbot.models.core.Order._
-
+import flashbot.models.Order._
 import scala.language.implicitConversions
 
 case class FixedSize(amount: BigDecimal, security: String) {

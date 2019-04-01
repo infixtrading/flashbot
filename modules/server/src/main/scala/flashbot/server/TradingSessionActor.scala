@@ -190,12 +190,12 @@ class TradingSessionActor(session: TradingSession) extends Actor with ActorLoggi
 //              session.orderManagers.get(ex.get).orderRejected(req.clientOid)
               session.cmdQueues.get(ex.get).closeActive()
           }
-          strategy.handleEvent(err)
+          strategy.onEvent(err)
         }
 
         userData.foreach { ud =>
           // Send all user data to strategy.
-          strategy.handleEvent(ud)
+          strategy.onEvent(ud)
 
           val cmdQueue = session.cmdQueues.get(ex.get)
           ud match {
@@ -264,7 +264,7 @@ class TradingSessionActor(session: TradingSession) extends Actor with ActorLoggi
         if (data.isDefined) {
           val timer = ServerMetrics.startTimer("handle_data_ms", Map("strategy" -> strategy.title))
           try {
-            strategy.aroundHandleData(data.get)(session)
+            strategy.aroundOnData(data.get)(session)
           } catch {
             case e: Throwable =>
               ServerMetrics.inc("handle_data_error")
@@ -337,7 +337,7 @@ class TradingSessionActor(session: TradingSession) extends Actor with ActorLoggi
       // Lift-off
       src.runForeach { dataOrTick =>
         // Increment the weak ref.
-        session.ref = session.ref + 1
+        session.seqNr = session.seqNr + 1
 
         // Dequeue and process ticks while they occur before the current
         // market data item.
@@ -387,6 +387,7 @@ class TradingSessionActor(session: TradingSession) extends Actor with ActorLoggi
           log.debug("Session setup success")
           origSender ! (sessionSetup.sessionId, sessionSetup.sessionMicros)
           runSession(sessionSetup)
+
         case Failure(err) =>
           log.error(err, "Session setup failure")
           origSender ! err

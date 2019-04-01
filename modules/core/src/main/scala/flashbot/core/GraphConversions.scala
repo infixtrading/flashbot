@@ -1,8 +1,7 @@
 package flashbot.core
 
 import java.util
-
-import flashbot.models.core.{Account, FixedPrice, Market}
+import flashbot.models.{Account, FixedPrice, Market}
 import org.jgrapht.alg.shortestpath.DijkstraShortestPath
 import org.jgrapht.graph.SimpleDirectedWeightedGraph
 import org.jgrapht.io.{ComponentNameProvider, DOTExporter}

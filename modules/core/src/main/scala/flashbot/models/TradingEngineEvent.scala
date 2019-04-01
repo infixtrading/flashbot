@@ -1,8 +1,7 @@
-package flashbot.models.api
+package flashbot.models
 
 import flashbot.core.FlashbotConfig.BotConfig
 import flashbot.core.{Report, ReportDelta}
-import flashbot.models.core._
 import io.circe.Json
 
 sealed trait TradingEngineEvent

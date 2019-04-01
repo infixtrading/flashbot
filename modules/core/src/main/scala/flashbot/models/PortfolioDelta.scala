@@ -1,6 +1,5 @@
 package flashbot.models
 
-import flashbot.core.Num._
 import io.circe.generic.JsonCodec
 import scala.collection.mutable
 
@@ -8,7 +7,7 @@ import scala.collection.mutable
 sealed trait PortfolioDelta
 
 @JsonCodec
-case class BalanceUpdated(account: Account, balance: Option[Num]) extends PortfolioDelta
+case class BalanceUpdated(account: Account, balance: Option[Double]) extends PortfolioDelta
 
 @JsonCodec
 case class PositionUpdated(market: Market, position: Option[Position]) extends PortfolioDelta

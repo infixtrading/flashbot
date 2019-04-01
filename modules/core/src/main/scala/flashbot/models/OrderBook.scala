@@ -4,8 +4,7 @@ import java.util
 
 import flashbot.core.DeltaFmt.HasUpdateEvent
 import flashbot.core._
-import flashbot.models.core.Order._
-import flashbot.models.core.OrderBook._
+import flashbot.models.OrderBook.{Delta, OrderIndex}
 import io.circe.generic.JsonCodec
 import io.circe.syntax._
 import io.circe.{Decoder, Encoder, KeyDecoder, KeyEncoder}

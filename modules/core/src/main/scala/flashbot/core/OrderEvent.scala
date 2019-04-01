@@ -1,10 +1,9 @@
 package flashbot.core
 
-import flashbot.core.{Timestamped, Trade}
-import flashbot.models.api.TradingSessionEvent
-import flashbot.models.core.Order._
+import flashbot.models.{Order, RejectedReason, TradingSessionEvent}
+import flashbot.models.Order._
 
-sealed trait OrderEvent extends TradingSessionEvent {
+sealed trait OrderEvent extends Tick {
   val orderId: String
   val product: String
 }
@@ -34,22 +33,39 @@ final case class OrderChange(orderId: String,
   def orderType: OrderType = if (price.isDefined) LimitOrder else Order.MarketOrder
 }
 
-final case class OrderMatch(tradeId: Long,
+final case class OrderMatch(tradeId: String,
                             product: String,
                             micros: Long,
                             size: Double,
                             price: Double,
                             direction: TickDirection,
                             makerOrderId: String,
-                            orderId: String) extends OrderEvent {
-  def toTrade: Trade = Trade(tradeId.toString, micros, price, size, direction)
+                            takerOrderId: String) extends OrderEvent {
+  override val orderId = takerOrderId
+  def toTrade: Trade = Trade(tradeId, micros, price, size, direction)
 }
 
 final case class OrderReceived(orderId: String,
                                product: String,
-                               clientOid: Option[String],
+                               clientOid: String,
                                `type`: OrderType) extends OrderEvent {
 }
+
+sealed trait OrderError extends Exception with OrderEvent
+
+final case class OrderRejected(orderId: String,
+                               product: String,
+                               reason: RejectedReason,
+                               cause: Throwable) extends OrderError
+
+final case class CancelError(orderId: String,
+                             product: String,
+                             cause: Throwable) extends OrderError
+
+final case class OrderException(orderId: String,
+                                product: String,
+                                cause: Throwable) extends OrderError
+
 
 
 sealed trait DoneReason

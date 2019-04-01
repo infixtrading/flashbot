@@ -8,5 +8,3 @@ object BalancePoint {
   implicit val en: Encoder[BalancePoint] = deriveEncoder
   implicit val de: Decoder[BalancePoint] = deriveDecoder
 }
-
-

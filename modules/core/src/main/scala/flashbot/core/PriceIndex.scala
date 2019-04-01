@@ -1,12 +1,6 @@
 package flashbot.core
 
-import java.util
-import java.util.concurrent.ConcurrentHashMap
-
-import flashbot.core.Num._
-import flashbot.models.core.{Account, FixedPrice, Market}
-
-import scala.collection.{concurrent, mutable}
+import flashbot.models.Market
 import scala.language.postfixOps
 
 /**

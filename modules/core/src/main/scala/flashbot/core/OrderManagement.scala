@@ -1,5 +1,6 @@
 package flashbot.core
-import flashbot.models.core.StrategyEvent
+
+import flashbot.models.StrategyEvent
 import OrderManagement._
 import akka.Done
 
@@ -25,7 +26,7 @@ trait OrderManagement extends DataHandler with EventHandler {
   abstract override def aroundHandleEvent(event: StrategyEvent)(implicit ctx: TradingSession) = {
   }
 
-  abstract override def aroundHandleData(data: MarketData[_])(implicit ctx: TradingSession) = {
+  abstract override def aroundOnData(data: MarketData[_])(implicit ctx: TradingSession) = {
   }
 
   /**

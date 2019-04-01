@@ -1,9 +1,9 @@
-package flashbot.models.api
-import flashbot.core.{FixedSize, TargetId, Timestamped}
-import flashbot.models.core.Market
-import flashbot.models.core.Order.{Liquidity, Side}
+package flashbot.models
 
-trait TradingSessionEvent extends Timestamped
+import flashbot.core.Tick
+import flashbot.models.Order.{Liquidity, Side}
+
+trait TradingSessionEvent
 
 case class Fill(orderId: String,
                 tradeId: Option[String],
@@ -13,7 +13,7 @@ case class Fill(orderId: String,
                 size: Double,
                 micros: Long,
                 liquidity: Liquidity,
-                side: Side) extends TradingSessionEvent
+                side: Side) extends Tick
 
 
 //case class LogMessage(message: String) extends TradingSessionEvent

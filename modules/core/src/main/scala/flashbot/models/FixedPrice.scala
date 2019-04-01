@@ -1,6 +1,6 @@
 package flashbot.models
 
-import flashbot.core.{AssetKey, AssetKey}
+import flashbot.core.AssetKey
 import flashbot.util.NumberUtils.round8
 
 class FixedPrice[B: AssetKey, Q: AssetKey](var price: Double,

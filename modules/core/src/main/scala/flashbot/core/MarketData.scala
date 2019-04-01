@@ -1,12 +1,12 @@
 package flashbot.core
 
-import flashbot.models.core.DataPath
+import flashbot.models.DataPath
 
 /**
   * Any kind of data that can be streamed into strategies.
   * TODO: Should the type parameter be covariant?
   */
-trait MarketData[T] extends Timestamped with SessionInput {
+trait MarketData[T] extends Timestamped with Tick {
   /**
     * The underlying data instance.
     */

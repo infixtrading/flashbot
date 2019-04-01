@@ -1,6 +1,5 @@
 package flashbot.core
 
-import java.io.IOException
 import java.util
 import java.util.UUID
 
@@ -11,8 +10,8 @@ import akka.stream.Materializer
 import akka.stream.scaladsl.Source
 import akka.util.Timeout
 import flashbot.server.{ServerMetrics, StreamResponse}
-import flashbot.models.api.{DataOverride, DataSelection, DataStreamReq, OrderTarget}
-import flashbot.models.core._
+import flashbot.models.{DataOverride, DataSelection, DataStreamReq}
+import flashbot.models._
 import io.circe._
 import com.github.andyglow.jsonschema.AsCirce._
 import flashbot.util.MapUtil
@@ -31,6 +30,14 @@ import scala.util.Try
   * Documentation: https://github.com/infixtrading/flashbot/wiki/Writing-Custom-Strategies
   */
 abstract class Strategy[P] extends DataHandler {
+
+  /**
+    * The trading session that this strategy is running in.
+    */
+  protected implicit var ctx: TradingSession = _
+  protected[flashbot] def setCtx(session: TradingSession): Unit = {
+    ctx = session
+  }
 
   /**
     * The JSON decoder used to create an instance of P when the strategy is loaded.
@@ -57,7 +64,7 @@ abstract class Strategy[P] extends DataHandler {
     * During initialization, strategies subscribe to any number of data sets, all of which must be
     * registered in the system or an error is thrown. If all is well, the data sources are loaded
     * and are all queried for a certain time period and results are merged and streamed into the
-    * [[handleData]] method. Each stream should complete when there is no more data, which auto shuts
+    * [[onData]] method. Each stream should complete when there is no more data, which auto shuts
     * down the strategy when all data streams complete.
     *
     * @param portfolio the initial portfolio that this trading session is starting with.
@@ -70,40 +77,38 @@ abstract class Strategy[P] extends DataHandler {
     * Receives the streaming market data that was subscribed to in the [[initialize]] method.
     * The market data streams are merged and sent to this method one item at a time. This method
     * will never be called concurrently. I.e. the next market data item will not be sent to
-    * [[handleData]] until the previous call returns.
+    * [[onData]] until the previous call returns.
     *
     * @param data a single item of market data from any of the subscribed DataPaths.
-    * @param ctx the trading session instance
     */
-  def handleData(data: MarketData[_])(implicit ctx: TradingSession): Unit
+  def onData(data: MarketData[_]): Unit
 
   private var initialPortfolio: Option[Portfolio] = None
   protected val isInitializedMap = new util.WeakHashMap[java.lang.Long, Boolean]()
 
   def getInitialPortfolio()(implicit ctx: TradingSession): Option[Portfolio] =
     initialPortfolio orElse {
-      if (MapUtil.getOrCompute(isInitializedMap, ctx.ref, ctx.getPortfolio.isInitialized())) {
+      if (MapUtil.getOrCompute(isInitializedMap, ctx.seqNr, ctx.getPortfolio.isInitialized())) {
         initialPortfolio = Some(ctx.getPortfolio)
       }
       initialPortfolio
     }
 
-  override def aroundHandleData(data: MarketData[_])(implicit ctx: TradingSession) = {
+  override def aroundOnData(data: MarketData[_])(implicit ctx: TradingSession) = {
     // Call the side effectful function to ensure initialPortfolio is set.
     getInitialPortfolio()
 
     // Invoke the actual user `handleData` method.
-    handleData(data)
+    onData(data)
   }
 
   /**
     * Receives and handles events that occur in the system. This method is most commonly used
     * to react to fills, e.g. placing a hedge order, or to react to exchange errors.
     *
-    * @param event the [[StrategyEvent]] describing the event and the context in which it occurred.
-    * @param ctx the trading session instance
+    * @param event the [[OrderEvent]] describing the event and the context in which it occurred.
     */
-  def handleEvent(event: StrategyEvent)(implicit ctx: TradingSession): Unit = {}
+  def onEvent(event: OrderEvent): Unit = {}
 
   /**
     * Idempotent API for placing orders. This method is used to declare the target state of
@@ -282,7 +287,7 @@ abstract class Strategy[P] extends DataHandler {
 }
 
 trait DataHandler {
-  def aroundHandleData(data: MarketData[_])(implicit ctx: TradingSession): Unit
+  def aroundOnData(data: MarketData[_])(implicit ctx: TradingSession): Unit
 }
 
 trait EventHandler {

@@ -1,8 +1,8 @@
 package flashbot.strategies
 
 import flashbot.core.{EngineLoader, Strategy, _}
-import flashbot.models.core._
-import flashbot.models.core.FixedSize._
+import flashbot.core._
+import flashbot.core.FixedSize._
 import io.circe.generic.JsonCodec
 import io.circe.parser._
 import org.ta4j.core.indicators.{SMAIndicator, UlcerIndexIndicator}
@@ -10,7 +10,8 @@ import org.ta4j.core.indicators.volume.VWAPIndicator
 import MarketMaker._
 import flashbot.core.DataType.{CandlesType, OrderBookType, TradesType}
 import com.github.andyglow.jsonschema.AsCirce._
-import flashbot.models.core.Order.Maker
+import flashbot.models._
+import flashbot.models.Order.Maker
 import org.ta4j.core.indicators.helpers.VolumeIndicator
 import org.ta4j.core.indicators.statistics.VarianceIndicator
 
@@ -53,7 +54,6 @@ case class MarketMakerParams(market: String,
   * side of the given fair-price indicator at configurable intervals.
   */
 class MarketMaker extends Strategy[MarketMakerParams] with TimeSeriesMixin {
-  import FixedSize.numericDouble._
 
   override def title = "Market Maker"
 
@@ -90,8 +90,8 @@ class MarketMaker extends Strategy[MarketMakerParams] with TimeSeriesMixin {
     Future.successful(extraPaths :+ path)
   }
 
-  override def handleEvent(event: StrategyEvent)
-                          (implicit ctx: TradingSession) = event match {
+  override def onEvent(event: StrategyEvent)
+                      (implicit ctx: TradingSession) = event match {
     case ExchangeErrorEvent(error) =>
       println(error)
     case _ =>

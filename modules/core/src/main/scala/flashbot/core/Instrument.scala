@@ -1,7 +1,5 @@
 package flashbot.core
 
-import flashbot.models._
-
 trait Instrument {
 
   // Unique string id such as "eth_usdt" or "xbtusd"
@@ -49,6 +47,7 @@ object Instrument {
     override def label = s"$base/$quote".toUpperCase
     override def settledIn = Some(quote)
     override def security = Some(base)
+
 //    override def markPrice(prices: PriceIndex) = prices(this)
     override def canShort = false
 
@@ -72,7 +71,7 @@ object Instrument {
 //      }
 //    }
 
-    override def value(price: Num) = price
+    override def value(price: Double) = price
   }
 
   object CurrencyPair {
@@ -108,11 +107,11 @@ object Instrument {
 //    }
     override def canShort = false
 
-    override def value(price: Num) = ???
+    override def value(price: Double) = ???
   }
 
   trait Derivative extends Instrument {
-    def pnl(size: Num, entryPrice: Num, exitPrice: Num): Num
+    def pnl(size: Double, entryPrice: Double, exitPrice: Double): Double
 
     override def canShort = true
   }

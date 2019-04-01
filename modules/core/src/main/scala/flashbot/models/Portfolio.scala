@@ -4,7 +4,6 @@ import flashbot.core.DeltaFmt.HasUpdateEvent
 import flashbot.core.Instrument.Derivative
 import flashbot.core._
 import flashbot.core.FixedSize._
-import flashbot.models.core.Order.{Buy, Fill, Liquidity, Maker, Sell, Taker}
 import flashbot.util.Margin
 import flashbot.util.NumberUtils._
 import io.circe.generic.semiauto._

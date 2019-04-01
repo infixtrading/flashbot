@@ -1,6 +1,7 @@
-package flashbot.models.api
+package flashbot.models
 
-import flashbot.models.core.Order.Side
+import flashbot.models.Order.Side
+
 import scala.collection.mutable
 
 sealed trait OrderCommand {

@@ -3,29 +3,27 @@ package flashbot.exchanges
 import akka.actor.ActorSystem
 import akka.stream.Materializer
 import flashbot.core.Instrument.{FuturesContract, Index}
-import flashbot.core.Num._
-import flashbot.models.core.Order.Fill
 import flashbot.core._
-import flashbot.models.core.{ExchangeResponse, OrderRequest}
+import flashbot.models.{ExchangeResponse, PostOrderRequest}
 
 import scala.concurrent.Future
 
 class BitMEX(implicit val system: ActorSystem,
              val mat: Materializer) extends Exchange {
 
-  override def makerFee: Num = (-0.00025d).num
+  override def makerFee: Double = -0.00025d
 
-  override def takerFee: Num = 0.00075d.num
+  override def takerFee: Double = 0.00075d
 
   override def cancel(id: String, pair: Instrument): Future[ExchangeResponse] = ???
 
-  override def order(req: OrderRequest): Future[ExchangeResponse] = ???
+  override def order(req: PostOrderRequest): Future[ExchangeResponse] = ???
 
   override def baseAssetPrecision(pair: Instrument): Int = ???
 
   override def quoteAssetPrecision(pair: Instrument): Int = ???
 
-  override def lotSize(pair: Instrument): Option[Num] = ???
+  override def lotSize(pair: Instrument): Option[Double] = ???
 
   override def instruments =
     Future.successful(Set(BitMEX.XBTUSD, BitMEX.ETHUSD))
@@ -46,8 +44,8 @@ object BitMEX {
     override def security = Some(symbol)
 
     // https://www.bitmex.com/app/seriesGuide/XBT#How-is-the-XBTUSD-Perpetual-Contract-Quoted
-    override def pnl(size: Num, entryPrice: Num, exitPrice: Num) = {
-      size * (`1` / entryPrice - `1` / exitPrice)
+    override def pnl(size: Double, entryPrice: Double, exitPrice: Double) = {
+      size * (1.0d / entryPrice - 1.0d / exitPrice)
     }
 
     override def value(price: Num) = `1` / price

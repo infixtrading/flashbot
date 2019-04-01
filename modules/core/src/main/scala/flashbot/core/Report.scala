@@ -4,7 +4,7 @@ import flashbot.core.DeltaFmt.HasUpdateEvent
 import flashbot.core.Report._
 import flashbot.core.ReportDelta._
 import flashbot.core.ReportEvent._
-import flashbot.models.core.Candle
+import flashbot.models.Candle
 import flashbot.util.time._
 import io.circe._
 import io.circe.generic.semiauto._
@@ -142,7 +142,6 @@ object Report {
     }
   }
 
-
   implicit val vMapDe: Decoder[ValuesMap] = new Decoder[ValuesMap] {
     override def apply(c: HCursor) = {
       c.as[Map[String, Json]].right.map(_.mapValues(reportVal))
@@ -161,6 +160,7 @@ object Report {
         "isComplete", "error", "lastUpdate")(r =>
       (r.strategy, r.params, r.barSize, r.trades, r.collections, r.timeSeries, r.values,
         r.isComplete, r.error, r.lastUpdate))
+
   implicit val reportDe: Decoder[Report] = Decoder.forProduct10(
     "strategy", "params", "barSize", "trades", "collections",
     "timeSeries", "values", "isComplete", "error", "lastUpdate")(Report.apply)

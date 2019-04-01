@@ -1,11 +1,8 @@
 package flashbot.models
 
-import java.math.BigInteger
 import java.time.Instant
-
 import flashbot.util.time._
 import io.circe.generic.JsonCodec
-
 import scala.concurrent.duration.Duration
 
 /**

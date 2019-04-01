@@ -1,8 +1,7 @@
-package flashbot.models.api
-import java.time.Instant
+package flashbot.models
 
+import java.time.Instant
 import flashbot.core.{Report, StrategyInfo}
-import flashbot.models.core.Portfolio
 
 sealed trait TradingEngineResponse
 final case class GenericResponse[T](a: T) extends TradingEngineResponse

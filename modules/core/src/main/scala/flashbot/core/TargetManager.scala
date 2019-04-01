@@ -1,9 +1,7 @@
 package flashbot.core
 
-import TradingSession._
-import flashbot.models.api.{OrderCommand, OrderTarget}
-import flashbot.models.core.OrderCommand.{CancelLimitOrder, CommandQueue, PostLimitOrder, PostMarketOrder}
-import flashbot.models.core.OrderOpen
+import flashbot.models.OrderCommand
+import flashbot.models.OrderCommand.{CommandQueue, PostLimitOrder, PostMarketOrder}
 
 import scala.collection.immutable.Queue
 

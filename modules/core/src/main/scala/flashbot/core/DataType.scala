@@ -1,7 +1,7 @@
 package flashbot.core
 
 import flashbot.util.time._
-import flashbot.models.core.{Candle, DataPath, Ladder, OrderBook}
+import flashbot.models.{Candle, Ladder, OrderBook}
 import io.circe.{Decoder, Encoder}
 
 import scala.concurrent.duration.FiniteDuration

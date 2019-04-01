@@ -4,7 +4,7 @@ import akka.stream.{ActorMaterializer, Materializer}
 import flashbot.core.Instrument.CurrencyPair
 import flashbot.core.Exchange
 import flashbot.core.Instrument
-import flashbot.models.core.OrderRequest
+import flashbot.models.PostOrderRequest
 
 import scala.concurrent.Future
 
@@ -16,7 +16,7 @@ class Coinbase(implicit val system: ActorSystem,
 //  override def takerFee = 0.003
 //  override def takerFee = -0.00035
 
-  override def order(req: OrderRequest) = ???
+  override def order(req: PostOrderRequest) = ???
   override def cancel(id: String, pair: Instrument) = ???
 
 

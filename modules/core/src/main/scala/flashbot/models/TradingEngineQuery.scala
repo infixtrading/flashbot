@@ -1,4 +1,4 @@
-package flashbot.models.api
+package flashbot.models
 
 import java.time.{Duration, Instant}
 
@@ -6,7 +6,6 @@ import akka.NotUsed
 import akka.actor.ActorRef
 import akka.stream.scaladsl.Source
 import flashbot.core.MarketData
-import flashbot.models.core.{DataPath, Portfolio, TimeRange}
 import io.circe.Json
 
 import scala.concurrent.duration.FiniteDuration

@@ -8,8 +8,6 @@ import io.circe.{Decoder, Encoder, Json}
 import scala.concurrent.duration._
 import scala.language.postfixOps
 
-import TradingSessionMode._
-
 sealed trait TradingSessionMode {
   def timeRange(now: Instant): TimeRange
 

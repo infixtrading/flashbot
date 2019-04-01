@@ -1,6 +1,6 @@
 package flashbot.core
 
-import flashbot.models.core.{Account, Market}
+import flashbot.models.{Account, Market}
 
 import scala.collection.immutable.{Map, Set}
 

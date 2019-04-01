@@ -1,20 +1,12 @@
 package flashbot.core
 
-import flashbot.models.api.TradingSessionEvent
+import flashbot.models.ExchangeRequest
 
-trait SessionInput {
-  def micros: Long
-}
+trait Tick
 
-object SessionInput {
-  implicit val ordering: Ordering[SessionInput] = Ordering.by(_.micros)
-}
+case class Callback(fn: Runnable) extends Tick
+case class SimulatedRequest(reqId: Long,
+                            exchange: Exchange,
+                            request: ExchangeRequest) extends Tick
 
-case class Tick(micros: Long,
-                exchange: Option[String],
-                events: Option[Array[TradingSessionEvent]]) extends SessionInput
-
-object Tick {
-  implicit val ordering: Ordering[Tick] = Ordering.by(_.micros)
-}
 

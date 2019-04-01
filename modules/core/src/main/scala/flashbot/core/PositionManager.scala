@@ -1,7 +1,6 @@
 package flashbot.core
 
-import flashbot.models.core.{Market, Portfolio}
-
+import flashbot.models.{Market, Portfolio}
 import com.quantego.clp
 
 /**

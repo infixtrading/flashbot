@@ -1,6 +1,6 @@
 package flashbot.core
 
-import flashbot.models.core.Account
+import flashbot.models.Account
 import scalaz.{@@, Tag}
 //import scalaz.{@@, Tag}
 

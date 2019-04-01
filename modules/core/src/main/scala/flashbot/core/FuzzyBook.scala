@@ -1,8 +1,7 @@
 package flashbot.core
 
-import flashbot.models.core.Order.Side
-import flashbot.models.core._
-
+import flashbot.models.Order.Side
+import flashbot.models._
 import scala.concurrent.duration._
 
 /**

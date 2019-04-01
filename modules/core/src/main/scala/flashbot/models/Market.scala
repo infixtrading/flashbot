@@ -3,7 +3,6 @@ package flashbot.models
 import flashbot.core.{DataType, InstrumentIndex, Labelled}
 import flashbot.core.Instrument.CurrencyPair
 import io.circe._
-import io.circe.generic.semiauto._
 
 import scala.language.implicitConversions
 

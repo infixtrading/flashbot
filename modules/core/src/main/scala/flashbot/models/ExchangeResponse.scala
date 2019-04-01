@@ -21,11 +21,11 @@ case object InsufficientFunds extends RejectedReason {
   * anything from an order being rejected, rate limiting errors, or timeouts/internal
   * errors due to the exchange itself going down.
   */
-sealed trait ExchangeError extends StrategyEvent {
+sealed trait ExchangeError extends Exception {
   def message: String
 }
 
-case class OrderRejected(request: OrderRequest, reason: RejectedReason) extends ExchangeError {
+case class OrderRejectedError(request: PostOrderRequest, reason: RejectedReason) extends ExchangeError {
   override def message = reason.message
 }
 

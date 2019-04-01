@@ -4,7 +4,6 @@ import flashbot.core.ReportDelta.{PutValueEvent, RemoveValueEvent, UpdateValueEv
 import flashbot.core.ReportEvent.ReportValueEvent
 import flashbot.core.VarBuffer.{Loaded, Tombstone, VarState}
 import flashbot.core.VarState.Var
-import flashbot.models.api.LogMessage
 import VarBuffer._
 
 import scala.collection.mutable

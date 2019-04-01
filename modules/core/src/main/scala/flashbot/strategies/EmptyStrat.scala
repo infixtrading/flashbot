@@ -1,16 +1,13 @@
 package flashbot.strategies
 
-import akka.NotUsed
 import akka.actor.ActorRef
 import akka.stream.Materializer
-import akka.stream.scaladsl.Source
 import flashbot.core.DataType.{CandlesType, TradesType}
 import flashbot.core.MarketData.BaseMarketData
 import flashbot.core._
-import flashbot.models.api.{DataOverride, DataSelection}
-import flashbot.models.core.{DataPath, Market, Portfolio}
+import flashbot.models.{DataOverride, DataSelection}
+import flashbot.models.{Market, Portfolio}
 import com.github.andyglow.jsonschema.AsCirce._
-import flashbot.server.ServerMetrics
 import io.circe.generic.JsonCodec
 import io.circe.parser._
 

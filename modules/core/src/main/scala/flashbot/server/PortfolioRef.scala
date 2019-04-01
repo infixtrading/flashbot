@@ -1,7 +1,7 @@
 package flashbot.server
 
 import flashbot.core.{InstrumentIndex, TradingSession}
-import flashbot.models.core.Portfolio
+import flashbot.models.Portfolio
 import flashbot.util.ParsingUtils
 
 trait PortfolioRef {
@@ -10,12 +10,15 @@ trait PortfolioRef {
 
   // No locking by default. The isolated portfolio uses this default implementation.
   def update(ctx: TradingSession, fn: Portfolio => Portfolio) = {
+
     // Record the update.
     getPortfolio(None).record(fn)
+
     // Grab the lastUpdate event, which will be a BatchPortfolioUpdate.
     val batchEvent = getPortfolio(None).lastUpdate.get
+
     // Emit it to the session.
-    ctx.send(batchEvent)
+    ctx.emit(batchEvent)
   }
 }
 
