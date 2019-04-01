@@ -19,9 +19,24 @@ sealed trait QuoteSide {
     case Bid => 0
     case Ask => 1
   }
+
+  // If a is better than b
+  def isBetter(a: Double, b: Double): Boolean
+  def isBetterOrEq(a: Double, b: Double): Boolean = a == b || isBetterOrEq(a, b)
+
+  def betterBy(price: Double, delta: Double): Double
+  def worseBy(price: Double, delta: Double): Double
 }
-case object Bid extends QuoteSide
-case object Ask extends QuoteSide
+case object Ask extends QuoteSide {
+  override def isBetter(a: Double, b: Double): Boolean = a < b
+  override def betterBy(price: Double, delta: Double) = price - delta
+  override def worseBy(price: Double, delta: Double) = price + delta
+}
+case object Bid extends QuoteSide {
+  override def isBetter(a: Double, b: Double): Boolean = a > b
+  override def betterBy(price: Double, delta: Double) = price + delta
+  override def worseBy(price: Double, delta: Double) = price - delta
+}
 
 object QuoteSide {
   implicit val en: Encoder[QuoteSide] = deriveEncoder

@@ -7,7 +7,6 @@ import flashbot.models.Order.{Buy, Sell, Side}
 import flashbot.util.{DoubleMap, NumberUtils}
 import io.circe._
 import io.circe.syntax._
-import io.circe.generic.semiauto._
 import it.unimi.dsi.fastutil.doubles.DoubleArrayFIFOQueue
 
 /**
@@ -22,7 +21,7 @@ import it.unimi.dsi.fastutil.doubles.DoubleArrayFIFOQueue
   */
 class LadderSide(maxDepth: Int,
                  tickSize: Double,
-                 side: QuoteSide)
+                 val side: QuoteSide)
     extends DoubleArrayFIFOQueue(maxDepth * 2) {
 
   assert(maxDepth > 0, "Max ladder depth must be > 0")
@@ -98,7 +97,7 @@ class LadderSide(maxDepth: Int,
   private def truncate(): Unit = {
     while (depth > maxDepth) {
       val removedQty = dequeueDouble()
-      worstPrice = round(worstPrice - tickSize)
+      worstPrice = round(side.betterBy(worstPrice, tickSize))
       if (removedQty > 0) {
         depth -= 1
       }
@@ -115,11 +114,11 @@ class LadderSide(maxDepth: Int,
     } else {
       while (firstDouble() == 0) {
         dequeueDouble()
-        bestPrice = round(bestPrice + tickSize)
+        bestPrice = round(side.worseBy(bestPrice, tickSize))
       }
       while (lastDouble() == 0) {
         dequeueLastDouble()
-        worstPrice = round(worstPrice - tickSize)
+        worstPrice = round(side.betterBy(worstPrice, tickSize))
       }
     }
   }
@@ -128,7 +127,7 @@ class LadderSide(maxDepth: Int,
     var i = 0
     while (i < n) {
       enqueueFirst(0)
-      bestPrice = round(bestPrice - tickSize)
+      bestPrice = round(side.betterBy(bestPrice, tickSize))
       i += 1
     }
   }
@@ -137,7 +136,7 @@ class LadderSide(maxDepth: Int,
     var i = 0
     while (i < n) {
       enqueue(0)
-      worstPrice = round(worstPrice + tickSize)
+      worstPrice = round(side.worseBy(worstPrice, tickSize))
       i += 1
     }
   }
@@ -146,16 +145,18 @@ class LadderSide(maxDepth: Int,
 
   def qtyAtLevel(level: Int): Double = array(indexOfLevel(level))
 
-  def levelOfPrice(price: Double): Int =
-    (math.round(price / tickSize) - math.round(bestPrice / tickSize)).toInt
+  def qtyAtPrice(price: Double): Double = qtyAtLevel(levelOfPrice(price))
 
-  def priceOfLevel(level: Int): Double = round(bestPrice + level * tickSize)
+  def levelOfPrice(price: Double): Int =
+    math.round(side.betterBy(price, bestPrice) / tickSize).toInt
+
+  def priceOfLevel(level: Int): Double =
+    round(side.worseBy(bestPrice, level * tickSize))
 
   def nonEmpty = !isEmpty
 
   // Matches up until the price/size limits. Removes the filled liquidity from the ladder.
-  // Returns the remaining unmatched qty.
-  // Terminates the arrays with -1.
+  // Returns the remaining unmatched qty. Terminates the arrays with -1.
   def matchMutable(matchPrices: Array[Double],
                    matchQtys: Array[Double],
                    approxPriceLimit: Double,
@@ -164,7 +165,7 @@ class LadderSide(maxDepth: Int,
     val priceLimit = round(approxPriceLimit)
     var remainder = size
     var i = 0
-    while (nonEmpty && remainder > 0 && bestPrice <= priceLimit) {
+    while (nonEmpty && remainder > 0 && side.isBetterOrEq(bestPrice, priceLimit)) {
       val matchQty = math.min(remainder, bestQty)
       remainder = NumberUtils.round8(remainder - matchQty)
       matchPrices(i) = bestPrice
@@ -188,17 +189,15 @@ class LadderSide(maxDepth: Int,
     val priceLimit = round(approxPriceLimit)
     var remainder = size
     var i = 0
-    var break = false
-    while (i < depth && remainder > 0 && !break) {
-      val price = priceOfLevel(i)
-      if (price <= priceLimit) {
-        val qty = qtyAtLevel(i)
-        val matchQty = math.min(remainder, qty)
-        remainder = NumberUtils.round8(remainder - matchQty)
-        matchPrices(i) = price
-        matchQtys(i) = matchQty
-        i += 1
-      } else break = true
+    var price = bestPrice
+    while (remainder > 0 && side.isBetterOrEq(price, priceLimit)) {
+      val qty = qtyAtPrice(price)
+      val matchQty = math.min(remainder, qty)
+      remainder = NumberUtils.round8(remainder - matchQty)
+      matchPrices(i) = price
+      matchQtys(i) = matchQty
+      i += 1
+      price = nextPrice(price)
     }
     matchPrices(i) = -1
     matchQtys(i) = -1
@@ -215,29 +214,59 @@ class LadderSide(maxDepth: Int,
     var unroundedAvgPrice: Double = java.lang.Double.NaN
     var i = 0
     var break = false
-    while (i < depth && !break) {
-      val price = priceOfLevel(i)
+    var price = bestPrice
+    while (!break && side.isBetterOrEq(price, priceLimit)) {
       val remainder = NumberUtils.round8(size - totalMatched)
-      if (price <= priceLimit && remainder > 0) {
-        val qty = qtyAtLevel(i)
+      if (remainder > 0) {
+        val qty = qtyAtPrice(price)
         val matchQty = math.min(remainder, qty)
         unroundedAvgPrice =
           if (java.lang.Double.isNaN(unroundedAvgPrice)) price
           else (unroundedAvgPrice * totalMatched + price * matchQty) / (totalMatched + matchQty)
         totalMatched = NumberUtils.round8(totalMatched + matchQty)
         i += 1
+        price = nextPrice(price)
       } else break = true
     }
     (totalMatched, unroundedAvgPrice)
   }
 
-  def forEach(fn: (Double, Double) => Unit): Unit = {
-    var i = 0
-    while (i < depth) {
-      fn(priceOfLevel(i), qtyAtLevel(i))
-      i += 1
+  def hasNextPrice(curPrice: Double): Boolean =
+    if (java.lang.Double.isNaN(curPrice)) nonEmpty
+    else curPrice < worstPrice
+
+  def nextPrice(curPrice: Double): Double = {
+    if (!hasNextPrice(curPrice)) return java.lang.Double.NaN
+    if (java.lang.Double.isNaN(curPrice)) return bestPrice
+
+    var l = levelOfPrice(curPrice) + 1
+    var p = priceOfLevel(l)
+    while (p == 0) {
+      l += 1
+      p = priceOfLevel(l)
     }
+    p
   }
+
+  def hasPrevPrice(curPrice: Double): Boolean =
+    if (java.lang.Double.isNaN(curPrice)) nonEmpty
+    else curPrice > bestPrice
+
+  def prevPrice(curPrice: Double): Double = {
+    if (!hasPrevPrice(curPrice)) return java.lang.Double.NaN
+    if (java.lang.Double.isNaN(curPrice)) return worstPrice
+
+    var l = levelOfPrice(curPrice) + 1
+    var p = priceOfLevel(l)
+    while (p == 0) {
+      l -= 1
+      p = priceOfLevel(l)
+    }
+    p
+  }
+
+  val it: Double = java.lang.Double.NaN
+
 }
 
 class Ladder(val depth: Int, val tickSize: Double,
@@ -349,11 +378,14 @@ object Ladder {
   }
 
   implicit val ladderSideEncoder: Encoder[LadderSide] =
-    Encoder.encodeSeq[LadderDelta].contramapArray(asks => {
-      val buf = Array.ofDim[LadderDelta](asks.depth)
+    Encoder.encodeSeq[LadderDelta].contramapArray(ls => {
+      val buf = Array.ofDim[LadderDelta](ls.depth)
+      var p = ls.it
       var i = 0
-      asks.forEach { (price, qty) =>
-        buf(i) = LadderDelta(Ask, price, qty)
+      while (ls.hasNextPrice(p)) {
+        p = ls.nextPrice(p)
+        val q = ls.qtyAtPrice(p)
+        buf(i) = LadderDelta(ls.side, p, q)
         i += 1
       }
       buf
