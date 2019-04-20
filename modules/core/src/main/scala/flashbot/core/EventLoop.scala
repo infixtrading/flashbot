@@ -50,25 +50,29 @@ class EventLoop {
   // Top level function to run the event queue until a given time.
   def run(untilMicros: Long, fn: Tick => Unit): Unit = {
     assert(untilMicros >= currentMicros)
+    assert(eventStream == null)
+
     // Load and run the eventStream until the last loaded stream is null.
-    loadEventStream(untilMicros)
+    eventStream = loadEventStream(untilMicros)
     while (eventStream != null) {
       consumeEventStream(fn)
-      loadEventStream(untilMicros)
+      eventStream = loadEventStream(untilMicros)
     }
     currentMicros = untilMicros
   }
 
   // Prepare the next buffer for evaluation as the event stream.
-  private def loadEventStream(untilMicros: Long): Unit = {
-    assert(eventStream == null)
+  private def loadEventStream(untilMicros: Long): EventBuffer = {
     if (collector.size > 0) {
-      eventStream = collector
+      val stream = collector
       collector = collectorRegister
       collectorRegister = null
+      stream
     } else if (!heap.isEmpty && heap.firstLong() <= untilMicros) {
       currentMicros = heap.dequeueLong()
-      eventStream = eventQueues.remove(currentMicros)
+      eventQueues.remove(currentMicros)
+    } else {
+      null
     }
   }
 
@@ -84,10 +88,13 @@ class EventLoop {
 
   def delay(delayMicros: Long, tick: Tick): Unit = {
     // If is immediate, add to collector.
-    if (delayMicros == 0) {
+    if (currentMicros == -1) {
+      throw new RuntimeException("EventLoop not initialized.")
+    } else if (delayMicros == 0) {
       collector += tick
     } else if (delayMicros > 0) {
-      val queue = eventQueues.computeIfAbsent(lastSeen + delayMicros, (_: Long) => acquireBuffer())
+      val queue = eventQueues.computeIfAbsent(
+        currentMicros + delayMicros, (_: Long) => acquireBuffer())
       queue += tick
     } else {
       throw new RuntimeException("EventLoop does not accept events from the past.")

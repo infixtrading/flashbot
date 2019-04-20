@@ -10,10 +10,9 @@ import akka.stream.scaladsl.{Keep, Source}
 import flashbot.core.TradingSession.{DataStream, SessionSetup}
 import flashbot.models.OrderCommand.CommandQueue
 import flashbot.models._
-import flashbot.server.{PortfolioRef, ServerMetrics, Simulator}
+import flashbot.server.{ServerMetrics, Simulator}
 import flashbot.util._
 import io.circe.Json
-import org.agrona.collections.Object2ObjectHashMap
 
 import scala.annotation.tailrec
 import scala.concurrent._
@@ -190,7 +189,6 @@ class TradingSession(val id: String,
     seqNr = seqNr + 1
     tick match {
       case md: MarketData[_] =>
-
         strategy.onData(md)
 
       case callback: Callback =>
@@ -205,7 +203,8 @@ class TradingSession(val id: String,
             val o = findOrder(r.clientOid)
             allOrdersByExchangeId.put(r.orderId, o)
             o
-          case o => findOrder(o.orderId)
+          case o =>
+            findOrder(o.orderId)
         }
         strategy.onEvent(event)
         order._handleEvent(event)
@@ -218,6 +217,8 @@ class TradingSession(val id: String,
     if (o != null) o
     else allOrdersByExchangeId.get(str)
   }
+
+  val backtestMDOrdering = Ordering.by[MarketData[_], Long](_.micros)
 
   /**
     * The "main method". It will never run more than once per session instance.
@@ -240,8 +241,8 @@ class TradingSession(val id: String,
         // But if this is a live trading session then data is sent first come, first serve
         // to keep latencies low.
         dataStreams.reduce[DataStream](
-            if (mode.isBacktest) _.mergeSorted(_)
-            else _.merge(_))
+              if (mode.isBacktest) _.mergeSorted(_)(backtestMDOrdering)
+              else _.merge(_))
           .watchTermination()(Keep.right)
           .preMaterialize()
 
@@ -252,7 +253,7 @@ class TradingSession(val id: String,
       // only occur for live and paper trading sessions.
       tickStream =
         if (asyncTickSrc.isDefined)
-          marketDataStream.mergeSorted(asyncTickSrc.get)
+          marketDataStream.merge(asyncTickSrc.get)
         else marketDataStream
 
       // Set the kill switch

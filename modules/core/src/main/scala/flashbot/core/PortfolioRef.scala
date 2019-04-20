@@ -1,6 +1,5 @@
-package flashbot.server
+package flashbot.core
 
-import flashbot.core.{InstrumentIndex, TradingSession}
 import flashbot.models.Portfolio
 import flashbot.util.ParsingUtils
 

@@ -53,33 +53,33 @@ object FixedSize {
   implicit def mkOrderingOps(t: FixedSize) = FixedSizeFractional.mkOrderingOps(t)
 
   implicit class ConvertFixedSizeOps(size: FixedSize) {
-    def as(key: AssetKey)(implicit prices: PriceIndex,
-                          instruments: InstrumentIndex,
-                          metrics: Metrics): FixedSize = {
+    def as(key: AssetKey[_])(implicit prices: PriceIndex,
+                             instruments: InstrumentIndex,
+                             metrics: Metrics): FixedSize = {
       as(key, strict = false)
     }
 
-    def as(key: AssetKey, strict: Boolean)
+    def as(key: AssetKey[_], strict: Boolean)
           (implicit prices: PriceIndex,
            instruments: InstrumentIndex,
            metrics: Metrics): FixedSize =
-      FixedSize(asNum(key, strict).toBigDecimial, key.security)
+      FixedSize(asDouble(key, strict).toBigDecimial, key.security)
 
-    def asNum(key: AssetKey)
-             (implicit prices: PriceIndex,
-              instruments: InstrumentIndex,
-              metrics: Metrics): Num = asNum(key, strict = false)
+    def asDouble(key: AssetKey[_])
+                (implicit prices: PriceIndex,
+                 instruments: InstrumentIndex,
+                 metrics: Metrics): Double = asDouble(key, strict = false)
 
-    def asNum(key: AssetKey, strict: Boolean)
-             (implicit prices: PriceIndex,
+    def asDouble(key: AssetKey[_], strict: Boolean)
+                (implicit prices: PriceIndex,
               instruments: InstrumentIndex,
-              metrics: Metrics): Num = {
+              metrics: Metrics): Double = {
       val price = prices.calcPrice(size.security, key, strict)
-      price * size.amount.doubleValue().num
+      price * size.amount.doubleValue()
     }
   }
 
-  implicit class ToFixedSizeOps(qty: Num) {
+  implicit class ToFixedSizeOps(qty: Double) {
     def of(key: AssetKey): FixedSize = FixedSize(qty.toBigDecimial, key.security)
   }
 
@@ -120,9 +120,9 @@ object FixedSize {
 //
 //  val numericDouble = fixedSizeG
 
-  implicit def numToFixedSize(num: Num): FixedSize =
-    FixedSize(num.toBigDecimial, "")
+//  implicit def numToFixedSize(num: Num): FixedSize =
+//    FixedSize(num.toBigDecimial, "")
 
-  implicit def toFixedSize[T: Numeric](num: T): FixedSize =
-    FixedSize(BigDecimal(num.toString), "")
+//  implicit def toFixedSize[T: Numeric](double: T): FixedSize =
+//    FixedSize(BigDecimal(double.toString), "")
 }

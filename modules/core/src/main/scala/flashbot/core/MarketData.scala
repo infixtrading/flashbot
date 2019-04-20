@@ -93,7 +93,7 @@ object MarketData {
     override def withData[B](newData: B, dataType: DataType[B]) =
       copy(data = newData, path = path.withType(dataType))
     override def withSeqId(newSeqId: Long) = copy(seqid = newSeqId)
-}
+  }
 
   trait Sequenced {
     def seq: Long

@@ -1,9 +1,7 @@
 package flashbot.core
 
 import java.util.UUID.randomUUID
-import java.util.concurrent.ConcurrentLinkedQueue
 
-import flashbot.models.OrderCommand.PostOrderCommand
 import flashbot.models._
 import flashbot.util.{NumberUtils, time}
 import io.circe.Json
@@ -47,29 +45,29 @@ abstract class Exchange {
     throw new RuntimeException("Base exchange cannot simulate requests.")
   }
 
-  private def handleResponse(fut: Future[ExchangeResponse]): Unit = {
-
-    // Simply tick on successful responses, so that the action queue can make progress.
-    // On error, use the `error` function which saves the error to internal state (to be
-    // collected by the session on the next run) and also calls `tick()`.
-    val handler: PartialFunction[Try[ExchangeResponse], Unit] = {
-      case Success(RequestOk) =>
-        tick(syntheticCurrentMicros.getOrElse(time.currentTimeMicros))
-      case Success(RequestFailed(cause: ExchangeError)) =>
-        error(cause)
-      case Failure(err) =>
-        error(InternalError(err))
-    }
-
-    if (fut.isCompleted) {
-      // Ensure that the tick occurs immediately if the future is instantly complete.
-      // This is required for the tick queue to work properly in backtest mode.
-      handler(fut.value.get)
-    } else {
-      // Otherwise, handle asynchronously.
-      fut andThen handler
-    }
-  }
+//  private def handleResponse(fut: Future[ExchangeResponse]): Unit = {
+//
+//    // Simply tick on successful responses, so that the action queue can make progress.
+//    // On error, use the `error` function which saves the error to internal state (to be
+//    // collected by the session on the next run) and also calls `tick()`.
+//    val handler: PartialFunction[Try[ExchangeResponse], Unit] = {
+//      case Success(RequestOk) =>
+////        tick(syntheticCurrentMicros.getOrElse(time.currentTimeMicros))
+//      case Success(RequestFailed(cause: ExchangeError)) =>
+////        error(cause)
+//      case Failure(err) =>
+////        error(InternalError(err))
+//    }
+//
+//    if (fut.isCompleted) {
+//      // Ensure that the tick occurs immediately if the future is instantly complete.
+//      // This is required for the tick queue to work properly in backtest mode.
+//      handler(fut.value.get)
+//    } else {
+//      // Otherwise, handle asynchronously.
+//      fut andThen handler
+//    }
+//  }
 
 //  protected[flashbot] var eventHandler: TradingSessionEvent => Unit = _ => {
 //    throw new RuntimeException("Exchange event handler not defined")

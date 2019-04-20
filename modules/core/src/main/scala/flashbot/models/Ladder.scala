@@ -7,267 +7,6 @@ import flashbot.models.Order.{Buy, Sell, Side}
 import flashbot.util.{DoubleMap, NumberUtils}
 import io.circe._
 import io.circe.syntax._
-import it.unimi.dsi.fastutil.doubles.DoubleArrayFIFOQueue
-
-/**
-  * A ring buffer of the sizes at the top N levels of a side of a ladder.
-  * FIFO is misleading here because it supports deque (double ended queue) ops.
-  * Entries in the backing array may be 0. Accessor methods should hide this fact.
-  * Additionally, this class is about as thread un-safe as you can get.
-  *
-  * @param maxDepth the number of price levels (not including empty levels) to support.
-  * @param tickSize the price difference between consecutive levels.
-  * @param side if this is a bid or ask ladder.
-  */
-class LadderSide(maxDepth: Int,
-                 tickSize: Double,
-                 val side: QuoteSide)
-    extends DoubleArrayFIFOQueue(maxDepth * 2) {
-
-  assert(maxDepth > 0, "Max ladder depth must be > 0")
-
-  val tickScale = NumberUtils.scale(tickSize)
-  def round(price: Double) = NumberUtils.round(price, tickScale)
-
-  // The number of non-empty levels in the ladder. This will be equal to `size` if
-  // there are no empty levels between the best and worst.
-  var depth: Int = 0
-
-  var bestPrice: Double = java.lang.Double.NaN
-  var worstPrice: Double = java.lang.Double.NaN
-
-  def bestQty: Double = array(firstIndex)
-  def worstQty: Double = array(lastIndex)
-
-  /**
-    * @param price the price level to update.
-    * @param qty the qty at that price, or 0 to remove the price level.
-    */
-  def update(price: Double, qty: Double) = {
-    val level = levelOfPrice(price)
-    if (qty == 0) {
-      assert(depth > 0, "Cannot remove level from empty ladder")
-      val qtyToRemove = qtyAtLevel(level)
-
-      assert(qtyToRemove > 0, s"Cannot remove empty level: $level")
-      depth -= 1
-      array(indexOfLevel(level)) = 0
-      trimLevels()
-    } else if (qty > 0) {
-      // Base case. If depth is at zero, simply enqueue the qty.
-      if (depth == 0) {
-        enqueue(qty)
-        bestPrice = price
-        worstPrice = price
-        depth = 1
-
-      // If level < 0, then we need to prepend that many empty levels and set the
-      // qty of the first level to the given qty.
-      } else if (level < 0) {
-        padLeft(-level)
-        array(firstIndex) = qty
-        depth += 1
-        truncate()
-
-      // If level >= size, then we need to append that many levels and set the qty
-      // of the last level to the given qty.
-      } else if (level >= size) {
-        assert(depth < maxDepth, s"Can't add the level ($price, $qty) because the ladder is full.")
-        padRight(level - size + 1)
-        array(lastIndex) = qty
-        depth += 1
-
-      // Otherwise, we are updating an existing, possibly empty, level.
-      } else {
-        val existingQty = qtyAtLevel(level)
-        if (existingQty == 0) {
-          depth += 1
-        }
-        array(indexOfLevel(level)) = qty
-        truncate()
-      }
-    } else
-      throw new RuntimeException("Quantity cannot be set to a negative number")
-  }
-
-  private def firstIndex: Int = start
-  private def lastIndex: Int = (if (end == 0) length else end) - 1
-
-  // Removes elements from tail while depth exceeds the max depth.
-  private def truncate(): Unit = {
-    while (depth > maxDepth) {
-      val removedQty = dequeueDouble()
-      worstPrice = round(side.betterBy(worstPrice, tickSize))
-      if (removedQty > 0) {
-        depth -= 1
-      }
-    }
-    trimLevels()
-  }
-
-  // Ensures that `start` and `end` always point to non-empty levels.
-  // Also updates the best and worst prices.
-  private def trimLevels(): Unit = {
-    if (depth == 0) {
-      bestPrice = java.lang.Double.NaN
-      worstPrice = java.lang.Double.NaN
-    } else {
-      while (firstDouble() == 0) {
-        dequeueDouble()
-        bestPrice = round(side.worseBy(bestPrice, tickSize))
-      }
-      while (lastDouble() == 0) {
-        dequeueLastDouble()
-        worstPrice = round(side.betterBy(worstPrice, tickSize))
-      }
-    }
-  }
-
-  private def padLeft(n: Int): Unit = {
-    var i = 0
-    while (i < n) {
-      enqueueFirst(0)
-      bestPrice = round(side.betterBy(bestPrice, tickSize))
-      i += 1
-    }
-  }
-
-  private def padRight(n: Int): Unit = {
-    var i = 0
-    while (i < n) {
-      enqueue(0)
-      worstPrice = round(side.worseBy(worstPrice, tickSize))
-      i += 1
-    }
-  }
-
-  def indexOfLevel(level: Int): Int = (start + level) % length
-
-  def qtyAtLevel(level: Int): Double = array(indexOfLevel(level))
-
-  def qtyAtPrice(price: Double): Double = qtyAtLevel(levelOfPrice(price))
-
-  def levelOfPrice(price: Double): Int =
-    math.round(side.betterBy(price, bestPrice) / tickSize).toInt
-
-  def priceOfLevel(level: Int): Double =
-    round(side.worseBy(bestPrice, level * tickSize))
-
-  def nonEmpty = !isEmpty
-
-  // Matches up until the price/size limits. Removes the filled liquidity from the ladder.
-  // Returns the remaining unmatched qty. Terminates the arrays with -1.
-  def matchMutable(matchPrices: Array[Double],
-                   matchQtys: Array[Double],
-                   approxPriceLimit: Double,
-                   approxSize: Double): Double = {
-    val size = NumberUtils.round8(approxSize)
-    val priceLimit = round(approxPriceLimit)
-    var remainder = size
-    var i = 0
-    while (nonEmpty && remainder > 0 && side.isBetterOrEq(bestPrice, priceLimit)) {
-      val matchQty = math.min(remainder, bestQty)
-      remainder = NumberUtils.round8(remainder - matchQty)
-      matchPrices(i) = bestPrice
-      matchQtys(i) = matchQty
-      update(bestPrice, round(bestQty - matchQty))
-      i += 1
-    }
-    matchPrices(i) = -1
-    matchQtys(i) = -1
-    remainder
-  }
-
-
-  // Like `matchMutable`, but doesn't remove the liquidity from the ladder itself.
-  // Terminates the arrays with -1.
-  def matchSilent(matchPrices: Array[Double],
-                  matchQtys: Array[Double],
-                  approxPriceLimit: Double,
-                  approxSize: Double): Double = {
-    val size = NumberUtils.round8(approxSize)
-    val priceLimit = round(approxPriceLimit)
-    var remainder = size
-    var i = 0
-    var price = bestPrice
-    while (remainder > 0 && side.isBetterOrEq(price, priceLimit)) {
-      val qty = qtyAtPrice(price)
-      val matchQty = math.min(remainder, qty)
-      remainder = NumberUtils.round8(remainder - matchQty)
-      matchPrices(i) = price
-      matchQtys(i) = matchQty
-      i += 1
-      price = nextPrice(price)
-    }
-    matchPrices(i) = -1
-    matchQtys(i) = -1
-    remainder
-  }
-
-  // Like `matchSilent`, but doesn't record individual matches. Instead computes
-  // and returns (total size matched, unrounded avg price).
-  def matchSilentAvg(approxPriceLimit: Double,
-                     approxSize: Double): (Double, Double) = {
-    val size = NumberUtils.round8(approxSize)
-    val priceLimit = round(approxPriceLimit)
-    var totalMatched = 0d
-    var unroundedAvgPrice: Double = java.lang.Double.NaN
-    var i = 0
-    var break = false
-    var price = bestPrice
-    while (!break && side.isBetterOrEq(price, priceLimit)) {
-      val remainder = NumberUtils.round8(size - totalMatched)
-      if (remainder > 0) {
-        val qty = qtyAtPrice(price)
-        val matchQty = math.min(remainder, qty)
-        unroundedAvgPrice =
-          if (java.lang.Double.isNaN(unroundedAvgPrice)) price
-          else (unroundedAvgPrice * totalMatched + price * matchQty) / (totalMatched + matchQty)
-        totalMatched = NumberUtils.round8(totalMatched + matchQty)
-        i += 1
-        price = nextPrice(price)
-      } else break = true
-    }
-    (totalMatched, unroundedAvgPrice)
-  }
-
-  def hasNextPrice(curPrice: Double): Boolean =
-    if (java.lang.Double.isNaN(curPrice)) nonEmpty
-    else curPrice < worstPrice
-
-  def nextPrice(curPrice: Double): Double = {
-    if (!hasNextPrice(curPrice)) return java.lang.Double.NaN
-    if (java.lang.Double.isNaN(curPrice)) return bestPrice
-
-    var l = levelOfPrice(curPrice) + 1
-    var p = priceOfLevel(l)
-    while (p == 0) {
-      l += 1
-      p = priceOfLevel(l)
-    }
-    p
-  }
-
-  def hasPrevPrice(curPrice: Double): Boolean =
-    if (java.lang.Double.isNaN(curPrice)) nonEmpty
-    else curPrice > bestPrice
-
-  def prevPrice(curPrice: Double): Double = {
-    if (!hasPrevPrice(curPrice)) return java.lang.Double.NaN
-    if (java.lang.Double.isNaN(curPrice)) return worstPrice
-
-    var l = levelOfPrice(curPrice) + 1
-    var p = priceOfLevel(l)
-    while (p == 0) {
-      l -= 1
-      p = priceOfLevel(l)
-    }
-    p
-  }
-
-  val it: Double = java.lang.Double.NaN
-
-}
 
 class Ladder(val depth: Int, val tickSize: Double,
              private var asks: LadderSide = null,
@@ -277,20 +16,89 @@ class Ladder(val depth: Int, val tickSize: Double,
   if (asks == null) asks = new LadderSide(depth, tickSize, Ask)
   if (bids == null) bids = new LadderSide(depth, tickSize, Bid)
 
-  val tickScale = NumberUtils.scale(tickSize)
+  override def clone() = new Ladder(depth, tickSize, asks.clone(), bids.clone())
+
+  def copyInto(that: Ladder): Unit = {
+    assert(that.depth == depth)
+    assert(that.tickSize == tickSize)
+    asks.copyInto(that.asks)
+    bids.copyInto(that.bids)
+  }
+
+
+  private val tickScale = NumberUtils.scale(tickSize)
   def round(price: Double) = NumberUtils.round(price, tickScale)
 
-  def updateLevel(side: QuoteSide, priceLevel: Double, quantity: Double): Ladder =
-    side match {
-      case Bid =>
-        bids.update(priceLevel, quantity)
-        this
-      case Ask =>
-        asks.update(priceLevel, quantity)
-        this
-    }
+  def ladderSideFor(side: QuoteSide): LadderSide = if (side == Bid) bids else asks
+
+  def ladderSideForTaker(side: Side): LadderSide = ladderSideFor(side.flip.toQuote)
+
+  def updateLevel(side: QuoteSide, priceLevel: Double, quantity: Double): Ladder = {
+    ladderSideFor(side).update(priceLevel, quantity)
+    this
+  }
 
   def spread: Double = round(asks.bestPrice - bids.bestPrice)
+
+  /**
+    * @param side the side of the incoming, taker order
+    * @param unroundedPrice price limit of taker order
+    */
+  def hasMatchingPrice(side: Side, unroundedPrice: Double): Boolean = {
+    val quoteSide = side.flip.toQuote
+    val ladder = ladderSideFor(quoteSide)
+    quoteSide.isBetterOrEq(ladder.bestPrice, round(unroundedPrice))
+  }
+
+  private val currentMatchPrices = Array[Double](200)
+  private val currentMatchQtys = Array[Double](200)
+
+  private var currentError: OrderError = _
+
+  def foreachMatch(fn: (Double, Double) => Unit) = {
+    var i = 0
+    var matchPrice = currentMatchPrices(0)
+    var matchQty = currentMatchQtys(0)
+    while (matchPrice != -1 && matchQty != -1) {
+      fn(matchPrice, matchQty)
+      i += 1
+      matchPrice = currentMatchPrices(i)
+      matchQty = currentMatchQtys(i)
+    }
+  }
+
+  def matchMarket(side: Side, size: Double, silent: Boolean): Double = {
+    val qSide = side.flip.toQuote
+    val ladderSide = ladderSideFor(qSide)
+    if (silent) ladderSide.matchSilent(currentMatchPrices, currentMatchQtys, qSide.worst, size)
+    else ladderSide.matchMutable(currentMatchPrices, currentMatchQtys, qSide.worst, size)
+  }
+
+  def matchLimit(side: Side, price: Double, size: Double, silent: Boolean): Double = {
+    val ladderSide = ladderSideFor(side.flip.toQuote)
+    if (silent) ladderSide.matchSilent(currentMatchPrices, currentMatchQtys, price, size)
+    else ladderSide.matchMutable(currentMatchPrices, currentMatchQtys, price, size)
+  }
+
+
+  override var lastUpdate: Option[Seq[LadderDelta]] = None
+
+  override protected def withLastUpdate(d: Seq[LadderDelta]): Ladder = {
+    lastUpdate = Some(d)
+    this
+  }
+
+  override protected def step(deltas: Seq[LadderDelta]): Ladder = {
+    deltas.foreach { d =>
+      this.updateLevel(d.side, d.priceLevel, d.quantity)
+    }
+    this
+  }
+
+
+
+
+
 
 //  def quantityAtPrice(price: Double): Double = {
 //    if (asks.bestPrice)
@@ -321,46 +129,16 @@ class Ladder(val depth: Int, val tickSize: Double,
 //  def priceSet: Set[Double] = bids.keySet ++ asks.keySet
 
 //  private def putOrder(order: Order): Ladder =
-//    updateLevel(order.side.toQuote, order.price.get, order.amount)
-
-  private val currentMatchPrices = Array[Double](200)
-  private val currentMatchQtys = Array[Double](200)
-
-  def foreachMatch(fn: (Double, Double) => Unit) = {
-    var i = 0
-    var matchPrice = currentMatchPrices(0)
-    var matchQty = currentMatchQtys(0)
-    while (matchPrice != -1 && matchQty != -1) {
-      fn(matchPrice, matchQty)
-      i += 1
-      matchPrice = currentMatchPrices(i)
-      matchQty = currentMatchQtys(i)
-    }
-  }
-
-  def ladderFillOrder(book: Ladder, side: Side, size: Double, limit: Double, silent: Boolean): Double = {
-    val depths: LadderSide = side match {
-      case Buy => book.asks
-      case Sell => book.bids
-    }
-
-    if (silent) depths.matchSilent(currentMatchPrices, currentMatchQtys, limit, size)
-    else depths.matchMutable(currentMatchPrices, currentMatchQtys, limit, size)
-  }
-
-  override var lastUpdate: Option[Seq[LadderDelta]] = None
-
-  override protected def withLastUpdate(d: Seq[LadderDelta]): Ladder = {
-    lastUpdate = Some(d)
-    this
-  }
-
-  override protected def step(deltas: Seq[LadderDelta]): Ladder = {
-    deltas.foreach { d =>
-      this.updateLevel(d.side, d.priceLevel, d.quantity)
-    }
-    this
-  }
+//    updateLevel(order.side.toQuote
+  /**
+    * Insert a limit order into the book. Match immediately whenever possible.
+    * If immediate matches are possible, but `postOnly` is set, then set an error.
+    */
+//  def putOrder(side: Side,
+//               size: Double,
+//               limit: Double): Double = {
+//    depths.matchMutable(currentMatchPrices, currentMatchQtys, limit, size)
+//  }, order.price.get, order.amount)
 }
 
 

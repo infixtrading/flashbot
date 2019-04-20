@@ -10,14 +10,14 @@ import io.circe.{Decoder, Encoder, HCursor, Json}
 
 object Order {
   sealed trait Side {
-    def toQuote: QuoteSide = this match {
-      case Buy => Bid
-      case Sell => Ask
-    }
+    def toQuote: QuoteSide = if (this == Buy) Bid else Ask
+    def flip: Side = if (this == Buy) Sell else Buy
   }
+
   case object Buy extends Side {
     override def toString: String = "buy"
   }
+
   case object Sell extends Side {
     override def toString: String = "sell"
   }

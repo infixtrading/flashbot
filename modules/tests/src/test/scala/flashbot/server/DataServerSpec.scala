@@ -4,13 +4,9 @@ import java.time.Instant
 import akka.actor.{ActorSystem, Props}
 import akka.pattern.ask
 import akka.stream.ActorMaterializer
-import akka.stream.alpakka.slick.javadsl.SlickSession
-import akka.stream.alpakka.slick.scaladsl.Slick
 import akka.stream.scaladsl.{Keep, Sink, Source}
 import akka.testkit.{ImplicitSender, TestKit}
 import akka.util.Timeout
-import flashbot.models.api.{DataSelection, DataStreamReq}
-import flashbot.db._
 import com.typesafe.config.ConfigFactory
 import flashbot.core.FlashbotConfig.{DataSourceConfig, IngestConfig}
 import flashbot.core._
@@ -103,7 +99,7 @@ class DataServerSpec extends WordSpecLike with Matchers with Eventually {
       *                   <-----> - - - - - <------- C -------|----->
       *       <---- A -|-->     x---- B -|-->
       * <-----|-----|-----|-----|-----|-----|-----|-----|-----|-----|--->
-      *       0    100       ...           500      ...      900   1000
+      *       0    100      ...            500      ...      900   1000
       */
     "ingest and backfill trades" in {
 

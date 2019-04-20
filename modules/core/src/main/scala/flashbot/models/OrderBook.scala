@@ -1,60 +1,71 @@
 package flashbot.models
 
-import java.util
-
 import flashbot.core.DeltaFmt.HasUpdateEvent
 import flashbot.core._
-import flashbot.models.OrderBook.{Delta, OrderIndex}
+import flashbot.models.Order.{Buy, Sell, Side}
+import flashbot.models.OrderBook.{Change, Delta, Done, Open, OrderBookSide}
+import flashbot.util.NumberUtils
 import io.circe.generic.JsonCodec
-import io.circe.syntax._
-import io.circe.{Decoder, Encoder, KeyDecoder, KeyEncoder}
+import io.circe.{Decoder, Encoder}
+import it.unimi.dsi.fastutil.doubles.{Double2ObjectRBTreeMap, DoubleComparators}
+import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap
+import it.unimi.dsi.fastutil.objects.Object2ObjectLinkedOpenHashMap
 import spire.syntax.cfor._
 
-import scala.collection.immutable.{Queue, TreeMap}
-import scala.collection.mutable
+import scala.collection.JavaConverters._
 import scala.util.Random
 
 /**
   * A mutable order book.
   */
-class OrderBook(// Index of id -> order.
-                protected[flashbot] val orders: debox.Map[String, Order] = debox.Map.empty,
+class OrderBook(val tickSize: Double,
+
+                // Index of id -> order.
+                protected[flashbot] var orders: Object2ObjectOpenHashMap[String, Order] = null,
 
                 // Price ascending price levels for asks, with a queue of orders at each level.
                 // The LinkedHashMap allows us to maintain insertion order while preserving
                 // constant time order cancellation.
-                private val asks: OrderIndex = mutable.TreeMap.empty(askOrdering),
+                private var asks: OrderBookSide = null,
 
                 // Same as the asks data structure, but the ordering of the price levels is reversed.
-                private val bids: OrderIndex = mutable.TreeMap.empty(bidOrdering),
+                private var bids: OrderBookSide = null,
 
+                // Used for streaming.
                 protected var lastUpdate: Option[Delta] = None)
 
-      extends HasUpdateEvent[OrderBook, Delta] {
+      extends HasUpdateEvent[OrderBook, Delta] with Matching {
 
-  assert(asks.ordering eq askOrdering)
-  assert(bids.ordering eq bidOrdering)
+  // Initialize
+  if (orders == null) orders = new Object2ObjectOpenHashMap()
+  if (asks == null) asks = OrderBookSide.newAsks(tickSize)
+  if (bids == null) bids = OrderBookSide.newBids(tickSize)
+
+  // Validate
   assert(orders.isEmpty)
-  assert(asks.isEmpty)
-  assert(bids.isEmpty)
+  assert(asks.index.isEmpty)
+  assert(bids.index.isEmpty)
   assert(lastUpdate.isEmpty)
 
-  def bidsIterator = bids.valuesIterator.flatMap(_.valuesIterator)
-  def asksIterator = asks.valuesIterator.flatMap(_.valuesIterator)
-  def iterator = bidsIterator ++ asksIterator
-  def stream: Stream[Order] = iterator.toStream
-
+  // Sizes
   private var askCount = 0
   private var bidCount = 0
   def size = askCount + bidCount
 
-  private val _emptyArray: Array[Order] = Array.empty[Order]
+  // Iterators and streams
+  def asksIterator: Iterator[Order] =
+    asks.index.values.stream.flatMap[Order](_.values.stream).iterator.asScala
+  def bidsIterator: Iterator[Order] =
+    bids.index.values.stream.flatMap[Order](_.values.stream).iterator.asScala
+  def iterator = bidsIterator ++ asksIterator
+  def stream: Stream[Order] = iterator.toStream
 
+  // Arrays
   private var _asksArray: Array[Order] = _
   private var _bidsArray: Array[Order] = _
+  private val _emptyArray: Array[Order] = Array.empty[Order]
 
   def asksArray: Array[Order] = {
-
     if (_asksArray eq null) {
       if (askCount == 0) {
         _asksArray = _emptyArray
@@ -98,7 +109,7 @@ class OrderBook(// Index of id -> order.
 //    b.mkString.hashCode
 //  }
 
-  def isInitialized: Boolean = orders.nonEmpty
+  def isInitialized: Boolean = !orders.isEmpty
 
   override protected def withLastUpdate(d: Delta): OrderBook = {
     this.lastUpdate = Some(d)
@@ -120,11 +131,11 @@ class OrderBook(// Index of id -> order.
 //  protected def _change(id: String, newSize: Num): OrderBook = update(Change(id, newSize))
 
   def open(order: Order): OrderBook = {
-    if (orders.contains(order.id))
+    if (orders.containsKey(order.id))
       throw new RuntimeException(s"OrderBook already contains order ${order.id}")
 
     // Update the index first.
-    orders += (order.id -> order)
+    orders.put(order.id, order)
 
     // Then depending on the side, ensure the correct queue exists.
     // Also update the relevant count.
@@ -132,33 +143,41 @@ class OrderBook(// Index of id -> order.
       case Sell =>
         askCount += 1
         _asksArray = null
-        asks.getOrElseUpdate(order.price.get, mutable.LinkedHashMap.empty)
+        var curAsks: Object2ObjectLinkedOpenHashMap[String, Order] = asks.index.get(order.price.get)
+        if (curAsks == null) {
+          curAsks = new Object2ObjectLinkedOpenHashMap[String, Order]
+          asks.index.put(order.price.get, curAsks)
+        }
+        curAsks
       case Buy =>
         bidCount += 1
         _bidsArray = null
-        bids.getOrElseUpdate(order.price.get, mutable.LinkedHashMap.empty)
+        var curBids: Object2ObjectLinkedOpenHashMap[String, Order] = bids.index.get(order.price.get)
+        if (curBids == null) {
+          curBids = new Object2ObjectLinkedOpenHashMap[String, Order]
+          bids.index.put(order.price.get, curBids)
+        }
+        curBids
     }
 
-    // And add the order.
-    queue += (order.id -> order)
+    // Add the order
+    queue.put(order.id, order)
     this
   }
 
   def open(id: String, price: Double, size: Double, side: Side): OrderBook =
     open(Order(id, side, size, Some(price)))
 
-  def done(id: String): OrderBook =
+  def done(id: String): OrderBook = {
     // Look up the order by it's id and remove it.
-    orders get id match {
-      case Some(order) =>
-        this._removeOrderId(id, order.side)
+    var o = orders.get(id)
 
-      case None => this // Ignore "done" messages for orders not in the book
+    // Ignore "done" messages for orders not in the book
+    if (o != null) {
+      this._removeOrderId(id, o.side)
     }
 
-  def remove(order: Order): Order = {
-    this.done(order.id)
-    order
+    this
   }
 
   def change(id: String, newSize: Double): OrderBook = {
@@ -171,7 +190,7 @@ class OrderBook(// Index of id -> order.
     val o = this.orders(id)
     this.orders.remove(id)
 
-    val index = side match {
+    val index: OrderBookSide = side match {
       case Sell =>
         askCount -= 1
         _asksArray = null
@@ -183,70 +202,97 @@ class OrderBook(// Index of id -> order.
     }
 
     val price = o.price.get
-    val queue = index(price)
-    queue -= id
+    val queue = index.index.get(price)
+    queue.remove(id)
 
     // If the queue is now empty, remove that price level completely.
     if (queue.isEmpty) {
-      index -= price
+      index.index.remove(price)
     }
 
     this
   }
 
-  def spread: Option[Double] =
-    if (asks.nonEmpty && bids.nonEmpty)
-      Some(asks.firstKey - bids.firstKey)
-    else None
+  def spread: Double =
+    if (!asks.index.isEmpty && !bids.index.isEmpty)
+      asks.index.firstDoubleKey() - bids.index.firstDoubleKey()
+    else java.lang.Double.NaN
 
-  def fill(side: Side, quantity: Double, limit: Option[Double] = None): (Array[Double], Array[Double]) = {
-    val ladder = if (side == Buy) asks else bids
-
-    if (ladder.nonEmpty) {
-      val (bestPrice, orderQueue) = ladder.head
-      val isMatch = limit.forall(lim => if (side == Buy) lim >= bestPrice else lim <= bestPrice)
-      if (isMatch) {
-        // If there is a match, generate the fill, and recurse.
-        val topOrder = orderQueue.head._2
-        val filledQuantity = quantity min topOrder.amount
-        val thisFill = (topOrder.price.get, filledQuantity)
-
-        // Update the order with the new amount.
-        topOrder.setAmount(topOrder.amount - filledQuantity)
-
-        // If the updated order is 0, remove it.
-        if (topOrder.amount == `0`) {
-          this.done(topOrder.id)
-        }
-
-        // If the remainder is over 0 and the top order was removed, recurse.
-        val remainder = quantity - filledQuantity
-        if (remainder > `0` && topOrder.amount == `0`) {
-          return thisFill :: this.fill(side, remainder, limit)
-        }
-
-        // Otherwise, return only this fill.
-        return List(thisFill)
-      }
-    }
-
-    // Fallback to returning an empty list of fills
-    Nil
-  }
+  // Returns the unfilled remainder
+//  def fill(side: Side, quantity: Double, limit: Option[Double] = None): Double = {
+//
+//    val ladder = if (side == Buy) asks else bids
+//    if (!ladder.isEmpty) {
+//      val bestPrice = ladder.firstDoubleKey()
+//      val orderQueue = ladder.get(bestPrice)
+//      val isMatch = limit.forall(lim =>
+//        if (side == Buy) lim >= bestPrice else lim <= bestPrice)
+//
+//      if (isMatch) {
+//        // If there is a match, generate the fill, and recurse.
+//        val topOrder = orderQueue.removeFirst()
+//        val filledQuantity = quantity min topOrder.amount
+//        val thisFill = (topOrder.price.get, filledQuantity)
+//
+//        // Update the order with the new amount.
+//        topOrder.setAmount(topOrder.amount - filledQuantity)
+//
+//        // If the updated order is 0, remove it.
+//        if (topOrder.amount == 0) {
+//          this.done(topOrder.id)
+//        }
+//
+//        // If the remainder is over 0 and the top order was removed, recurse.
+//        val remainder = NumberUtils.round8(quantity - filledQuantity)
+//        if (remainder > 0 && topOrder.amount == 0) {
+//          return thisFill :: this.fill(side, remainder, limit)
+//        }
+//
+//        // Otherwise, return only this fill.
+//        return List(thisFill)
+//      }
+//    }
+//
+//    // Fallback to returning an empty list of fills
+//    Nil
+//  }
 
   /**
     * Infers the tick size of the order book by finding the minimum distance between prices.
     */
-  def tickSize: Double = ???
+//  def tickSize: Double = ???
 
   val random = new Random()
   def genID: String = {
     var id = random.nextLong().toString
-    while (!orders.isDefinedAt(id)) {
+    while (!orders.containsKey(id)) {
       id = random.nextLong().toString
     }
     id
   }
+
+  def sideOf(qs: QuoteSide): OrderBookSide = if (qs == Ask) asks else bids
+
+  override def matchMutable(quoteSide: QuoteSide,
+                            approxPriceLimit: Double,
+                            approxSize: Double,
+                            matchPricesOut: Array[Double],
+                            matchQtysOut: Array[Double]) =
+    sideOf(quoteSide).matchMutable(quoteSide, approxPriceLimit,
+      approxSize, matchPricesOut, matchQtysOut)
+
+  override def matchSilent(quoteSide: QuoteSide,
+                           approxPriceLimit: Double,
+                           approxSize: Double,
+                           matchPricesOut: Array[Double],
+                           matchQtysOut: Array[Double]) =
+    sideOf(quoteSide).matchSilent(quoteSide, approxPriceLimit,
+      approxSize, matchPricesOut, matchQtysOut)
+
+  override def matchSilentAvg(quoteSide: QuoteSide,
+                              approxPriceLimit: Double,
+                              approxSize: Double) =
+    sideOf(quoteSide).matchSilentAvg(quoteSide, approxPriceLimit, approxSize)
 }
 
 object OrderBook {
@@ -257,14 +303,16 @@ object OrderBook {
                                  price: Double,
                                  size: Double)
 
-  def fromSeq(orders: Seq[Order]): OrderBook =
-    orders.foldLeft(new OrderBook())(_.open(_))
+  @JsonCodec
+  case class OrderBookJson(tickSize: Double, orders: Seq[Order])
 
   implicit val orderBookEncoder: Encoder[OrderBook] =
-    Encoder.encodeSeq[Order].contramap(_.stream)
+    implicitly[Encoder[OrderBookJson]].contramap(book =>
+      OrderBookJson(book.tickSize, book.iterator.toSeq))
 
   implicit val orderBookDecoder: Decoder[OrderBook] =
-    Decoder.decodeSeq[Order].map(fromSeq)
+    implicitly[Decoder[OrderBookJson]].map(json =>
+      json.orders.foldLeft(new OrderBook(json.tickSize))(_ open _))
 
   @JsonCodec sealed trait Delta
   case class Open(orderId: String, price: Double, size: Double, side: Side) extends Delta
@@ -288,13 +336,19 @@ object OrderBook {
     (a: OrderBook, b: OrderBook) =>
       b.iterator.foldLeft(a)(_ open _)
 
+  def _remove(book: OrderBook, order: Order): Order = {
+    book.done(order.id)
+    order
+  }
+
   private val bookBatchSize = 50
   val unfoldOrderBook: OrderBook => (OrderBook, Option[OrderBook]) =
     (book: OrderBook) =>
       if (book.orders.size > bookBatchSize)
         // Need to force the stream because of the book.remove operation
-        (book.stream.take(bookBatchSize).force
-            .foldLeft(new OrderBook())(_ open book.remove(_)),
+        (book
+          .stream.take(bookBatchSize).force
+          .foldLeft(new OrderBook(book.tickSize))(_ open _remove(book, _)),
           Some(book))
       else (book, None)
 
@@ -307,6 +361,149 @@ object OrderBook {
   val askOrdering: Ordering[Double] = Ordering[Double]
   val bidOrdering: Ordering[Double] = askOrdering.reverse
 
-  type OrderIndex = mutable.TreeMap[Double, mutable.LinkedHashMap[String, Order]]
+  class OrderBookSide(val index: Double2ObjectRBTreeMap[Object2ObjectLinkedOpenHashMap[String, Order]],
+                      val tickSize: Double,
+                      val side: QuoteSide) extends Matching {
+
+    val tickScale = NumberUtils.scale(tickSize)
+    def round(price: Double) = NumberUtils.round(price, tickScale)
+
+    def isEmpty = index.isEmpty
+    def nonEmpty = !index.isEmpty
+
+    def bestPrice = index.firstDoubleKey()
+    def bestQty = index.values.iterator.next.values.iterator.next.amount
+
+    def peek: Order = {
+      val p = index.firstDoubleKey()
+      val q = index.get(p)
+      q.get(q.firstKey())
+    }
+
+    def pop(): Order = {
+      val p = index.firstDoubleKey()
+      val q = index.get(p)
+      val id = q.firstKey()
+
+      // Get the order
+      val order = q.get(id)
+
+      // Remove order from queue, and queue from data structure, if now empty.
+      q.remove(order)
+      if (q.isEmpty) {
+        index.remove(p)
+      }
+
+      // Return order
+      order
+    }
+
+    // Does not support qtys that are larger than the next order.
+    private def removeQtyFromTopOrder(approxQty: Double): Unit = {
+      val order = peek
+      val qty = NumberUtils.round8(approxQty)
+      assert(order.amount >= qty)
+
+      if (order.amount == qty) {
+        pop()
+      }
+    }
+
+    override def matchMutable(quoteSide: QuoteSide,
+                              approxPriceLimit: Double,
+                              approxSize: Double,
+                              matchPricesOut: Array[Double],
+                              matchQtysOut: Array[Double]) = {
+      assert(quoteSide == side)
+
+      val size = NumberUtils.round8(approxSize)
+      val priceLimit = round(approxPriceLimit)
+      var remainder = size
+      var i = 0
+      while (nonEmpty && remainder > 0 && side.isBetterOrEq(bestPrice, priceLimit)) {
+        val matchQty = math.min(remainder, bestQty)
+        remainder = NumberUtils.round8(remainder - matchQty)
+        matchPricesOut(i) = bestPrice
+        matchQtysOut(i) = matchQty
+        removeQtyFromTopOrder(matchQty)
+        i += 1
+      }
+      matchPricesOut(i) = -1
+      matchQtysOut(i) = -1
+      remainder
+    }
+
+    def qtyAtPrice(d: Double): Double = {
+      var sum = 0
+      for (o <- index.get(d).values.iterator.asScala) {
+        sum += o.amount
+      }
+      NumberUtils.round8(sum)
+    }
+
+    override def matchSilent(quoteSide: QuoteSide,
+                             approxPriceLimit: Double,
+                             approxSize: Double,
+                             matchPricesOut: Array[Double],
+                             matchQtysOut: Array[Double]) = {
+      assert(quoteSide == side)
+
+      val size = NumberUtils.round8(approxSize)
+      val priceLimit = round(approxPriceLimit)
+      var remainder = size
+      var i = 0
+
+      val ordersIt = index.values.iterator.asScala.flatMap(_.values.iterator.asScala)
+      var price = side.best
+      while (ordersIt.hasNext && remainder > 0 && side.isBetterOrEq(price, priceLimit)) {
+        val order = ordersIt.next()
+        price = order.price.get
+        val matchQty = math.min(remainder, order.amount)
+        remainder = NumberUtils.round8(remainder - matchQty)
+        matchPricesOut(i) = price
+        matchQtysOut(i) = matchQty
+        i += 1
+      }
+      matchPricesOut(i) = -1
+      matchQtysOut(i) = -1
+      remainder
+    }
+
+    override def matchSilentAvg(quoteSide: QuoteSide,
+                                approxPriceLimit: Double,
+                                approxSize: Double): (Double, Double) = {
+      assert(quoteSide == side)
+
+      val size = NumberUtils.round8(approxSize)
+      val priceLimit = round(approxPriceLimit)
+      var totalMatched = 0d
+      var unroundedAvgPrice: Double = java.lang.Double.NaN
+      var break = false
+      val pricesIt = index.keySet.iterator.asScala
+
+      while (!break && pricesIt.hasNext) {
+        val price = pricesIt.next()
+        val remainder = NumberUtils.round8(size - totalMatched)
+        if (side.isBetterOrEq(price, priceLimit) && remainder > 0) {
+          val qty = qtyAtPrice(price)
+          val matchQty = math.min(remainder, qty)
+          unroundedAvgPrice =
+            if (java.lang.Double.isNaN(unroundedAvgPrice)) price
+            else (unroundedAvgPrice * totalMatched + price * matchQty) / (totalMatched + matchQty)
+          totalMatched = NumberUtils.round8(totalMatched + matchQty)
+        } else break = true
+      }
+      (totalMatched, unroundedAvgPrice)
+    }
+  }
+
+  object OrderBookSide {
+    def newAsks(tickSize: Double) = new OrderBookSide(
+      new Double2ObjectRBTreeMap(DoubleComparators.NATURAL_COMPARATOR),
+      tickSize, Ask)
+    def newBids(tickSize: Double) = new OrderBookSide(
+      new Double2ObjectRBTreeMap(DoubleComparators.OPPOSITE_COMPARATOR),
+      tickSize, Bid)
+  }
 
 }

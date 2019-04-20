@@ -5,6 +5,7 @@ import flashbot.models.Order.{Buy, Sell, Taker}
 import flashbot.models.OrderCommand.PostOrderCommand
 import flashbot.models._
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap
+import it.unimi.dsi.fastutil.objects.{Object2DoubleOpenHashMap, Reference2DoubleOpenHashMap}
 
 import scala.collection.immutable.Queue
 import scala.collection.mutable
@@ -29,129 +30,44 @@ class Simulator(base: Exchange, ctx: TradingSession, latencyMicros: Long = 0) ex
 
   private var myOrders = new java.util.HashMap[String, OrderBook]
 
-  private var books = new java.util.HashMap[String, OrderBook]
   private var depths = new java.util.HashMap[String, Ladder]
-  private var prices = new java.util.HashMap[String, Double]
+  private var prices = new Object2DoubleOpenHashMap[String, Double]
 
   override def makerFee: Double = base.makerFee
   override def takerFee: Double = base.takerFee
 
-  override def marketDataUpdate(data: Option[MarketData[_]]): Unit = {
-//    var fills = Seq.empty[Fill]
-//    var events = Seq.empty[OrderEvent]
-//    var errors = Seq.empty[ExchangeError]
-
-    // Update the current time, based on the time of the incoming market data.
-//    val incomingTime = data.map(_.micros).getOrElse(tick.get.micros)
-//    _syntheticCurrentMicros = Some(math.max(incomingTime, syntheticCurrentMicros.getOrElse(0L)))
-
-    // Dequeue and process API requests that have passed the latency threshold
-    while (apiRequestQueue.headOption
-        .exists(_.requestTime + latencyMicros <= syntheticCurrentMicros.get)) {
-      apiRequestQueue.dequeue match {
-        case (r: APIRequest, rest) =>
-          val evTime = r.requestTime + latencyMicros
-          r match {
-            case OrderReq(requestTime, req) => req match {
-              /**
-                * Limit orders may be filled (fully or partially) immediately. If not immediately
-                * fully filled, the remainder is placed on the resting order book.
-                */
-              case req @ LimitOrderRequest(clientOid, side, product, size, price, postOnly) =>
-                val immediateFills =
-                  if (depths.isDefinedAt(product))
-                    Ladder.ladderFillOrder(depths(product), side, Some(size), None, Some(price))
-//                      .map { case (fillPrice, fillQuantity) =>
-//                        Fill(clientOid, Some(clientOid), takerFee, product, fillPrice, fillQuantity,
-//                          evTime, Taker, side)
-//                      }
-                  else if (prices.isDefinedAt(product)) {
-                    side match {
-                      case Buy if price > prices(product) =>
-                        Seq(Fill(clientOid, Some(clientOid), takerFee, product, prices(product),
-                          size, evTime, Taker, side))
-                      case Sell if price < prices(product) =>
-                        Seq(Fill(clientOid, Some(clientOid), takerFee, product, prices(product),
-                          size, evTime, Taker, side))
-                      case _ => Seq()
-                    }
-                  } else {
-                    throw new RuntimeException(s"Not enough data to simulate limit orders for $product.")
-                  }
-
-                if (immediateFills.nonEmpty && postOnly) {
-                  errors :+= OrderRejectedError(req, PostOnlyConstraint)
-                } else {
-                  fills ++= immediateFills
-
-                  events :+= OrderReceived(clientOid, product, Some(clientOid), Order.LimitOrder)
-
-                  // Either complete or open the limit order
-                  val remainingSize = size - immediateFills.map(_.size).sum
-                  if (remainingSize > 0) {
-                    myOrders = myOrders + (product.symbol ->
-                      myOrders.getOrElse(product, OrderBook())
-                        ._open(clientOid, price, remainingSize, side))
-                    events :+= OrderOpen(clientOid, product, price, remainingSize, side)
-                  } else {
-                    events :+= OrderDone(clientOid, product, side, Filled, Some(price), Some(0))
-                  }
-                }
-
-              /**
-                * Market orders need to be filled immediately.
-                */
-              case MarketOrderRequest(clientOid, side, product, size, funds) =>
-                if (depths.isDefinedAt(product)) {
-                  fills = fills ++
-                    Ladder.ladderFillOrder(depths(product), side, size, funds.map(_ * (1 - takerFee)))
-                      .map { case (price, quantity) => Fill(clientOid, Some(clientOid), takerFee,
-                        product, price, quantity, evTime, Taker, side)}
-
-                } else if (prices.isDefinedAt(product)) {
-                  // We may not have aggregate book data, in that case, simply use the last price.
-                  fills = fills :+ Fill(
-                    clientOid, Some(clientOid), takerFee, product, prices(product),
-                    if (side == Buy) size.getOrElse(funds.get * (1 - takerFee) / prices(product))
-                    else size.get,
-                    evTime, Taker, side
-                  )
-
-                } else {
-                  throw new RuntimeException(s"No pricing $product data available for simulation")
-                }
-
-                events = events :+
-                  OrderReceived(clientOid, product, Some(clientOid), Order.MarketOrder) :+
-                  OrderDone(clientOid, product, side, Filled, None, None)
-            }
-
-            /**
-              * Removes the identified order from the resting order book.
-              */
-            case CancelReq(_, id, pair) =>
-              val order = myOrders(pair).orders(id)
-              myOrders = myOrders + (pair.symbol -> myOrders(pair).done(id))
-              events = events :+ OrderDone(id, pair, order.side, Canceled,
-                order.price, Some(order.amount))
-          }
-          apiRequestQueue = rest
-      }
-    }
+  override def marketDataUpdate(md: MarketData[_]): Unit = {
 
     // Update latest depth/pricing data.
-    data.map(_.data) match {
-      case Some(book: OrderBook) =>
-        books = books + (data.get.topic -> book)
+    md.data match {
+      case ladder: Ladder =>
+        // Clone the ladder coming in as market data to a local copy. This local copy
+        // will be used as a temp ladder for simulating matches until the next market
+        // data ladder comes.
+        if (depths.containsKey(md.path.topic))
+          ladder.copyInto(depths.get(md.path.topic))
+        else
+          depths.put(md.path.topic, ladder.clone())
 
-      case Some(ladder: Ladder) =>
-        depths = depths + (data.get.topic -> ladder)
-
-      case Some(p: Priced) =>
-        prices = prices + (data.get.topic -> p.price)
+      case p: Priced =>
+        prices.put(md.path.topic, p.price)
 
       case _ =>
     }
+
+
+    // Generate fills
+    md.data match {
+      case ladder: Ladder =>
+
+      case trade: Trade =>
+
+      case candle: Candle =>
+
+      case _ =>
+    }
+
+
 
     def processMatchedOrders(topic: String, micros: Long, orders: Iterable[Order]): Unit = {
       orders.foreach { order =>
@@ -269,84 +185,153 @@ class Simulator(base: Exchange, ctx: TradingSession, latencyMicros: Long = 0) ex
         * Limit orders may be filled (fully or partially) immediately. If not immediately
         * fully filled, the remainder is placed on the resting order book.
         */
-      case req @ LimitOrderRequest(clientOid, side, product, size, price, postOnly) =>
+      case req@LimitOrderRequest(clientOid, side, product, size, price, postOnly) =>
+        val ladder = depths.get(product.symbol)
+        if (ladder != null) {
+          // If `postOnly` is set, before we mutate the book, check if immediate
+          // fills are possible. If so, that's a request error.
+          if (postOnly && ladder.hasMatchingPrice(side, price)) {
+            // Post only error
+          } else {
+            // Match order against book. Removes liquidity. Generates immediate fills.
 
-        // If `postOnly` is set, before we mutate the book, check if immediate
-        // fills are possible. If so, that's a request error.
-        if (postOnly && depths.containsKey(product)) {
+            // Put the remainder into our own order book.
+          }
+        } else {
 
-        }
+          // If there is no ladder to match against, then approximate fills using the price.
+          val marketPrice = prices.getOrDefault(product.symbol, java.lang.Double.NaN)
+          if (!java.lang.Double.isNaN(marketPrice)) {
+            val isMatch = side.flip.toQuote.isBetter(marketPrice, price)
+            if (postOnly && isMatch) {
+              // Post only error
 
-        val immediateFills =
-          if (depths.containsKey(product))
-            Ladder.ladderFillOrder(depths.get(product), side, size, price)
-//                      .map { case (fillPrice, fillQuantity) =>
-//                        Fill(clientOid, Some(clientOid), takerFee, product, fillPrice, fillQuantity,
-//                          evTime, Taker, side)
-//                      }
-          else if (prices.containsKey(product)) {
-            side match {
-              case Buy if price > prices.get(product) =>
-                Seq(Fill(clientOid, Some(clientOid), takerFee, product, prices.get(product),
-                  size, evTime, Taker, side))
-              case Sell if price < prices.get(product) =>
-                Seq(Fill(clientOid, Some(clientOid), takerFee, product, prices.get(product),
-                  size, evTime, Taker, side))
-              case _ => Seq()
+            } else if (isMatch) {
+              // Generate complete immediate fill
+
+            } else {
+              // Place order in book
             }
           } else {
             throw new RuntimeException(s"Not enough data to simulate limit orders for $product.")
-          }
-
-        if (immediateFills.nonEmpty && postOnly) {
-          errors :+= OrderRejectedError(req, PostOnlyConstraint)
-        } else {
-          fills ++= immediateFills
-
-          events :+= OrderReceived(clientOid, product, Some(clientOid), Order.LimitOrder)
-
-          // Either complete or open the limit order
-          val remainingSize = size - immediateFills.map(_.size).sum
-          if (remainingSize > 0) {
-            myOrders = myOrders + (product.symbol ->
-              myOrders.getOrElse(product, OrderBook())
-                ._open(clientOid, price, remainingSize, side))
-            events :+= OrderOpen(clientOid, product, price, remainingSize, side)
-          } else {
-            events :+= OrderDone(clientOid, product, side, Filled, Some(price), Some(0))
           }
         }
 
       /**
         * Market orders need to be filled immediately.
         */
-      case MarketOrderRequest(clientOid, side, product, size, funds) =>
-        if (depths.isDefinedAt(product)) {
-          fills = fills ++
-            Ladder.ladderFillOrder(depths(product), side, size, funds.map(_ * (1 - takerFee)))
-              .map { case (price, quantity) => Fill(clientOid, Some(clientOid), takerFee,
-                product, price, quantity, evTime, Taker, side)}
-
-        } else if (prices.isDefinedAt(product)) {
-          // We may not have aggregate book data, in that case, simply use the last price.
-          fills = fills :+ Fill(
-            clientOid, Some(clientOid), takerFee, product, prices(product),
-            if (side == Buy) size.getOrElse(funds.get * (1 - takerFee) / prices(product))
-            else size.get,
-            evTime, Taker, side
-          )
+      case MarketOrderRequest(clientOid, side, product, size) =>
+        val ladder = depths.get(product.symbol)
+        if (ladder != null) {
+          val total = ladder.ladderSideForTaker(side).totalSize
+          val excess = ladder.round(total - size)
+          if (excess < 0) {
+            // Order size exceeded liquidity error
+          } else {
+            // Perform the mutable match. Emit fills.
+            assert(ladder.matchMarket(side, size, silent = false) == 0,
+              "Non-zero remainder on market order")
+            ladder.foreachMatch { (p, q) =>
+              // Emit fill
+            }
+          }
 
         } else {
-          throw new RuntimeException(s"No pricing $product data available for simulation")
+          // If there is no ladder to match against, then approximate fills using the price.
+          val marketPrice = prices.getOrDefault(product.symbol, java.lang.Double.NaN)
+          if (!java.lang.Double.isNaN(marketPrice)) {
+            // Emit full fill at current market price
+
+          } else {
+            throw new RuntimeException(s"Not enough data to simulate market orders for $product.")
+          }
         }
 
-        events = events :+
-          OrderReceived(clientOid, product, Some(clientOid), Order.MarketOrder) :+
-          OrderDone(clientOid, product, side, Filled, None, None)
+      /**
+        * Removes the identified order from the resting order book.
+        */
+      case CancelOrderRequest(id, instrument) =>
+        val order = myOrders(instrument).orders(id)
+        myOrders = myOrders + (pair.symbol -> myOrders(pair).done(id))
+//        events = events :+ OrderDone(id, pair, order.side, Canceled,
+//          order.price, Some(order.amount))
+
     }
 
     val prom = rspPromises.remove(sreq.reqId)
     prom.success(rsp)
+
+//        if (postOnly && ladder != null) {
+//          val remainder = ladder.ladderFillOrder(ladder, side, size, price, silent = true)
+//        }
+
+//        val immediateFills =
+//          if (depths.containsKey(product))
+//            Ladder.ladderFillOrder(depths.get(product), side, size, price)
+////                      .map { case (fillPrice, fillQuantity) =>
+////                        Fill(clientOid, Some(clientOid), takerFee, product, fillPrice, fillQuantity,
+////                          evTime, Taker, side)
+////                      }
+//          else if (prices.containsKey(product)) {
+//            side match {
+//              case Buy if price > prices.get(product) =>
+//                Seq(Fill(clientOid, Some(clientOid), takerFee, product, prices.get(product),
+//                  size, evTime, Taker, side))
+//              case Sell if price < prices.get(product) =>
+//                Seq(Fill(clientOid, Some(clientOid), takerFee, product, prices.get(product),
+//                  size, evTime, Taker, side))
+//              case _ => Seq()
+//            }
+//          } else {
+//            throw new RuntimeException(s"Not enough data to simulate limit orders for $product.")
+//          }
+//
+//        if (immediateFills.nonEmpty && postOnly) {
+//          errors :+= OrderRejectedError(req, PostOnlyConstraint)
+//        } else {
+//          fills ++= immediateFills
+//
+//          events :+= OrderReceived(clientOid, product, Some(clientOid), Order.LimitOrder)
+//
+//          // Either complete or open the limit order
+//          val remainingSize = size - immediateFills.map(_.size).sum
+//          if (remainingSize > 0) {
+//            myOrders = myOrders + (product.symbol ->
+//              myOrders.getOrElse(product, OrderBook())
+//                ._open(clientOid, price, remainingSize, side))
+//            events :+= OrderOpen(clientOid, product, price, remainingSize, side)
+//          } else {
+//            events :+= OrderDone(clientOid, product, side, Filled, Some(price), Some(0))
+//          }
+//        }
+//
+//      /**
+//        * Market orders need to be filled immediately.
+//        */
+//      case MarketOrderRequest(clientOid, side, product, size, funds) =>
+//        if (depths.isDefinedAt(product)) {
+//          fills = fills ++
+//            Ladder.ladderFillOrder(depths(product), side, size, funds.map(_ * (1 - takerFee)))
+//              .map { case (price, quantity) => Fill(clientOid, Some(clientOid), takerFee,
+//                product, price, quantity, evTime, Taker, side)}
+//
+//        } else if (prices.isDefinedAt(product)) {
+//          // We may not have aggregate book data, in that case, simply use the last price.
+//          fills = fills :+ Fill(
+//            clientOid, Some(clientOid), takerFee, product, prices(product),
+//            if (side == Buy) size.getOrElse(funds.get * (1 - takerFee) / prices(product))
+//            else size.get,
+//            evTime, Taker, side
+//          )
+//
+//        } else {
+//          throw new RuntimeException(s"No pricing $product data available for simulation")
+//        }
+//
+//        events = events :+
+//          OrderReceived(clientOid, product, Some(clientOid), Order.MarketOrder) :+
+//          OrderDone(clientOid, product, side, Filled, None, None)
+//    }
   }
 
   override def baseAssetPrecision(pair: Instrument): Int = base.baseAssetPrecision(pair)

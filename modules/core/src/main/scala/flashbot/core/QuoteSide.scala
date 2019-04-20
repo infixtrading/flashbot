@@ -26,16 +26,25 @@ sealed trait QuoteSide {
 
   def betterBy(price: Double, delta: Double): Double
   def worseBy(price: Double, delta: Double): Double
+
+  def worst: Double
+  def best: Double
 }
 case object Ask extends QuoteSide {
   override def isBetter(a: Double, b: Double): Boolean = a < b
   override def betterBy(price: Double, delta: Double) = price - delta
   override def worseBy(price: Double, delta: Double) = price + delta
+
+  override def best = 0
+  override def worst = Double.MaxValue
 }
 case object Bid extends QuoteSide {
   override def isBetter(a: Double, b: Double): Boolean = a > b
   override def betterBy(price: Double, delta: Double) = price + delta
   override def worseBy(price: Double, delta: Double) = price - delta
+
+  override def best = Double.MaxValue
+  override def worst = 0
 }
 
 object QuoteSide {

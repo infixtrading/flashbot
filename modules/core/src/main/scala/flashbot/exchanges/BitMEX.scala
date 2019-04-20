@@ -48,7 +48,7 @@ object BitMEX {
       size * (1.0d / entryPrice - 1.0d / exitPrice)
     }
 
-    override def value(price: Num) = `1` / price
+    override def value(price: Double): Double = 1d / price
   }
 
   object ETHUSD extends FuturesContract {
@@ -57,18 +57,18 @@ object BitMEX {
     override def quote = "usd"
     override def settledIn = Some("xbt")
 
-    val bitcoinMultiplier: Num = 0.000001.num
+    val bitcoinMultiplier: Double = 0.000001
 
 //    override def markPrice(prices: PriceIndex) = ???
 
     override def security = Some(symbol)
 
     // https://www.bitmex.com/app/seriesGuide/ETH#How-Is-The-ETHUSD-Perpetual-Contract-Quoted
-    override def pnl(size: Num, entryPrice: Num, exitPrice: Num) = {
+    override def pnl(size: Double, entryPrice: Double, exitPrice: Double) = {
       (exitPrice - entryPrice) * bitcoinMultiplier * size
     }
 
-    override def value(price: Num) = price * bitcoinMultiplier
+    override def value(price: Double) = price * bitcoinMultiplier
   }
 
   object BXBT extends Index(".BXBT", "xbt", "usd")

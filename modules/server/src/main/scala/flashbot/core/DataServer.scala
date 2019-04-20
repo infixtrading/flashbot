@@ -11,12 +11,12 @@ import akka.stream.scaladsl.{Sink, Source}
 import akka.util.Timeout
 import akka.{Done, NotUsed}
 import com.typesafe.config.Config
-import flashbot.core.FlashbotConfig.{DataSourceConfig, ExchangeConfig, IngestConfig}
+import flashbot.core._
+import flashbot.core.FlashbotConfig._
 import flashbot.core.MarketData.BaseMarketData
 import flashbot.db._
+import flashbot.models._
 import flashbot.server.{DataSourceActor, StreamResponse}
-import flashbot.models.api._
-import flashbot.models.core.DataPath
 import flashbot.util._
 import flashbot.util.stream._
 import flashbot.util.time.FlashbotTimeout

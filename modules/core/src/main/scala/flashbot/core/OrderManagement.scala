@@ -34,7 +34,7 @@ trait OrderManagement extends DataHandler with EventHandler {
     * This is invoked after handleData and handleEvent, so the result of this function can
     * depend on in-memory state updated from those functions.
     */
-  def declareOrders(): List[OrderRef]
+//  def declareOrders(): List[OrderRef]
 }
 
 object OrderManagement {
