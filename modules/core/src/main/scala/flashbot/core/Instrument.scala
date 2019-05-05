@@ -5,6 +5,9 @@ trait Instrument {
   // Unique string id such as "eth_usdt" or "xbtusd"
   def symbol: String
 
+  // The minimum price difference that can exist between two orders.
+  def tickSize: Double
+
   // The base asset/security of this instrument. I.e. what are we quoting?
   def base: String
 

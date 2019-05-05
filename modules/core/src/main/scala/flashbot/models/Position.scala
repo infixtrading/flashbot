@@ -1,6 +1,7 @@
 package flashbot.models
 
 import flashbot.core.Instrument.Derivative
+import io.circe.{Decoder, Encoder}
 
 /**
   * Positions are used to calculate the portfolio equity and PnL.
@@ -29,18 +30,16 @@ class Position(var size: Double, var leverage: Double, var entryPrice: Double) {
     }
 
     if (tmpSize != size) {
-      pnl = instrument.pnl(size - tmpSize, entryPrice.get, price)
+      pnl = instrument.pnl(size - tmpSize, entryPrice, price)
     }
 
     // Second stage, increase to new size and update entryPrice.
     val enterSize = (newSize - tmpSize).abs
-    val newEntryPrice =
-      (tmpSize * entryPrice.get + enterSize * price) / (tmpSize + enterSize)
+    entryPrice = (tmpSize * entryPrice + enterSize * price) / (tmpSize + enterSize)
 
-    (copy(
-      size = newSize,
-      entryPrice = Some(newEntryPrice)
-    ), pnl)
+    size = newSize
+
+    (this, pnl)
   }
 
   def isLong: Boolean = size > 0
@@ -49,9 +48,16 @@ class Position(var size: Double, var leverage: Double, var entryPrice: Double) {
   def initialMargin(instrument: Derivative): Double =
     instrument.value(entryPrice) * size.abs / leverage
 
-  override def toString = Seq(
+  def isInitialized: Boolean = java.lang.Double.isNaN(entryPrice)
+
+  override def toString: String = Seq(
     size.toString,
     if (leverage == 1) "" else "x" + leverage,
     "@" + entryPrice
   ).mkString("")
+}
+
+object Position {
+  implicit val positionEncoder: Encoder[Position] = ???
+  implicit val positionDecoder: Decoder[Position] = ???
 }

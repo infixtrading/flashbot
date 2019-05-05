@@ -1,8 +1,8 @@
 package flashbot.models
 
 sealed trait ExchangeResponse
-case object RequestOk extends ExchangeResponse
-case class RequestFailed(cause: ExchangeError) extends ExchangeResponse
+case object RequestSuccess extends ExchangeResponse
+case class RequestError(cause: ExchangeError) extends ExchangeResponse
 
 trait RejectedReason {
   def message: String
@@ -14,6 +14,10 @@ case object PostOnlyConstraint extends RejectedReason {
 
 case object InsufficientFunds extends RejectedReason {
   override def message = "Insufficient funds for order"
+}
+
+case object FillOrKillConstraint extends RejectedReason {
+  override def message: String = "Fill-or-kill order constraint not satisfied"
 }
 
 /**

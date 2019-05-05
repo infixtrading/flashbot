@@ -38,8 +38,8 @@ class DMACStrategy extends Strategy[DMACParams] with TimeSeriesMixin {
 
   override def handleData(data: MarketData[_])(implicit ctx: TradingSession) = {
     val portfolio = ctx.getPortfolio
-    val balance: FixedSize = portfolio.getBalanceAs(market.settlementAccount)
-    val holding = portfolio.getBalanceAs(market.securityAccount)
+    val balance: FixedSize = portfolio.getBalanceSize(market.settlementAccount)
+    val holding = portfolio.getBalanceSize(market.securityAccount)
     val price = getPrice(market)
 
     val hasCrossedUp = crossedUp.isSatisfied(index(market))

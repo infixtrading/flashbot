@@ -24,4 +24,6 @@ package object json {
   implicit class NoNullsPrinter(json: Json) {
     def noNulls: String = printJson(json)
   }
+
+  
 }

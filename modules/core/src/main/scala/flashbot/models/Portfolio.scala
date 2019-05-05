@@ -1,11 +1,15 @@
 package flashbot.models
 
+import flashbot.core.AssetKey.SecurityAsset
 import flashbot.core.DeltaFmt.HasUpdateEvent
 import flashbot.core.Instrument.Derivative
 import flashbot.core._
 import flashbot.core.FixedSize._
+import flashbot.models.Order.{Buy, Liquidity, Maker, Sell, Taker}
 import flashbot.util.Margin
 import flashbot.util.NumberUtils._
+import flashbot.util.json.CommonEncoders._
+import flashbot.core.AssetKey.implicits._
 import io.circe.generic.semiauto._
 import io.circe.{Decoder, Encoder}
 
@@ -20,60 +24,54 @@ import scala.language.postfixOps
 class Portfolio(private val assets: debox.Map[Account, Double],
                 private val positions: debox.Map[Market, Position],
                 private val orders: debox.Map[Market, OrderBook],
-                protected[flashbot] var lastUpdate: Option[PortfolioDelta])
+                protected[flashbot] val lastUpdate: MutableOpt[PortfolioDelta] = MutableOpt.from(None))
     extends HasUpdateEvent[Portfolio, PortfolioDelta] {
 
-  private var recordingBuffer: Option[mutable.Buffer[PortfolioDelta]] = None
+  private var recordingBuffer: MutableOpt[mutable.Buffer[PortfolioDelta]] = MutableOpt.from(None)
 
   protected[flashbot] def record(fn: Portfolio => Portfolio): Unit = {
-    if (recordingBuffer.isDefined) {
+    if (recordingBuffer.nonEmpty) {
       throw new RuntimeException("Portfolio already recording.")
     }
 
-    recordingBuffer = Some(mutable.ArrayBuffer.empty)
+    recordingBuffer.set(mutable.ArrayBuffer.empty)
     fn(this)
-    withLastUpdate(BatchPortfolioUpdate(recordingBuffer.get))
-    recordingBuffer = None
+    lastUpdate.set(BatchPortfolioUpdate(recordingBuffer.get))
+    recordingBuffer.clear()
   }
 
-  override protected def withLastUpdate(d: PortfolioDelta): Portfolio = {
-    lastUpdate = Some(d)
-    this
-  }
-
-  override protected def step(delta: PortfolioDelta): Portfolio = {
+  override protected def _step(delta: PortfolioDelta): Portfolio = {
     delta match {
       case BalanceUpdated(account, None) =>
         assets.remove(account)
 
       case BalanceUpdated(account, Some(balance)) =>
-        assets.put(account, balance)
+        assets(account) = balance
 
       case PositionUpdated(market, None) =>
         positions.remove(market)
 
       case PositionUpdated(market, Some(position)) =>
-        positions.put(market, position)
+        positions(market) = position
 
       case OrdersUpdated(market, bookDelta) =>
-        orders.get(market).update(bookDelta)
+        orders.get(market).get.update(bookDelta)
 
       case BatchPortfolioUpdate(deltas) =>
         deltas.foreach(delta => this.update(delta))
     }
 
-    if (recordingBuffer.isDefined) recordingBuffer.get.append(delta)
-    else withLastUpdate(delta)
+    if (recordingBuffer.nonEmpty) recordingBuffer.get.append(delta)
+    else lastUpdate.set(delta)
 
     this
   }
 
-  def getBalance(account: Account): Double = assets.getOrDefault(account, `0`)
-
-  def getBalanceAs(account: Account): FixedSize = getBalance(account).of(account)
+  def getBalance(account: Account): Double = assets.get(account).getOrElse(0d)
+  def getBalanceSize(account: Account): FixedSize = getBalance(account).of(account)
 
   def withBalance(account: Account, balance: Double): Portfolio =
-    step(BalanceUpdated(account, Some(balance)))
+    _step(BalanceUpdated(account, Some(balance)))
 
   def updateAssetBalance(account: Account, fn: Double => Double): Portfolio =
     withBalance(account, fn(getBalance(account)))
@@ -85,12 +83,12 @@ class Portfolio(private val assets: debox.Map[Account, Double],
     */
   def getOrderCost(market: Market, size: Double, price: Double, liquidity: Liquidity)
                   (implicit instruments: InstrumentIndex,
-                   exchangesParams: Map[String, ExchangeParams]): Double = {
-    assert(size != `0`, "Order size cannot be 0")
+                   exchangesParams: java.util.Map[String, ExchangeParams]): Double = {
+    assert(size != 0, "Order size cannot be 0")
 
     val fee = liquidity match {
-      case Maker => exchangesParams(market.exchange).makerFee
-      case Taker => exchangesParams(market.exchange).takerFee
+      case Maker => exchangesParams.get(market.exchange).makerFee
+      case Taker => exchangesParams.get(market.exchange).takerFee
     }
 
     instruments(market) match {
@@ -98,13 +96,13 @@ class Portfolio(private val assets: debox.Map[Account, Double],
         // For derivatives, the order cost is the difference between the order margin
         // with the order and without.
         (addOrder(None, market, size, price).getOrderMargin(market) -
-          getOrderMargin(market)) * (`1` + fee)
+          getOrderMargin(market)) * (1.0 + fee)
 
       case _ =>
         // For non-derivatives, there is no margin.
         // Order cost for buys = size * price * (1 + fee).
-        if (size > `0`)
-          size * price * (`1` + fee)
+        if (size > 0)
+          size * price * (1.0 + fee)
 
         // And order cost for asks is just the size of the order:
         // In order to sell something, you must have it first.
@@ -122,7 +120,7 @@ class Portfolio(private val assets: debox.Map[Account, Double],
                     (implicit instruments: InstrumentIndex): Double = {
     instruments(market) match {
       case derivative: Derivative =>
-        val position = positions.get(market)
+        val position = positions.get(market).get
         Margin.calcOrderMargin(position.size, position.leverage,
           orders(market), derivative)
     }
@@ -163,21 +161,23 @@ class Portfolio(private val assets: debox.Map[Account, Double],
     round8(sum)
   }
 
-  def addOrder(id: Option[String], market: Market, size: Double, price: Double): Portfolio = {
+  def addOrder(id: Option[String], market: Market, size: Double, price: Double)
+              (implicit instrumentIndex: InstrumentIndex): Portfolio = {
+    val instr = instrumentIndex(market)
     var book = orders(market)
-    if (book == null) book = OrderBook()
-    val side = if (size > `0`) Order.Buy else Order.Sell
+    if (book == null) book = OrderBook(instr.tickSize)
+    val side = if (size > 0) Order.Buy else Order.Sell
 
-    step(OrdersUpdated(market,
+    _step(OrdersUpdated(market,
       OrderBook.Open(id.getOrElse(book.genID), price, size.abs, side)))
 
     this
   }
 
   def removeOrder(market: Market, id: String): Portfolio = {
-    val book = orders.get(market)
-    if (book != null && book.orders.isDefinedAt(id)) {
-      this.step(OrdersUpdated(market, OrderBook.Done(id)))
+    val book = orders.get(market).get
+    if (book != null && book.orders.containsKey(id)) {
+      this._step(OrdersUpdated(market, OrderBook.Done(id)))
     }
     this
   }
@@ -210,7 +210,7 @@ class Portfolio(private val assets: debox.Map[Account, Double],
             .updateAssetBalance(market.securityAccount, _ + fill.size)
         case Sell =>
           updateAssetBalance(market.settlementAccount,
-              _ + fill.size * fill.price * (`1` - fill.fee))
+              _ + fill.size * fill.price * (1.0 - fill.fee))
             .updateAssetBalance(market.securityAccount, _ - cost)
       }
     }
@@ -228,10 +228,10 @@ class Portfolio(private val assets: debox.Map[Account, Double],
     }
   }
 
-  def getLeverage(market: Market): Num = {
-    val position = positions.get(market)
+  def getLeverage(market: Market): Double = {
+    val position = positions.get(market).get
     if (position != null) position.leverage
-    else `1`
+    else 1.0
   }
 
   /**
@@ -242,25 +242,24 @@ class Portfolio(private val assets: debox.Map[Account, Double],
   def initializePositions(implicit prices: PriceIndex,
                           instruments: InstrumentIndex,
                           metrics: Metrics): Portfolio = {
-    positions.entrySet().stream()
-        .filter(_.getValue.entryPrice.isEmpty)
-        .forEach { entry =>
-          val (market, position) = (entry.getKey, entry.getValue)
-          val price = prices.calcPrice(market.baseAccount, market.quoteAccount)
-          if (!price.isNaN)
-            instruments(market) match {
-              case instrument: Derivative =>
-                val account = Account(market.exchange, instrument.settledIn.get)
-                val newPosition = position.copy(entryPrice = Some(price) )
-                this.withPosition(market, newPosition)
+    positions.foreach { (market, position) =>
+      if (!position.isInitialized) {
+        val price = prices.calcPrice(market.baseAccount, market.quoteAccount)
+        if (!java.lang.Double.isNaN(price))
+          instruments(market) match {
+            case instrument: Derivative =>
+              val account = Account(market.exchange, instrument.settledIn.get)
+              position.entryPrice = price
+              this.withPosition(market, position)
 
-                // If there is no balance for the asset which this position is settled in, then infer
-                // it to be this position's initial margin requirement.
-                val marg = newPosition.initialMargin(instrument)
-                if (!this.assets.containsKey(account))
-                  this.withBalance(account, marg)
-            }
-        }
+              // If there is no balance for the asset which this position is settled in, then infer
+              // it to be this position's initial margin requirement.
+              val marg = position.initialMargin(instrument)
+              if (!assets.contains(account))
+                this.withBalance(account, marg)
+          }
+      }
+    }
     this
   }
 
@@ -271,13 +270,10 @@ class Portfolio(private val assets: debox.Map[Account, Double],
   def isInitialized(targetAsset: String = "usd")
                    (implicit prices: PriceIndex,
                     instruments: InstrumentIndex,
-                    metrics: Metrics): Boolean = {
-    val positionsReady = positions.entrySet()
-      .stream().allMatch(_.getValue.entryPrice.nonEmpty)
-    positionsReady &&
-      assets.keySet().stream().allMatch(acc =>
-        prices.calcPrice(acc, targetAsset).isValid)
-  }
+                    metrics: Metrics): Boolean =
+    positions.vals.forall(_.isInitialized) &&
+      assets.keys.forall(acc =>
+        !java.lang.Double.isNaN(prices.calcPrice[Account, SecurityAsset](acc, targetAsset)))
 
   /**
     * What is the value of our portfolio in terms of `targetAsset`?
@@ -285,16 +281,14 @@ class Portfolio(private val assets: debox.Map[Account, Double],
   def getEquity(targetAsset: String = "usd")
                (implicit prices: PriceIndex,
                 instruments: InstrumentIndex,
-                metrics: Metrics): Num = {
-    var equitySum = `0`
-    positions.keySet().stream().forEach { key =>
-      equitySum += getPositionPnl(key)
-        .convert(key.settlementAccount, targetAsset)
-    }
+                metrics: Metrics): Double = {
+    var equitySum = 0.0
+    val ta: SecurityAsset = targetAsset
+    positions.foreachKey(key =>
+      equitySum += getPositionPnl(key).of(key.settlementAccount).as(ta).amount)
 
-    assets.entrySet().stream().forEach { entry =>
-      val (account, balance) = (entry.getKey, entry.getValue)
-      equitySum += balance * prices.calcPrice(account, targetAsset)
+    assets.foreach { (account, balance) =>
+      equitySum += balance * prices.calcPrice(account, ta)
     }
 
     equitySum
@@ -329,7 +323,7 @@ class Portfolio(private val assets: debox.Map[Account, Double],
   // This is unsafe because it lets you set a new position without updating account
   // balances with the realized PNL that occurs from changing a position size.
   protected[flashbot] def withPosition(market: Market, position: Position): Portfolio =
-    step(PositionUpdated(market, Some(position)))
+    _step(PositionUpdated(market, Some(position)))
 
 //  def merge(portfolio: Portfolio): Portfolio = copy(
 //    assets = assets ++ portfolio.assets,
@@ -345,15 +339,15 @@ class Portfolio(private val assets: debox.Map[Account, Double],
 //      case (market, value) => other.positions.get(market).contains(value) }
 //  )
 
-  def withoutExchange(name: String): Portfolio = {
-    assets.keySet().stream().filter(_.exchange == name).forEach { acc =>
-      step(BalanceUpdated(acc, None))
-    }
-    positions.keySet().stream().filter(_.exchange == name).forEach { ex =>
-      step(PositionUpdated(ex, None))
-    }
-    this
-  }
+//  def withoutExchange(name: String): Portfolio = {
+//    assets.keySet().stream().filter(_.exchange == name).forEach { acc =>
+//      step(BalanceUpdated(acc, None))
+//    }
+//    positions.keySet().stream().filter(_.exchange == name).forEach { ex =>
+//      step(PositionUpdated(ex, None))
+//    }
+//    this
+//  }
 
   /**
     * Splits each account's total equity/buying power evenly among all given markets.
@@ -375,9 +369,9 @@ class Portfolio(private val assets: debox.Map[Account, Double],
   //    }
   //  }
 
-  override def toString = {
-    (assets.asScala.toSeq.map(a => Seq(a._1, a._2).mkString("=")) ++
-        positions.asScala.toSeq.map(p => Seq(p._1, p._2).mkString("="))).sorted
+  override def toString: String = {
+    (assets.iterator().toSeq.map(a => Seq(a._1, a._2).mkString("=")) ++
+        positions.iterator().toSeq.map(p => Seq(p._1, p._2).mkString("="))).sorted
       .mkString(",")
   }
 
@@ -385,9 +379,18 @@ class Portfolio(private val assets: debox.Map[Account, Double],
 
 object Portfolio {
 
-  implicit val portfolioEn: Encoder[Portfolio] = deriveEncoder
-  implicit val portfolioDe: Decoder[Portfolio] = deriveDecoder
+  implicit val portfolioEn: Encoder[Portfolio] =
+    Encoder.forProduct4[Portfolio,
+      debox.Map[Account, Double], debox.Map[Market, Position],
+      debox.Map[Market, OrderBook], MutableOpt[PortfolioDelta]](
+        "assets", "positions", "orders", "lastUpdate")(p => (p.assets, p.positions, p.orders, p.lastUpdate))
 
-  def empty: Portfolio = Portfolio(Map.empty, Map.empty, Map.empty)
+  implicit val portfolioDe: Decoder[Portfolio] =
+    Decoder.forProduct4[Portfolio,
+      debox.Map[Account, Double], debox.Map[Market, Position],
+      debox.Map[Market, OrderBook], MutableOpt[PortfolioDelta]](
+        "assets", "positions", "orders", "lastUpdate")(new Portfolio(_, _, _, _))
+
+  def empty: Portfolio = new Portfolio(debox.Map.empty, debox.Map.empty, debox.Map.empty)
 }
 

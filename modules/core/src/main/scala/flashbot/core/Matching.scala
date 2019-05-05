@@ -1,17 +1,24 @@
 package flashbot.core
 
-import spire.syntax.cfor._
+import flashbot.models.OrderBook.OrderBookSide
+import flashbot.models.{Ladder, LadderSide, OrderBook}
+import flashbot.util.NumberUtils
 
 trait Matching extends Any {
 
-  // Implementers must supply references to shared out vars.
-  def priceMatches: Array[Double]
-  def qtyMatches: Array[Double]
+  val matchPrices: Array[Double] = Array[Double](200)
+  val matchQtys: Array[Double] = Array[Double](200)
+
+  var matchCount: Int = 0
+  var matchTotalQty: Double = 0d
+
+  // Optional out var. Order books will use it. Ladders won't.
+  val matchOrderIds: Option[Array[String]] = None
 
   def foreachMatch(fn: (Double, Double) => Unit): Unit = {
     var i = 0
-    while(priceMatches(i) != -1 && qtyMatches(i) != -1) {
-      fn(priceMatches(i), qtyMatches(i))
+    while(matchPrices(i) != -1 && matchQtys(i) != -1) {
+      fn(matchPrices(i), matchQtys(i))
       i += 1
     }
   }
@@ -25,9 +32,7 @@ trait Matching extends Any {
     */
   def matchMutable(quoteSide: QuoteSide,
                    approxPriceLimit: Double,
-                   approxSize: Double,
-                   matchPricesOut: Array[Double] = priceMatches,
-                   matchQtysOut: Array[Double] = qtyMatches): Double
+                   approxSize: Double): Double
 
   /**
     * Like `matchMutable`, but doesn't remove the liquidity from the ladder itself.
@@ -37,9 +42,7 @@ trait Matching extends Any {
     */
   def matchSilent(quoteSide: QuoteSide,
                   approxPriceLimit: Double,
-                  approxSize: Double,
-                  matchPricesOut: Array[Double] = priceMatches,
-                  matchQtysOut: Array[Double] = qtyMatches): Double
+                  approxSize: Double): Double
 
   /**
     * Like `matchSilent`, but returns average match instead of individual matches.

@@ -16,6 +16,6 @@ case class TradeTx(trade: Trade) extends Transaction {
   def micros = trade.micros
 }
 
-case class Deposit(id: String, micros: Long, size: FixedSize[Double]) extends Transaction
+case class Deposit(id: String, micros: Long, size: FixedSize) extends Transaction
 
-case class Withdraw(id: String, micros: Long, size: FixedSize[Double]) extends Transaction
+case class Withdraw(id: String, micros: Long, size: FixedSize) extends Transaction

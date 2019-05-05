@@ -2,7 +2,6 @@ package flashbot.core
 
 import java.util.Comparator
 
-import flashbot.models.TradingSessionEvent
 import it.unimi.dsi.fastutil.longs.{Long2ObjectOpenHashMap, LongHeapPriorityQueue}
 import spire.syntax.cfor._
 
@@ -10,7 +9,7 @@ class EventBuffer(initialCapacity: Int) {
   lazy val buffer = debox.Buffer.fill[Tick](initialCapacity)(null)
   var size: Int = 0
 
-  def +=(event: Tick) = {
+  def +=(event: Tick): Unit = {
     if (size == buffer.len) {
       buffer += event
     } else if (size < buffer.len) {
@@ -93,8 +92,8 @@ class EventLoop {
     } else if (delayMicros == 0) {
       collector += tick
     } else if (delayMicros > 0) {
-      val queue = eventQueues.computeIfAbsent(
-        currentMicros + delayMicros, (_: Long) => acquireBuffer())
+      val m = currentMicros + delayMicros
+      val queue = if (eventQueues.containsKey(m)) eventQueues.get(m) else acquireBuffer()
       queue += tick
     } else {
       throw new RuntimeException("EventLoop does not accept events from the past.")
@@ -104,7 +103,7 @@ class EventLoop {
   // Consume and release `eventStream`. When released, EventBuffers are always placed
   // back in the pool and they are never shrunk. The exception is if the buffer is the
   // collector, in which case just restore the collector register.
-  private def consumeEventStream(fn: Tick => Unit) = {
+  private def consumeEventStream(fn: Tick => Unit): Unit = {
     eventStream.consume(fn)
 
     // Release

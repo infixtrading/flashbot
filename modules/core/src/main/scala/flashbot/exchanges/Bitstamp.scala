@@ -6,6 +6,7 @@ import flashbot.core.Exchange
 import io.circe.Json
 import flashbot.core.Instrument.CurrencyPair
 import flashbot.core.Instrument
+import flashbot.models.{ExchangeResponse, PostOrderRequest}
 
 import scala.concurrent.Future
 
@@ -16,7 +17,7 @@ class Bitstamp(implicit val system: ActorSystem,
 
   override def takerFee: Double = .0005
 
-  override def order(req: OrderRequest): Future[ExchangeResponse] = ???
+  override def order(req: PostOrderRequest): Future[ExchangeResponse] = ???
 
   override def cancel(id: String, pair: Instrument): Future[ExchangeResponse] = ???
 

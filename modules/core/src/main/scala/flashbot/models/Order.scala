@@ -6,7 +6,9 @@ import flashbot.core.{Ask, Bid, QuoteSide}
 import flashbot.models.Order.Side
 import io.circe.generic.JsonCodec
 import io.circe.syntax._
-import io.circe.{Decoder, Encoder, HCursor, Json}
+import io.circe.{Decoder, DecodingFailure, Encoder, HCursor, Json}
+
+import scala.language.implicitConversions
 
 object Order {
   sealed trait Side {
@@ -22,10 +24,10 @@ object Order {
     override def toString: String = "sell"
   }
 
-  def apply(id: String, side: Side, amount: Num, price: Option[Num] = None): Order =
+  def apply(id: String, side: Side, amount: Double, price: Option[Double] = None): Order =
     new Order(id, side, amount, price)
 
-  def unapply(order: Order): Option[(String, Side, Num, Option[Num])] =
+  def unapply(order: Order): Option[(String, Side, Double, Option[Double])] =
     Some((order.id, order.side, order.amount, order.price))
 
   object Side {
@@ -45,7 +47,7 @@ object Order {
   }
 
   sealed trait TickDirection {
-    override def toString = this match {
+    override def toString: String = this match {
       case Up => "up"
       case Down => "down"
     }
@@ -88,18 +90,18 @@ object Order {
   case object Taker extends Liquidity
 
   sealed trait OrderType
-  case object MarketOrder extends OrderType
-  case object LimitOrder extends OrderType
+  case object MarketOrderType extends OrderType
+  case object LimitOrderType extends OrderType
 
   object OrderType {
     def parseOrderType(str: String): OrderType = str match {
-      case "market" => MarketOrder
-      case "limit" => LimitOrder
+      case "market" => MarketOrderType
+      case "limit" => LimitOrderType
     }
   }
 
   implicit val orderEncoder: Encoder[Order] = new Encoder[Order] {
-    override def apply(o: Order) = Json.obj(
+    override def apply(o: Order): Json = Json.obj(
       "id" -> Json.fromString(o.id),
       "side" -> o.side.asJson,
       "amount" -> o.amount.asJson,
@@ -108,7 +110,7 @@ object Order {
   }
 
   implicit val orderDecoder: Decoder[Order] = new Decoder[Order] {
-    override def apply(c: HCursor) = for {
+    override def apply(c: HCursor): Either[DecodingFailure, Order] = for {
       id <- c.downField("id").as[String]
       side <- c.downField("side").as[Side]
       amount <- c.downField("amount").as[Double]
@@ -124,12 +126,12 @@ class Order(val id: String,
   def setAmount(newAmount: Double): Unit =
     amount = newAmount
 
-  override def equals(obj: Any) = obj match {
+  override def equals(obj: Any): Boolean = obj match {
     case Order(_id, _side, _amount, _price) =>
       id == _id && side == _side && amount == _amount && price == _price
     case _ => false
   }
 
-  override def hashCode() = Objects.hash(id, side, amount, price)
+  override def hashCode(): Int = Objects.hash(id, side, Double.box(amount), price)
 }
 

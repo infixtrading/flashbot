@@ -106,7 +106,7 @@ object TimeSeriesTap {
   def aggregateTrades(timeStep: Duration): Flow[(Instant, Double, Double), Candle, NotUsed] =
     _aggAsCandles[(Instant, Double, Double)](
       x => Candle.single(x._1.toEpochMilli * 1000, x._2, x._3),
-      (c, x) => c.addOHLCV(x._2, x._2, x._2, x._2, x._3),
+      (c, x) => c.observeOHLC(x._2, x._2, x._2, x._2, x._3),
       _._1)(timeStep)
 
   def aggregatePrices(timeStep: Duration): Flow[(Instant, Double), Candle, NotUsed] =
@@ -114,7 +114,7 @@ object TimeSeriesTap {
 
   def aggregateCandles(timeStep: Duration): Flow[Candle, Candle, NotUsed] =
     _aggAsCandles[Candle](c => c,
-      (a, b) => a.addOHLCV(b.open, b.high, b.low, b.close, b.volume),
+      (a, b) => a.observeOHLC(b.open, b.high, b.low, b.close, b.volume),
       _.instant)(timeStep)
 
   private def _aggAsCandles[T](build: T => Candle, reduce: (Candle, T) => Candle, inst: T => Instant)

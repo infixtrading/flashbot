@@ -3,7 +3,8 @@ package flashbot.models
 import flashbot.core.DeltaFmt.HasUpdateEvent
 import flashbot.core._
 import flashbot.models.Order.{Buy, Sell, Side}
-import flashbot.models.OrderBook.{Change, Delta, Done, Open, OrderBookSide}
+import flashbot.models.OrderBook.OrderBookSide.FifoIterator
+import flashbot.models.OrderBook.{Change, Delta, Done, FIFOQueue, Open, OrderBookSide}
 import flashbot.util.NumberUtils
 import io.circe.generic.JsonCodec
 import io.circe.{Decoder, Encoder}
@@ -26,10 +27,10 @@ class OrderBook(val tickSize: Double,
                 // Price ascending price levels for asks, with a queue of orders at each level.
                 // The LinkedHashMap allows us to maintain insertion order while preserving
                 // constant time order cancellation.
-                private var asks: OrderBookSide = null,
+                protected[flashbot] var asks: OrderBookSide = null,
 
                 // Same as the asks data structure, but the ordering of the price levels is reversed.
-                private var bids: OrderBookSide = null,
+                protected[flashbot] var bids: OrderBookSide = null,
 
                 // Used for streaming.
                 protected var lastUpdate: Option[Delta] = None)
@@ -50,14 +51,14 @@ class OrderBook(val tickSize: Double,
   // Sizes
   private var askCount = 0
   private var bidCount = 0
-  def size = askCount + bidCount
+  def size: Int = askCount + bidCount
 
   // Iterators and streams
   def asksIterator: Iterator[Order] =
     asks.index.values.stream.flatMap[Order](_.values.stream).iterator.asScala
   def bidsIterator: Iterator[Order] =
     bids.index.values.stream.flatMap[Order](_.values.stream).iterator.asScala
-  def iterator = bidsIterator ++ asksIterator
+  def iterator: Iterator[Order] = bidsIterator ++ asksIterator
   def stream: Stream[Order] = iterator.toStream
 
   // Arrays
@@ -95,13 +96,13 @@ class OrderBook(val tickSize: Double,
     _bidsArray
   }
 
-  override def equals(obj: Any) = obj match {
-    case book: OrderBook if size == book.size =>
-      stream.zip(book.stream).forall {
-        case (o1, o2) => o1 == o2
-      }
-    case _ => false
-  }
+//  override def equals(obj: Any) = obj match {
+//    case book: OrderBook if size == book.size =>
+//      stream.zip(book.stream).forall {
+//        case (o1, o2) => o1 == o2
+//      }
+//    case _ => false
+//  }
 
 //  override def hashCode() = {
 //    val b = new mutable.StringBuilder()
@@ -116,7 +117,7 @@ class OrderBook(val tickSize: Double,
     this
   }
 
-  override protected def step(event: Delta): OrderBook = event match {
+  override protected def _step(event: Delta): OrderBook = event match {
     case Open(orderId, price, size, side) =>
       open(orderId, price, size, side)
     case Done(orderId) =>
@@ -218,6 +219,21 @@ class OrderBook(val tickSize: Double,
       asks.index.firstDoubleKey() - bids.index.firstDoubleKey()
     else java.lang.Double.NaN
 
+  def ordersAtPriceIterator(price: Double): FifoIterator = {
+    val orders = ordersAtPrice(price)
+    if (orders != null) new FifoIterator(orders) else FifoIterator.empty
+  }
+
+  def ordersAtPrice(price: Double): FIFOQueue =
+    if (asks.index.containsKey(price)) asks.index.get(price)
+    else if (bids.index.containsKey(price)) bids.index.get(price)
+    else null
+
+  def quoteSideOfPrice(price: Double): QuoteSide =
+    if (asks.nonEmpty && price >= asks.bestPrice) Ask
+    else if (bids.nonEmpty && price <= bids.bestPrice) Bid
+    else null
+
   // Returns the unfilled remainder
 //  def fill(side: Side, quantity: Double, limit: Option[Double] = None): Double = {
 //
@@ -277,7 +293,7 @@ class OrderBook(val tickSize: Double,
                             approxPriceLimit: Double,
                             approxSize: Double,
                             matchPricesOut: Array[Double],
-                            matchQtysOut: Array[Double]) =
+                            matchQtysOut: Array[Double]): Double =
     sideOf(quoteSide).matchMutable(quoteSide, approxPriceLimit,
       approxSize, matchPricesOut, matchQtysOut)
 
@@ -285,17 +301,24 @@ class OrderBook(val tickSize: Double,
                            approxPriceLimit: Double,
                            approxSize: Double,
                            matchPricesOut: Array[Double],
-                           matchQtysOut: Array[Double]) =
+                           matchQtysOut: Array[Double]): Double =
     sideOf(quoteSide).matchSilent(quoteSide, approxPriceLimit,
       approxSize, matchPricesOut, matchQtysOut)
 
   override def matchSilentAvg(quoteSide: QuoteSide,
                               approxPriceLimit: Double,
-                              approxSize: Double) =
+                              approxSize: Double): (Double, Double) =
     sideOf(quoteSide).matchSilentAvg(quoteSide, approxPriceLimit, approxSize)
+
+
+  def priceIterator: Iterator[java.lang.Double] =
+    bids.priceIterator ++ asks.priceIterator
 }
 
 object OrderBook {
+
+  def apply(tickSize: Double): OrderBook = new OrderBook(tickSize)
+
   final case class SnapshotOrder(product: String,
                                  seq: Long,
                                  bid: Boolean,
@@ -361,18 +384,20 @@ object OrderBook {
   val askOrdering: Ordering[Double] = Ordering[Double]
   val bidOrdering: Ordering[Double] = askOrdering.reverse
 
-  class OrderBookSide(val index: Double2ObjectRBTreeMap[Object2ObjectLinkedOpenHashMap[String, Order]],
+  type FIFOQueue = Object2ObjectLinkedOpenHashMap[String, Order]
+
+  class OrderBookSide(val index: Double2ObjectRBTreeMap[FIFOQueue],
                       val tickSize: Double,
                       val side: QuoteSide) extends Matching {
 
-    val tickScale = NumberUtils.scale(tickSize)
-    def round(price: Double) = NumberUtils.round(price, tickScale)
+    val tickScale: Int = NumberUtils.scale(tickSize)
+    def round(price: Double): Double = NumberUtils.round(price, tickScale)
 
-    def isEmpty = index.isEmpty
-    def nonEmpty = !index.isEmpty
+    def isEmpty: Boolean = index.isEmpty
+    def nonEmpty: Boolean = !index.isEmpty
 
-    def bestPrice = index.firstDoubleKey()
-    def bestQty = index.values.iterator.next.values.iterator.next.amount
+    def bestPrice: Double = index.firstDoubleKey()
+    def bestQty: Double = index.values.iterator.next.values.iterator.next.amount
 
     def peek: Order = {
       val p = index.firstDoubleKey()
@@ -398,6 +423,8 @@ object OrderBook {
       order
     }
 
+    def priceIterator: Iterator[java.lang.Double] = index.keySet().iterator().asScala
+
     // Does not support qtys that are larger than the next order.
     private def removeQtyFromTopOrder(approxQty: Double): Unit = {
       val order = peek
@@ -411,9 +438,7 @@ object OrderBook {
 
     override def matchMutable(quoteSide: QuoteSide,
                               approxPriceLimit: Double,
-                              approxSize: Double,
-                              matchPricesOut: Array[Double],
-                              matchQtysOut: Array[Double]) = {
+                              approxSize: Double): Double = {
       assert(quoteSide == side)
 
       val size = NumberUtils.round8(approxSize)
@@ -423,18 +448,18 @@ object OrderBook {
       while (nonEmpty && remainder > 0 && side.isBetterOrEq(bestPrice, priceLimit)) {
         val matchQty = math.min(remainder, bestQty)
         remainder = NumberUtils.round8(remainder - matchQty)
-        matchPricesOut(i) = bestPrice
-        matchQtysOut(i) = matchQty
+        matchPrices(i) = bestPrice
+        matchQtys(i) = matchQty
         removeQtyFromTopOrder(matchQty)
         i += 1
       }
-      matchPricesOut(i) = -1
-      matchQtysOut(i) = -1
+      matchPrices(i) = -1
+      matchQtys(i) = -1
       remainder
     }
 
     def qtyAtPrice(d: Double): Double = {
-      var sum = 0
+      var sum = 0.0
       for (o <- index.get(d).values.iterator.asScala) {
         sum += o.amount
       }
@@ -443,9 +468,7 @@ object OrderBook {
 
     override def matchSilent(quoteSide: QuoteSide,
                              approxPriceLimit: Double,
-                             approxSize: Double,
-                             matchPricesOut: Array[Double],
-                             matchQtysOut: Array[Double]) = {
+                             approxSize: Double): Double = {
       assert(quoteSide == side)
 
       val size = NumberUtils.round8(approxSize)
@@ -460,12 +483,12 @@ object OrderBook {
         price = order.price.get
         val matchQty = math.min(remainder, order.amount)
         remainder = NumberUtils.round8(remainder - matchQty)
-        matchPricesOut(i) = price
-        matchQtysOut(i) = matchQty
+        matchPrices(i) = price
+        matchQtys(i) = matchQty
         i += 1
       }
-      matchPricesOut(i) = -1
-      matchQtysOut(i) = -1
+      matchPrices(i) = -1
+      matchQtys(i) = -1
       remainder
     }
 
@@ -498,12 +521,24 @@ object OrderBook {
   }
 
   object OrderBookSide {
-    def newAsks(tickSize: Double) = new OrderBookSide(
+    def newAsks(tickSize: Double): OrderBookSide = new OrderBookSide(
       new Double2ObjectRBTreeMap(DoubleComparators.NATURAL_COMPARATOR),
       tickSize, Ask)
-    def newBids(tickSize: Double) = new OrderBookSide(
+
+    def newBids(tickSize: Double): OrderBookSide = new OrderBookSide(
       new Double2ObjectRBTreeMap(DoubleComparators.OPPOSITE_COMPARATOR),
       tickSize, Bid)
+
+    class FifoIterator(queue: FIFOQueue) extends Iterator[Order] {
+      override def size: Int = queue.size()
+      private def it = queue.object2ObjectEntrySet().fastIterator().asScala.map(_.getValue)
+      override def hasNext: Boolean = it.hasNext
+      override def next(): Order = it.next()
+    }
+
+    object FifoIterator {
+      val empty: FifoIterator = new FifoIterator(new Object2ObjectLinkedOpenHashMap())
+    }
   }
 
 }

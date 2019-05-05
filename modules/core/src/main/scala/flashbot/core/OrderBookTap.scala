@@ -20,8 +20,8 @@ object OrderBookTap {
     *   b. Choose a random order from that price level to operate on.
     *   c. Randomly decide if this is a "open", "change", or "cancel" event.
     */
-  def apply(length: Long): Seq[OrderBook] = {
-    var initialBook = OrderBook()
+  def apply(tickSize: Double, length: Long): Seq[OrderBook] = {
+    var initialBook = new OrderBook(tickSize)
     var midpoint = 100
     var depth = 50
     val random = new Random()
@@ -31,13 +31,17 @@ object OrderBookTap {
       val price = priceInt.toDouble
       for (_ <- (0 to random.nextInt(100)).drop(1)) {
         val size = random.nextDouble * 20
-        initialBook = initialBook.open(UUID.randomUUID.toString, price, size, sideForPrice(price))
+        initialBook.open(UUID.randomUUID.toString, price, size, sideForPrice(price))
       }
     }
 
-    def selectRandomOrder(book: OrderBook, price: Double): Option[Order] =
-      book.asks.index.get(price).orElse(book.bids.index.get(price))
-        .map(orders => orders(random.nextInt(orders.size)))
+    def selectRandomOrder(book: OrderBook, price: Double): Option[Order] = {
+      val ordersIt = book.ordersAtPriceIterator(price)
+      if (ordersIt.size == 0) {
+        val idx = random.nextInt(ordersIt.size)
+        Some(ordersIt.drop(idx).next())
+      } else None
+    }
 
     (0 to length.toInt).scanLeft(initialBook) {
       case (book, _) =>

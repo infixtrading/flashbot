@@ -4,11 +4,31 @@ import flashbot.core.Report._
 import flashbot.core.ReportDelta._
 import flashbot.models._
 import io.circe._
+import io.circe.generic.JsonCodec
 import io.circe.generic.semiauto._
+
+import scala.collection.mutable
+
+@JsonCodec
+sealed trait PortfolioDelta extends ReportEvent
+
+@JsonCodec
+case class BalanceUpdated(account: Account, balance: Option[Double]) extends PortfolioDelta
+
+@JsonCodec
+case class PositionUpdated(market: Market, position: Option[Position]) extends PortfolioDelta
+
+@JsonCodec
+case class OrdersUpdated(market: Market, bookDelta: OrderBook.Delta) extends PortfolioDelta
+
+@JsonCodec
+case class BatchPortfolioUpdate(deltas: mutable.Buffer[PortfolioDelta]) extends PortfolioDelta
+
 
 /**
   * These are events that are emitted by the session, to be sent to the report.
   */
+@JsonCodec
 sealed trait ReportEvent
 
 object ReportEvent {
@@ -27,13 +47,13 @@ object ReportEvent {
                         price: Double,
                         micros: Long) extends ReportEvent with Timestamped
 
-  case class PositionEvent(market: Market,
-                           position: Position,
-                           micros: Long) extends ReportEvent with Timestamped
+//  case class PositionEvent(market: Market,
+//                           position: Position,
+//                           micros: Long) extends ReportEvent with Timestamped
 
-  case class BalanceEvent(account: Account,
-                          balance: Double,
-                          micros: Long) extends ReportEvent with Timestamped
+//  case class BalanceEvent(account: Account,
+//                          balance: Double,
+//                          micros: Long) extends ReportEvent with Timestamped
 
   sealed trait CandleEvent extends ReportEvent {
     def series: String
@@ -58,9 +78,9 @@ object ReportEvent {
 
   implicit def reportValueEvent(event: ValueEvent): ReportEvent = ReportValueEvent(event)
 
-  implicit def reportEventEn(implicit valEventEn: Encoder[ValueEvent]): Encoder[ReportEvent] =
-    deriveEncoder[ReportEvent]
-  implicit def reportEventDe(implicit valEventDe: Decoder[ValueEvent]): Decoder[ReportEvent] =
-    deriveDecoder[ReportEvent]
+//  implicit def reportEventEn(implicit valEventEn: Encoder[ValueEvent]): Encoder[ReportEvent] =
+//    deriveEncoder[ReportEvent]
+//  implicit def reportEventDe(implicit valEventDe: Decoder[ValueEvent]): Decoder[ReportEvent] =
+//    deriveDecoder[ReportEvent]
 
 }

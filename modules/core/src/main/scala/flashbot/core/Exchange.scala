@@ -41,7 +41,7 @@ abstract class Exchange {
 
 //  protected[flashbot] def syntheticCurrentMicros: Option[Long] = None
 
-  protected[flashbot] def simulateReceiveRequest(req: SimulatedRequest): Unit = {
+  protected[flashbot] def simulateReceiveRequest(micros: Long, req: SimulatedRequest): Unit = {
     throw new RuntimeException("Base exchange cannot simulate requests.")
   }
 

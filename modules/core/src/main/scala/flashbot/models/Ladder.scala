@@ -1,7 +1,7 @@
 package flashbot.models
 
-import flashbot.core.DeltaFmt.HasUpdateEvent
 import flashbot.core._
+import flashbot.core.DeltaFmt.HasUpdateEvent
 import flashbot.models.Ladder.LadderDelta
 import flashbot.models.Order.{Buy, Sell, Side}
 import flashbot.util.{DoubleMap, NumberUtils}
@@ -9,14 +9,14 @@ import io.circe._
 import io.circe.syntax._
 
 class Ladder(val depth: Int, val tickSize: Double,
-             private var asks: LadderSide = null,
-             private var bids: LadderSide = null)
-    extends HasUpdateEvent[Ladder, Seq[LadderDelta]] {
+             var asks: LadderSide = null,
+             var bids: LadderSide = null)
+  extends HasUpdateEvent[Ladder, Seq[LadderDelta]] with Matching {
 
   if (asks == null) asks = new LadderSide(depth, tickSize, Ask)
   if (bids == null) bids = new LadderSide(depth, tickSize, Bid)
 
-  override def clone() = new Ladder(depth, tickSize, asks.clone(), bids.clone())
+  def copy(): Ladder = new Ladder(depth, tickSize, asks.copy(), bids.copy())
 
   def copyInto(that: Ladder): Unit = {
     assert(that.depth == depth)
@@ -25,9 +25,8 @@ class Ladder(val depth: Int, val tickSize: Double,
     bids.copyInto(that.bids)
   }
 
-
   private val tickScale = NumberUtils.scale(tickSize)
-  def round(price: Double) = NumberUtils.round(price, tickScale)
+  def round(price: Double): Double = NumberUtils.round(price, tickScale)
 
   def ladderSideFor(side: QuoteSide): LadderSide = if (side == Bid) bids else asks
 
@@ -50,45 +49,26 @@ class Ladder(val depth: Int, val tickSize: Double,
     quoteSide.isBetterOrEq(ladder.bestPrice, round(unroundedPrice))
   }
 
-  private val currentMatchPrices = Array[Double](200)
-  private val currentMatchQtys = Array[Double](200)
 
   private var currentError: OrderError = _
 
-  def foreachMatch(fn: (Double, Double) => Unit) = {
-    var i = 0
-    var matchPrice = currentMatchPrices(0)
-    var matchQty = currentMatchQtys(0)
-    while (matchPrice != -1 && matchQty != -1) {
-      fn(matchPrice, matchQty)
-      i += 1
-      matchPrice = currentMatchPrices(i)
-      matchQty = currentMatchQtys(i)
-    }
-  }
-
-  def matchMarket(side: Side, size: Double, silent: Boolean): Double = {
-    val qSide = side.flip.toQuote
-    val ladderSide = ladderSideFor(qSide)
-    if (silent) ladderSide.matchSilent(currentMatchPrices, currentMatchQtys, qSide.worst, size)
-    else ladderSide.matchMutable(currentMatchPrices, currentMatchQtys, qSide.worst, size)
-  }
-
-  def matchLimit(side: Side, price: Double, size: Double, silent: Boolean): Double = {
-    val ladderSide = ladderSideFor(side.flip.toQuote)
-    if (silent) ladderSide.matchSilent(currentMatchPrices, currentMatchQtys, price, size)
-    else ladderSide.matchMutable(currentMatchPrices, currentMatchQtys, price, size)
-  }
+//  def matchMarket(side: Side, size: Double, silent: Boolean): Double = {
+//    val qSide = side.flip.toQuote
+//    val ladderSide = ladderSideFor(qSide)
+//    if (silent) ladderSide.matchSilent(matchPrices, matchQtys, qSide.worst, size)
+//    else ladderSide.matchMutable(matchPrices, matchQtys, qSide.worst, size)
+//  }
+//
+//  def matchLimit(side: Side, price: Double, size: Double, silent: Boolean): Double = {
+//    val ladderSide = ladderSideFor(side.flip.toQuote)
+//    if (silent) ladderSide.matchSilent(matchPrices, matchQtys, price, size)
+//    else ladderSide.matchMutable(matchPrices, matchQtys, price, size)
+//  }
 
 
-  override var lastUpdate: Option[Seq[LadderDelta]] = None
+  override var lastUpdate: MutableOpt[Seq[LadderDelta]] = MutableOpt.from(None)
 
-  override protected def withLastUpdate(d: Seq[LadderDelta]): Ladder = {
-    lastUpdate = Some(d)
-    this
-  }
-
-  override protected def step(deltas: Seq[LadderDelta]): Ladder = {
+  override protected def _step(deltas: Seq[LadderDelta]): Ladder = {
     deltas.foreach { d =>
       this.updateLevel(d.side, d.priceLevel, d.quantity)
     }
@@ -96,7 +76,10 @@ class Ladder(val depth: Int, val tickSize: Double,
   }
 
 
-
+  def qtyAtPrice(price: Double): Double =
+    if (price >= asks.bestPrice)
+      asks.qtyAtPrice(price)
+    else bids.qtyAtPrice(price)
 
 
 
@@ -139,6 +122,39 @@ class Ladder(val depth: Int, val tickSize: Double,
 //               limit: Double): Double = {
 //    depths.matchMutable(currentMatchPrices, currentMatchQtys, limit, size)
 //  }, order.price.get, order.amount)
+
+  def sideOf(qs: QuoteSide): LadderSide = if (qs == Ask) asks else bids
+  var lastMatchedSide: LadderSide = _
+
+  override def matchPrices: Array[Double] = lastMatchedSide.matchPrices
+  override def matchQtys: Array[Double] = lastMatchedSide.matchQtys
+
+  override def matchMutable(quoteSide: QuoteSide,
+                            approxPriceLimit: Double,
+                            approxSize: Double,
+                            matchPricesOut: Array[Double],
+                            matchQtysOut: Array[Double]): Double = {
+    lastMatchedSide = sideOf(quoteSide)
+    lastMatchedSide.matchMutable(quoteSide, approxPriceLimit,
+      approxSize, matchPricesOut, matchQtysOut)
+  }
+
+  override def matchSilent(quoteSide: QuoteSide,
+                           approxPriceLimit: Double,
+                           approxSize: Double,
+                           matchPricesOut: Array[Double],
+                           matchQtysOut: Array[Double]): Double = {
+    lastMatchedSide = sideOf(quoteSide)
+    lastMatchedSide.matchSilent(quoteSide, approxPriceLimit,
+      approxSize, matchPricesOut, matchQtysOut)
+  }
+
+  override def matchSilentAvg(quoteSide: QuoteSide,
+                              approxPriceLimit: Double,
+                              approxSize: Double): (Double, Double) = {
+    lastMatchedSide = sideOf(quoteSide)
+    lastMatchedSide.matchSilentAvg(quoteSide, approxPriceLimit, approxSize)
+  }
 }
 
 
@@ -170,13 +186,13 @@ object Ladder {
     })
 
   implicit val ladderDecoder: Decoder[Ladder] = new Decoder[Ladder] {
-    override def apply(c: HCursor) = for {
+    override def apply(c: HCursor): Either[DecodingFailure, Ladder] = for {
       depth <- c.downField("depth").as[Int]
       tickSize <- c.downField("tickSize").as[Double]
       ladder = new Ladder(depth, tickSize)
       askSeq <- c.downField("asks").as[Seq[LadderDelta]]
       bidSeq <- c.downField("bids").as[Seq[LadderDelta]]
-    } yield ladder.step(askSeq).step(bidSeq)
+    } yield ladder._step(askSeq)._step(bidSeq)
   }
 
   implicit val ladderEncoder: Encoder[Ladder] = Encoder.encodeJsonObject
@@ -188,7 +204,7 @@ object Ladder {
     ))
 
   implicit val ladderFmt: DeltaFmtJson[Ladder] =
-    DeltaFmt.updateEventFmtJson("ladder")
+    DeltaFmt.updateEventFmtJson[Ladder, Seq[LadderDelta]]("ladder")
 
 //  implicit def ladderFmt: DeltaFmtJson[Ladder] = new DeltaFmtJson[Ladder] {
 //    override type D = Seq[LadderDelta]

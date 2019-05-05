@@ -26,16 +26,16 @@ class LadderSide(val maxDepth: Int,
   var depth: Int = 0
   var totalSize: Double = 0
 
-  var tickScale = NumberUtils.scale(tickSize)
+  var tickScale: Int = NumberUtils.scale(tickSize)
 
   var bestPrice: Double = java.lang.Double.NaN
   var worstPrice: Double = java.lang.Double.NaN
 
   def bestQty: Double = array(firstIndex)
   def worstQty: Double = array(lastIndex)
-  def round(price: Double) = NumberUtils.round(price, tickScale)
+  def round(price: Double): Double = NumberUtils.round(price, tickScale)
 
-  override def clone() = {
+  def copy(): LadderSide = {
     val newLadder = new LadderSide(maxDepth, tickSize, side)
     copyInto(newLadder)
     newLadder
@@ -64,7 +64,7 @@ class LadderSide(val maxDepth: Int,
     * @param price the price level to update.
     * @param qty the qty at that price, or 0 to remove the price level.
     */
-  def update(price: Double, qty: Double) = {
+  def update(price: Double, qty: Double): Unit = {
     val level = levelOfPrice(price)
     if (qty == 0) {
       assert(depth > 0, "Cannot remove level from empty ladder")
@@ -180,12 +180,13 @@ class LadderSide(val maxDepth: Int,
   def priceOfLevel(level: Int): Double =
     round(side.worseBy(bestPrice, level * tickSize))
 
-  def nonEmpty = !isEmpty
+  def nonEmpty: Boolean = !isEmpty
 
-  override def matchMutable(matchPrices: Array[Double],
-                            matchQtys: Array[Double],
+  override def matchMutable(quoteSide: QuoteSide,
                             approxPriceLimit: Double,
                             approxSize: Double): Double = {
+    matchCount = 0
+    matchTotalQty = 0d
 
     val size = NumberUtils.round8(approxSize)
     val priceLimit = round(approxPriceLimit)
@@ -196,19 +197,24 @@ class LadderSide(val maxDepth: Int,
       remainder = NumberUtils.round8(remainder - matchQty)
       matchPrices(i) = bestPrice
       matchQtys(i) = matchQty
+      matchCount += 1
+      matchTotalQty = matchQty + matchTotalQty
       update(bestPrice, round(bestQty - matchQty))
       i += 1
     }
     matchPrices(i) = -1
     matchQtys(i) = -1
+    matchTotalQty = NumberUtils.round8(matchTotalQty)
     remainder
   }
 
 
-  override def matchSilent(matchPrices: Array[Double],
-                           matchQtys: Array[Double],
+  override def matchSilent(quoteSide: QuoteSide,
                            approxPriceLimit: Double,
                            approxSize: Double): Double = {
+    matchCount = 0
+    matchTotalQty = 0d
+
     val size = NumberUtils.round8(approxSize)
     val priceLimit = round(approxPriceLimit)
     var remainder = size
@@ -220,35 +226,42 @@ class LadderSide(val maxDepth: Int,
       remainder = NumberUtils.round8(remainder - matchQty)
       matchPrices(i) = price
       matchQtys(i) = matchQty
+      matchCount += 1
+      matchTotalQty = matchQty + matchTotalQty
       i += 1
       price = nextPrice(price)
     }
     matchPrices(i) = -1
     matchQtys(i) = -1
+    matchTotalQty = NumberUtils.round8(matchTotalQty)
     remainder
   }
 
-  override def matchSilentAvg(approxPriceLimit: Double,
+  override def matchSilentAvg(quoteSide: QuoteSide,
+                              approxPriceLimit: Double,
                               approxSize: Double): (Double, Double) = {
+    matchCount = 0
+    matchTotalQty = 0d
+
     val size = NumberUtils.round8(approxSize)
     val priceLimit = round(approxPriceLimit)
-    var totalMatched = 0d
     var unroundedAvgPrice: Double = java.lang.Double.NaN
     var break = false
     var price = bestPrice
     while (!break && side.isBetterOrEq(price, priceLimit)) {
-      val remainder = NumberUtils.round8(size - totalMatched)
+      val remainder = NumberUtils.round8(size - matchTotalQty)
       if (remainder > 0) {
         val qty = qtyAtPrice(price)
         val matchQty = math.min(remainder, qty)
         unroundedAvgPrice =
           if (java.lang.Double.isNaN(unroundedAvgPrice)) price
-          else (unroundedAvgPrice * totalMatched + price * matchQty) / (totalMatched + matchQty)
-        totalMatched = NumberUtils.round8(totalMatched + matchQty)
+          else (unroundedAvgPrice * matchTotalQty + price * matchQty) / (matchTotalQty + matchQty)
+        matchCount += 1
+        matchTotalQty = NumberUtils.round8(matchTotalQty + matchQty)
         price = nextPrice(price)
       } else break = true
     }
-    (totalMatched, unroundedAvgPrice)
+    (matchTotalQty, unroundedAvgPrice)
   }
 
   def hasNextPrice(curPrice: Double): Boolean =

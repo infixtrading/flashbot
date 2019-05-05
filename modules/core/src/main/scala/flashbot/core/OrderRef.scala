@@ -16,7 +16,7 @@ abstract class OrderRef {
   implicit protected[flashbot] var parent: OrderRef = _
 
   protected[flashbot] var _tag: String = ""
-  final def tag = _tag
+  final def tag: String = _tag
 
   lazy val id: String = randomUUID.toString
 
@@ -75,7 +75,7 @@ abstract class OrderRef {
     this
   }
 
-  private def bindAndRegister[T <: TradingSessionEvent](buf: debox.Buffer[T => Unit], cb: T => Unit) = {
+  private def bindAndRegister[T <: OrderEvent](buf: debox.Buffer[T => Unit], cb: T => Unit): Unit = {
     dirty = true
     buf += bind(cb)
   }
@@ -151,12 +151,12 @@ class PersistentQuote(val market: Market,
     qtys.foreachKey(ctx.cancel)
   }
 
-  def updatePrice(newPrice: Double) = {
+  def updatePrice(newPrice: Double): OrderRef = {
     price = newPrice
     submitRemainder()
   }
 
-  def updateSize(newSize: Double) = {
+  def updateSize(newSize: Double): OrderRef = {
     size = newSize
     submitRemainder()
   }
@@ -177,9 +177,9 @@ sealed abstract class BuiltInOrder extends OrderRef {
     // Submit the order directly to the exchange.
     exchange.order(submitCmd) onComplete {
 
-      case Success(RequestOk) => // Do nothing on success
+      case Success(RequestSuccess) => // Do nothing on success
 
-      case Success(RequestFailed(cause: ExchangeError)) => cause match {
+      case Success(RequestError(cause: ExchangeError)) => cause match {
         case err @ OrderRejectedError(request, reason) =>
           ctx.emit(OrderRejected(id, market.symbol, reason, err))
         case err: ExchangeError =>
@@ -195,9 +195,9 @@ sealed abstract class BuiltInOrder extends OrderRef {
 
   override def handleCancel() = {
     exchange.cancel(exchangeId, ctx.instruments(market)) onComplete {
-      case Success(RequestOk) => // Do nothing on success
+      case Success(RequestSuccess) => // Do nothing on success
 
-      case Success(RequestFailed(cause: ExchangeError)) =>
+      case Success(RequestError(cause: ExchangeError)) =>
         ctx.emit(CancelError(id, market.symbol, cause))
 
       case Failure(err) =>

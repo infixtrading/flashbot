@@ -1,17 +1,18 @@
 package flashbot.util
 
 import flashbot.core.InstrumentIndex
-import flashbot.models.{Account, Market, Portfolio}
+import flashbot.models.{Account, Market, Portfolio, Position}
 
+import scala.util.matching.Regex
 import scala.util.parsing.combinator.RegexParsers
 
 object ParsingUtils extends RegexParsers {
 
-  val key = raw"(.+)\.(.+)".r
-  val position = raw"(-?[0-9\.]+)(x[0-9\.]+)?(@[0-9\.]+)?".r
+  val key: Regex = raw"(.+)\.(.+)".r
+  val position: Regex = raw"(-?[0-9\.]+)(x[0-9\.]+)?(@[0-9\.]+)?".r
 
   object Optional {
-    def unapply[T](a: T) = if (null == a) Some(None) else Some(Some(a))
+    def unapply[T](a: T): Option[Option[T]] = if (null == a) Some(None) else Some(Some(a))
   }
 
   /**
@@ -26,15 +27,14 @@ object ParsingUtils extends RegexParsers {
       case (portfolio, item) => item.split("=").toList match {
         case k@key(exchange, symbol) :: pos :: Nil =>
           (pos, instruments.get(exchange, symbol).isDefined) match {
-
             case (position(size, Optional(None), Optional(None)), false) =>
               portfolio.withBalance(Account(exchange, symbol), size.toDouble)
 
             case (position(size, Optional(leverage), Optional(entry)), true) =>
               portfolio.withPosition(Market(exchange, symbol),
-                Position(size.toLong,
+                new Position(size.toLong,
                   leverage.map(l => l.slice(1, l.length).toDouble).getOrElse(1.0),
-                  entry.map(e => e.slice(1, e.length).toDouble)))
+                  entry.map(e => e.slice(1, e.length).toDouble).getOrElse(java.lang.Double.NaN)))
 
             case _ =>
               throw new RuntimeException(s"No such instrument: $k")

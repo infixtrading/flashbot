@@ -21,8 +21,8 @@ final case class OrderDone(orderId: String,
                            price: Option[Double],
                            remainingSize: Option[Double]) extends OrderEvent {
   def orderType: OrderType = (price, remainingSize) match {
-    case (Some(_), Some(_)) => LimitOrder
-    case (None, None) => Order.MarketOrder
+    case (Some(_), Some(_)) => LimitOrderType
+    case (None, None) => MarketOrderType
   }
 }
 
@@ -30,7 +30,7 @@ final case class OrderChange(orderId: String,
                              product: String,
                              price: Option[Double],
                              newSize: Double) extends OrderEvent {
-  def orderType: OrderType = if (price.isDefined) LimitOrder else Order.MarketOrder
+  def orderType: OrderType = if (price.isDefined) LimitOrderType else MarketOrderType
 }
 
 final case class OrderMatch(tradeId: String,

@@ -3,7 +3,7 @@ package flashbot.core
 import java.util
 
 import akka.{Done, NotUsed}
-import akka.actor.{ActorRef, Scheduler}
+import akka.actor.{ActorRef, Cancellable, Scheduler}
 import akka.event.LoggingAdapter
 import akka.stream.{KillSwitches, Materializer, OverflowStrategy, SharedKillSwitch}
 import akka.stream.scaladsl.{Keep, Source}
@@ -172,12 +172,16 @@ class TradingSession(val id: String,
     }
 
   def emit(tick: Tick): Unit = scheduler.emit(tick)
-  def setTimeout(delayMicros: Long, tick: Tick) = scheduler.setTimeout(delayMicros, tick)
-  def setTimeout(delayMicros: Long, fn: Runnable) = scheduler.setTimeout(delayMicros, fn)
-  def setInterval(delayMicros: Long, tick: Tick) = scheduler.setInterval(delayMicros, tick)
-  def setInterval(delayMicros: Long, fn: Runnable) = scheduler.setInterval(delayMicros, fn)
+  def setTimeout(delayMicros: Long, tick: Tick): Cancellable = scheduler.setTimeout(delayMicros, tick)
+  def setTimeout(delayMicros: Long, fn: Runnable): Cancellable = scheduler.setTimeout(delayMicros, fn)
+  def setInterval(delayMicros: Long, tick: Tick): Cancellable = scheduler.setInterval(delayMicros, tick)
+  def setInterval(delayMicros: Long, fn: Runnable): Cancellable = scheduler.setInterval(delayMicros, fn)
 
-  protected[server] val exchangeParams: java.util.HashMap[String, ExchangeParams] = buildExMap(_.params)
+  def reportEvent(event: ReportEvent): Unit = {
+    sessionEventsRef
+  }
+
+  protected[flashbot] val exchangeParams: java.util.HashMap[String, ExchangeParams] = buildExMap(_.params)
 
   // This must be a boxed Long. Intended to be used as a reference to the current tick
   // iteration in weak maps.
@@ -195,7 +199,7 @@ class TradingSession(val id: String,
         callback.fn.run()
 
       case req: SimulatedRequest =>
-        req.exchange.simulateReceiveRequest(req)
+        req.exchange.simulateReceiveRequest(scheduler.currentMicros, req)
 
       case event: OrderEvent =>
         val order = event match {
@@ -307,7 +311,7 @@ class TradingSession(val id: String,
   def buildExMap[T](fn: Exchange => T): java.util.HashMap[String, T] = {
     val map = new java.util.HashMap[String, T]()
     exchanges.foreach { ex =>
-      map(ex._1) = fn(ex._2)
+      map.put(ex._1, fn(ex._2))
     }
     map
   }
@@ -319,7 +323,7 @@ class TradingSession(val id: String,
         new RuntimeException("TradingSession has not been started."))
       else {
         ks.get.shutdown()
-        report
+        Future.successful(Done)
       }
     _ = { killSwitch.put(ks) }
   } yield Done
@@ -345,7 +349,7 @@ class TradingSession(val id: String,
 //        }
 
 
-  def getPortfolio = portfolioRef.getPortfolio(Some(instruments))
+  def getPortfolio: Portfolio = portfolioRef.getPortfolio(Some(instruments))
 
 //  def tryRound(market: Market, size: FixedSize) = {
 //    val instrument = instruments(market)
@@ -383,7 +387,7 @@ class TradingSession(val id: String,
 
     log.debug("Starting async setup")
 
-    def loadStrat[T](clazz: String) = for {
+    def loadStrat[T](clazz: String): Future[Strategy[T]] = for {
       // Load the strategy
       strategy <- Future.fromTry[Strategy[T]](loader.loadNewStrategy[T](clazz))
 
@@ -413,7 +417,10 @@ class TradingSession(val id: String,
         .toFut
 
       // Load strategy
-      strategy <- loadStrat(strategyClassName)
+      strategy <- {
+        val strat: Future[Strategy[_]] = loadStrat(strategyClassName)
+        strat
+      }
 
       // Load the instruments
       instruments <- loader.loadInstruments

@@ -3,8 +3,10 @@ package flashbot.core
 import java.util
 import java.util.Collections
 
+import flashbot.core.AssetKey.SecurityAsset
 import flashbot.models.{Account, FixedPrice, Market}
 import flashbot.util.MapUtil._
+import flashbot.core.AssetKey.implicits._
 
 class JPriceIndex(val conversions: Conversions) extends PriceIndex {
 
@@ -24,7 +26,7 @@ class JPriceIndex(val conversions: Conversions) extends PriceIndex {
   // Index to support the lookup of markets by their symbol.
   private val symbolsToMarkets = new util.HashMap[String, java.util.Set[Market]]()
 
-  override def getMarketsJava = priceMap.keySet()
+  override def getMarketsJava: util.Set[Market] = priceMap.keySet()
 
 
   /**
@@ -133,7 +135,7 @@ class JPriceIndex(val conversions: Conversions) extends PriceIndex {
         else getOrCompute(
           pricePathCacheApprox, source.security, target.security, {
             isNewPath = true
-            computePath(source.security, target.security, strict)
+            computePath[SecurityAsset, SecurityAsset](source.security, target.security, strict)
           })
 
 
@@ -147,13 +149,13 @@ class JPriceIndex(val conversions: Conversions) extends PriceIndex {
 
         pricePath.calcPriceOf(source, target)
 
-      } else NaN
+      } else java.lang.Double.NaN
     }
     timer.close()
     ret
   }
 
-  def get(symbol: String): Num = {
+  def get(symbol: String): Double = {
     val matches = symbolsToMarkets.get(symbol)
     if (matches != null) {
       if (matches.size() == 1) {
@@ -163,22 +165,22 @@ class JPriceIndex(val conversions: Conversions) extends PriceIndex {
         throw new RuntimeException(s"Ambiguous symbol. Found more than one price for $symbol.")
       }
     }
-    NaN
+    java.lang.Double.NaN
   }
 
-  def get(market: Market): Num = {
+  def get(market: Market): Double = {
     val fp = priceMap.get(market)
     if (fp != null) fp.price
-    else NaN
+    else java.lang.Double.NaN
   }
 
-  protected[flashbot] def setPrice(market: Market, price: Num)
+  protected[flashbot] def setPrice(market: Market, price: Double)
                                   (implicit instruments: InstrumentIndex): Unit = this.synchronized {
     // Update the price map.
     var isNewMarket = false
     val fp = getOrCompute(priceMap, market, {
       isNewMarket = true
-      new FixedPrice[AccountAsset](price, (market.baseAccount, market.quoteAccount))
+      new FixedPrice(price, (market.baseAccount, market.quoteAccount))
     })
 
     // If this doesn't introduce a new market to the system, update the price and also set the
@@ -197,7 +199,7 @@ class JPriceIndex(val conversions: Conversions) extends PriceIndex {
       }
     } else {
       // If it does introduce a new market, we have to clear our path caches.
-      pricePathCacheStrict = hashMap2d[AssetKey, PricePathEntry]
+      pricePathCacheStrict = hashMap2d[Any, PricePathEntry]
       pricePathCacheApprox = hashMap2d[String, PricePathEntry]
       marketDependencies = hashMap2d[Account, java.util.Set[PricePathEntry]]
 
@@ -334,7 +336,7 @@ class JPriceIndex(val conversions: Conversions) extends PriceIndex {
 
     private def recalc(): Unit = {
       if (isDirty) {
-        cachedPrice = `1`
+        cachedPrice = 1.0
         if (!isEmpty) {
           var idx = 0
           var acc = from.get
@@ -350,7 +352,7 @@ class JPriceIndex(val conversions: Conversions) extends PriceIndex {
               cachedPrice *= fp.price
             } else if (equiv(acc.security, fp.quote.security)) {
               acc = fp.base.account
-              cachedPrice *= (`1` / fp.price)
+              cachedPrice *= (1.0 / fp.price)
             } else throw new RuntimeException(s"Invalid price path for accounts $from to $to: ${path.toSeq}")
             idx += 1
           }
@@ -359,25 +361,25 @@ class JPriceIndex(val conversions: Conversions) extends PriceIndex {
       }
     }
 
-    def calcPriceOf(fromKey: AssetKey, toKey: AssetKey): Num = {
+    def calcPriceOf[B: AssetKey, Q: AssetKey](fromKey: B, toKey: Q): Double = {
       recalc()
       if (isEmpty) cachedPrice
       else if (equiv(from.get.security, fromKey.security) && equiv(to.get.security, toKey.security)) cachedPrice
-      else if (equiv(from.get.security, toKey.security) && equiv(to.get.security, fromKey.security)) `1` / cachedPrice
+      else if (equiv(from.get.security, toKey.security) && equiv(to.get.security, fromKey.security)) 1.0 / cachedPrice
       else throw new RuntimeException(s"Invalid keys in priceFor: ($fromKey, $toKey). " +
         s"Expected keys equivalent to ($from, $to)")
     }
   }
 
-  override def getOpt(symbol: String): Option[Num] = {
-    val ret: Num = get(symbol)
-    if (ret.isNaN) None
+  override def getOpt(symbol: String): Option[Double] = {
+    val ret: Double = get(symbol)
+    if (java.lang.Double.isNaN(ret)) None
     else Some(ret)
   }
 
-  override def getOpt(market: Market): Option[Num] = {
-    val ret: Num = get(market)
-    if (ret.isNaN) None
+  override def getOpt(market: Market): Option[Double] = {
+    val ret: Double = get(market)
+    if (java.lang.Double.isNaN(ret)) None
     else Some(ret)
   }
 }

@@ -9,8 +9,8 @@ case class Candle(micros: Long,
                   close: Double,
                   volume: Double) extends Timestamped with Priced {
 
-  def addOHLCV(open: Double, high: Double, low: Double,
-               close: Double, volume: Double): Candle = copy(
+  def observeOHLC(open: Double, high: Double, low: Double,
+                  close: Double, volume: Double): Candle = copy(
     high = this.high max high,
     low = this.low min low,
     close = close,
@@ -27,7 +27,7 @@ object Candle {
   implicit val candleEn: Encoder[Candle] = deriveEncoder
   implicit val candleDe: Decoder[Candle] = deriveDecoder
 
-  def single(micros: Long, price: Double, volume: Double = 0) =
+  def single(micros: Long, price: Double, volume: Double = 0): Candle =
     Candle(micros, price, price, price, price, volume)
 
 //  case class CandleMD(source: String, topic: String, data: Candle)

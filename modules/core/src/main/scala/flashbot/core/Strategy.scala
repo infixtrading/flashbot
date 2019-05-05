@@ -94,7 +94,7 @@ abstract class Strategy[P] extends DataHandler {
       initialPortfolio
     }
 
-  override def aroundOnData(data: MarketData[_])(implicit ctx: TradingSession) = {
+  override def aroundOnData(data: MarketData[_])(implicit ctx: TradingSession): Unit = {
     // Call the side effectful function to ensure initialPortfolio is set.
     getInitialPortfolio()
 
@@ -127,21 +127,21 @@ abstract class Strategy[P] extends DataHandler {
     * @param ctx the trading session instance.
     * @return the target with an id that uniquely identifies this quote.
     */
-  protected def limitOrder(market: Market,
-                           size: FixedSize,
-                           price: Double,
-                           key: String,
-                           postOnly: Boolean = false)
-                          (implicit ctx: TradingSession): OrderTarget = {
-    _sendOrder(OrderTarget(
-      market,
-      key,
-      size,
-      Some(price),
-      once = Some(false),
-      postOnly = Some(postOnly)
-    ))
-  }
+//  protected def limitOrder(market: Market,
+//                           size: FixedSize,
+//                           price: Double,
+//                           key: String,
+//                           postOnly: Boolean = false)
+//                          (implicit ctx: TradingSession): OrderTarget = {
+//    _sendOrder(OrderTarget(
+//      market,
+//      key,
+//      size,
+//      Some(price),
+//      once = Some(false),
+//      postOnly = Some(postOnly)
+//    ))
+//  }
 
   /**
     * Submit a new limit order to the exchange.
@@ -160,20 +160,20 @@ abstract class Strategy[P] extends DataHandler {
     * @param ctx the trading session instance.
     * @return the order target with a randomly generated id.
     */
-  protected def limitOrderOnce(market: Market,
-                               size: FixedSize,
-                               price: BigDecimal,
-                               postOnly: Boolean = false)
-                              (implicit ctx: TradingSession): OrderTarget = {
-    _sendOrder(OrderTarget(
-      market,
-      UUID.randomUUID().toString,
-      size,
-      Some(price),
-      once = Some(true),
-      postOnly = Some(postOnly)
-    ))
-  }
+//  protected def limitOrderOnce(market: Market,
+//                               size: FixedSize,
+//                               price: BigDecimal,
+//                               postOnly: Boolean = false)
+//                              (implicit ctx: TradingSession): OrderTarget = {
+//    _sendOrder(OrderTarget(
+//      market,
+//      UUID.randomUUID().toString,
+//      size,
+//      Some(price),
+//      once = Some(true),
+//      postOnly = Some(postOnly)
+//    ))
+//  }
 
   /**
     * Submit a market order to the exchange.
@@ -184,27 +184,27 @@ abstract class Strategy[P] extends DataHandler {
     * @param ctx the trading session instance.
     * @return the order target with a randomly generated id.
     */
-  protected def marketOrder(market: Market, size: FixedSize)
-                           (implicit ctx: TradingSession): OrderTarget = {
-    _sendOrder(OrderTarget(
-      market,
-      UUID.randomUUID().toString,
-      size,
-      None
-    ))
-  }
+//  protected def marketOrder(market: Market, size: FixedSize)
+//                           (implicit ctx: TradingSession): OrderTarget = {
+//    _sendOrder(OrderTarget(
+//      market,
+//      UUID.randomUUID().toString,
+//      size,
+//      None
+//    ))
+//  }
 
-  private def _transformTarget(target: OrderTarget)
-                              (implicit ctx: TradingSession): OrderTarget = (for {
-    roundedSize <- ctx.tryRound(target.market, target.size).orElse(Some(target.size))
-  } yield target.copy(size = roundedSize)).get
-
-  private def _sendOrder(targetSpec: OrderTarget)
-                        (implicit ctx: TradingSession): OrderTarget = {
-    val target = _transformTarget(targetSpec)
-    ctx.send(target)
-    target
-  }
+//  private def _transformTarget(target: OrderTarget)
+//                              (implicit ctx: TradingSession): OrderTarget = (for {
+//    roundedSize <- ctx.tryRound(target.market, target.size).orElse(Some(target.size))
+//  } yield target.copy(size = roundedSize)).get
+//
+//  private def _sendOrder(targetSpec: OrderTarget)
+//                        (implicit ctx: TradingSession): OrderTarget = {
+//    val target = _transformTarget(targetSpec)
+//    ctx.send(target)
+//    target
+//  }
 
   /**
     * The method used by the trading session to provide a market data stream that corresponds
@@ -278,11 +278,10 @@ abstract class Strategy[P] extends DataHandler {
     def build: Json = implicitly[SchemaAnnotator[T]].annotate(schema)
   }
 
-
-  implicit def sessionPrices(implicit ctx: TradingSession): PriceIndex = ctx.getPrices
-  implicit def sessionInstruments(implicit ctx: TradingSession): InstrumentIndex = ctx.getInstruments
+  implicit def sessionPrices(implicit ctx: TradingSession): PriceIndex = ctx.prices
+  implicit def sessionInstruments(implicit ctx: TradingSession): InstrumentIndex = ctx.instruments
   implicit def sessionExchangeParams(implicit ctx: TradingSession)
-    : Map[String, ExchangeParams] = ctx.getExchangeParams
+    : java.util.Map[String, ExchangeParams] = ctx.exchangeParams
   implicit def metrics(implicit ctx: TradingSession): Metrics = ServerMetrics
 }
 

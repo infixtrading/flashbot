@@ -16,6 +16,8 @@ trait EventScheduler {
   protected[flashbot] def emit(event: Tick): Unit
 
   def fastForward(untilMicros: Long, fn: Tick => Unit): Unit
+
+  def currentMicros: Long = -1
 }
 
 
@@ -61,6 +63,8 @@ class EventLoopScheduler extends EventScheduler {
   }
 
   override protected def emit(event: Tick): Unit = this.setTimeout(0, event)
+
+  override def currentMicros: Long = eventLoop.get.currentMicros
 }
 
 class RealTimeScheduler(akkaScheduler: Scheduler, tickRef: ActorRef) extends EventScheduler {

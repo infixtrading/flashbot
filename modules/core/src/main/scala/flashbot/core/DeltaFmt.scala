@@ -72,7 +72,7 @@ object DeltaFmt {
   implicit val stringVarFmt: DeltaFmtJson[java.lang.String] = defaultFmtJson("string")
   implicit val booleanVarFmt: DeltaFmtJson[java.lang.Boolean] = defaultFmtJson("boolean")
 
-  def formats[T](name: String) = DataType[T](name).fmtJson
+  def formats[T](name: String): DeltaFmtJson[T] = DataType[T](name).fmtJson
 
   def apply[T: DeltaFmtJson]: DeltaFmtJson[T] = implicitly[DeltaFmtJson[T]]
 
@@ -90,11 +90,14 @@ object DeltaFmt {
 
 
   trait HasUpdateEvent[T, D] {
-    def lastUpdate: Option[D]
-    protected def withLastUpdate(d: D): T
-    protected def step(delta: D): T
-    final def update(d: D): T =
-      step(d).asInstanceOf[this.type].withLastUpdate(d)
+    final def update(d: D): T = {
+      val ret = _step(d)
+      lastUpdate.set(d)
+      ret
+    }
+
+    def lastUpdate: MutableOpt[D]
+    protected def _step(delta: D): T
   }
 
   def updateEventFmtJson[T <: HasUpdateEvent[T, E], E](name: String)

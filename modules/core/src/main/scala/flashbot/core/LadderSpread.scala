@@ -38,22 +38,22 @@ class LadderSpread(val config: SpreadConfig) {
     * @param formula our spread formula which transforms the right price into one that can be
     *                subtracted from the left price to calculate a spread.
     */
-  def ladder(formula: Double => Double): Ladder = {
-
-    // Convert the right ladder quotes to the denominations of the left one.
-    val converted = rightLadder.map {
-      case (price, quantity) =>
-        val newPrice = formula(price)
-        val newQty = (quantity * price) / newPrice
-        (newPrice, newQty)
-    }
-
-    // Intersect the two ladders
-    leftLadder.intersect(converted)
-  }
-
-  def rightLadder: Ladder = ladders(config.right.instrument.symbol)
-  def leftLadder: Ladder = ladders(config.left.instrument.symbol)
+//  def ladder(formula: Double => Double): Ladder = {
+//
+//    // Convert the right ladder quotes to the denominations of the left one.
+//    val converted = rightLadder.map {
+//      case (price, quantity) =>
+//        val newPrice = formula(price)
+//        val newQty = (quantity * price) / newPrice
+//        (newPrice, newQty)
+//    }
+//
+//    // Intersect the two ladders
+//    leftLadder.intersect(converted)
+//  }
+//
+//  def rightLadder: Ladder = ladders(config.right.instrument.symbol)
+//  def leftLadder: Ladder = ladders(config.left.instrument.symbol)
 }
 
 object LadderSpread {

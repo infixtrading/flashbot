@@ -13,8 +13,8 @@ case class BotState(config: Option[BotConfig],
                     enabled: Boolean,
                     lastHeartbeatMicros: Long,
                     sessions: Seq[TradingSessionState]) {
-  def pushSession(session: TradingSessionState) = copy(sessions = sessions :+ session)
-  def updateLastSession(fn: TradingSessionState => TradingSessionState) =
+  def pushSession(session: TradingSessionState): BotState = copy(sessions = sessions :+ session)
+  def updateLastSession(fn: TradingSessionState => TradingSessionState): BotState =
     copy(sessions = sessions.updated(sessions.length - 1, fn(sessions.last)))
 }
 
@@ -61,21 +61,13 @@ case class TradingEngineState(bots: Map[String, BotState] = Map.empty,
     /**
       * A bot session started.
       */
-    case SessionStarted(id, Some(botId), strategyKey, strategyParams, mode,
-        micros, portfolio, report) =>
-      val session = TradingSessionState(id, strategyKey, strategyParams,
-        mode, micros, portfolio, report)
+    case SessionStarted(id, Some(botId), strategyKey, strategyParams, mode, micros, report) =>
+      val session = TradingSessionState(id, strategyKey, strategyParams, mode, micros, report)
       copy(bots = bots + (botId ->
         bots.getOrElse(botId, BotState.empty(micros)).pushSession(session) ))
 
-    /**
-      * A bot session updated.
-      */
-    case e: SessionUpdated => e match {
-      case ReportUpdated(botId, delta) =>
-        copy(bots = bots + (botId -> bots(botId).updateLastSession(_.updateReport(delta))))
-      case PortfolioUpdated(botId, delta) =>
-        copy(bots = bots + (botId -> bots(botId).updateLastSession(???)))
+    case ReportUpdated(botId, delta) =>
+      copy(bots = bots + (botId -> bots(botId).updateLastSession(_.updateReport(delta))))
 
 //
 //      case BalancesUpdated(botId, account, balance) =>
@@ -88,7 +80,7 @@ case class TradingEngineState(bots: Map[String, BotState] = Map.empty,
 //          portfolio = session.portfolio.withPosition(market, position)
 //        ))))
 
-    }
+//    }
   }
 
   def expireBots(now: Instant): TradingEngineState =

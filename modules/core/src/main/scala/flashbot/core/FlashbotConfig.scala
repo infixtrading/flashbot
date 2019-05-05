@@ -23,7 +23,7 @@ case class FlashbotConfig(engineRoot: String,
                           grafana: GrafanaConfig,
                           conf: Config,
                           db: Config) {
-  def noIngest = copy(ingest = ingest.copy(enabled = Seq.empty))
+  def noIngest: FlashbotConfig = copy(ingest = ingest.copy(enabled = Seq.empty))
 }
 
 object FlashbotConfig {
@@ -31,18 +31,18 @@ object FlashbotConfig {
 
   implicit val durationDecoder: Decoder[FiniteDuration] = time.DurationDecoder
 
-  val DefaultTTL = 0 seconds
+  val DefaultTTL: FiniteDuration = 0 seconds
 
   @ConfiguredJsonCodec(decodeOnly = true)
   case class IngestConfig(enabled: Seq[String], backfill: Seq[String], retention: Seq[Seq[String]]) {
     def ingestMatchers: Set[DataPath[Any]] = enabled.toSet.map(DataPath.parse)
     def backfillMatchers: Set[DataPath[Any]] = backfill.toSet.map(DataPath.parse)
 
-    def filterIngestSources(sources: Set[String]) = sources.filter(src =>
+    def filterIngestSources(sources: Set[String]): Set[String] = sources.filter(src =>
       ingestMatchers.exists(_.matches(s"$src/*/*")))
-    def filterBackfillSources(sources: Set[String]) = sources.filter(src =>
+    def filterBackfillSources(sources: Set[String]): Set[String] = sources.filter(src =>
       backfillMatchers.exists(_.matches(s"$src/*/*")))
-    def filterSources(sources: Set[String]) =
+    def filterSources(sources: Set[String]): Set[String] =
       filterIngestSources(sources) ++ filterBackfillSources(sources)
 
     def retentionFor(path: DataPath[_]): Option[FiniteDuration] =

@@ -3,6 +3,7 @@ package flashbot.core
 import java.time.{Instant, ZoneOffset, ZonedDateTime}
 
 import flashbot.core.ReportEvent.{CandleAdd, CandleUpdate}
+import flashbot.models.{Candle, Market}
 import flashbot.server.ServerMetrics
 import flashbot.util.time._
 import org.ta4j.core.indicators.AbstractIndicator
@@ -20,23 +21,23 @@ trait TimeSeriesMixin extends DataHandler { self: Strategy[_] =>
   // The number of bars in the duration
   private def barCount(duration: FiniteDuration): Int = (duration.toMicros / barSize.toMicros).toInt
 
-  private var allSeries: Map[String, BaseTimeSeries] = Map.empty
+  private var allSeries: Map[String, TimeSeries] = Map.empty
 
   private var closePriceIndicators: Map[String, ClosePriceIndicator] = Map.empty
 
-  def getPrice(market: Market): Num =
-    valueOf(closePrices(market)).doubleValue().num
+  def getPrice(market: Market): Double = valueOf(closePrices(market)).doubleValue()
 
   private def getGlobalIndex(micros: Long): Long = micros / (barSize.toMillis * 1000)
 
   def barToCandle(bar: Bar): Candle = {
     val micros = bar.getBeginTime.toInstant.toEpochMilli * 1000
     Candle(micros,
-      bar.getOpenPrice.getDelegate.doubleValue().num,
-      bar.getMaxPrice.getDelegate.doubleValue().num,
-      bar.getMinPrice.getDelegate.doubleValue().num,
-      bar.getClosePrice.getDelegate.doubleValue().num,
-      bar.getVolume.getDelegate.doubleValue().num)
+      bar.getOpenPrice.getDelegate.doubleValue(),
+      bar.getMaxPrice.getDelegate.doubleValue(),
+      bar.getMinPrice.getDelegate.doubleValue(),
+      bar.getClosePrice.getDelegate.doubleValue(),
+      bar.getVolume.getDelegate.doubleValue()
+    )
   }
 
   def recordTimeSeries(key: String, micros: Long, value: Double)
@@ -98,13 +99,13 @@ trait TimeSeriesMixin extends DataHandler { self: Strategy[_] =>
     updateLastBar(series, addedBars > 0)
 
     // Update the report
-    val ret = if (addedBars > 0) {
-      ctx.send((1 to addedBars).map(_ - 1).reverse.map(i =>
-        CandleAdd(key, barToCandle(series.getBar(series.getEndIndex - i)))):_*)
-    } else ctx.send(CandleUpdate(key, barToCandle(series.getLastBar)))
+    if (addedBars > 0)
+      (1 to addedBars).map(_ - 1).reverse.map(i =>
+          CandleAdd(key, barToCandle(series.getBar(series.getEndIndex - i))))
+        .foreach(ctx.reportEvent(_))
+    else ctx.reportEvent(CandleUpdate(key, barToCandle(series.getLastBar)))
 
     timer.close()
-    ret
   }
 
     private def _recordPoint(key: String, micros: Long, price: Double,
@@ -124,11 +125,11 @@ trait TimeSeriesMixin extends DataHandler { self: Strategy[_] =>
     _record(priceKey(market.exchange, market.symbol), candle.micros, (ts, isNewBar) => {
       val curBar = ts.getLastBar
       val fn = ts.function
-      val newOpen = if (isNewBar) fn(candle.open.toDouble()) else curBar.getOpenPrice
-      val newHigh = if (isNewBar) fn(candle.high.toDouble()) else curBar.getMaxPrice.max(fn(candle.high.toDouble()))
-      val newLow = if (isNewBar) fn(candle.low.toDouble()) else curBar.getMinPrice.min(fn(candle.low.toDouble()))
-      val newClose = fn(candle.close.toDouble())
-      val newVolume = curBar.getVolume.plus(fn(candle.volume.toDouble()))
+      val newOpen = if (isNewBar) fn(candle.open) else curBar.getOpenPrice
+      val newHigh = if (isNewBar) fn(candle.high) else curBar.getMaxPrice.max(fn(candle.high))
+      val newLow = if (isNewBar) fn(candle.low) else curBar.getMinPrice.min(fn(candle.low))
+      val newClose = fn(candle.close)
+      val newVolume = curBar.getVolume.plus(fn(candle.volume))
       val newBar = new BaseBar(curBar.getTimePeriod, curBar.getEndTime, newOpen,
         newHigh, newLow, newClose, newVolume, fn(0))
       ts.addBar(newBar, true)
@@ -151,14 +152,14 @@ trait TimeSeriesMixin extends DataHandler { self: Strategy[_] =>
   def priceKey(exchange: String, product: String): String = s"$exchange.$product"
   def priceKey(market: Market): String = priceKey(market.exchange, market.symbol)
 
-  abstract override def aroundOnData(md: MarketData[_])(implicit ctx: TradingSession) = {
+  abstract override def aroundOnData(md: MarketData[_])(implicit ctx: TradingSession): Unit = {
     md.data match {
       case trade: Trade =>
         recordTrade((md.source, md.topic), md.micros, trade.price, Some(trade.size))
       case candle: Candle =>
         recordCandle((md.source, md.topic), candle)
       case priced: Priced =>
-        recordTrade((md.source, md.topic), md.micros, priced.price.toDouble())
+        recordTrade((md.source, md.topic), md.micros, priced.price)
       case _ =>
     }
 
@@ -166,7 +167,7 @@ trait TimeSeriesMixin extends DataHandler { self: Strategy[_] =>
 
     val t1 = ServerMetrics.startTimer("ts_equity_calc", Map("strategy" -> self.title))
     val initialPortfolio = self.getInitialPortfolio()
-    val equities: Option[(Num, Num)] =
+    val equities: Option[(Double, Double)] =
       if (initialPortfolio.isDefined) {
         val equity = ctx.getPortfolio.getEquity()
         val buyAndHold = initialPortfolio.get.getEquity()
@@ -175,8 +176,8 @@ trait TimeSeriesMixin extends DataHandler { self: Strategy[_] =>
     t1.close()
 
     if (equities.isDefined) {
-      recordTimeSeries("equity", md.micros, equities.get._1.toDouble())
-      recordTimeSeries("buy_and_hold", md.micros, equities.get._2.toDouble())
+      recordTimeSeries("equity", md.micros, equities.get._1)
+      recordTimeSeries("buy_and_hold", md.micros, equities.get._2)
     }
   }
 

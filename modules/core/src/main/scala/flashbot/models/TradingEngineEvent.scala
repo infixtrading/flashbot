@@ -12,7 +12,6 @@ case class SessionStarted(id: String,
                           strategyParams: Json,
                           mode: TradingSessionMode,
                           micros: Long,
-                          portfolio: Portfolio,
                           report: Report) extends TradingEngineEvent
 
 case class SessionInitializationError(cause: Exception,
@@ -25,13 +24,10 @@ case class SessionInitializationError(cause: Exception,
 
 case class EngineStarted(micros: Long) extends TradingEngineEvent
 
-sealed trait SessionUpdated extends TradingEngineEvent {
-  def botId: String
-}
-case class ReportUpdated(botId: String,
-                         delta: ReportDelta) extends SessionUpdated
-case class PortfolioUpdated(botId: String,
-                            delta: PortfolioDelta) extends SessionUpdated
+//sealed trait SessionUpdatedEvent extends TradingEngineEvent {
+//  def botId: String
+//}
+case class ReportUpdated(botId: String, delta: ReportDelta) extends TradingEngineEvent
 
 case class BotConfigured(micros: Long, id: String, config: BotConfig) extends TradingEngineEvent
 

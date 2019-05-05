@@ -54,21 +54,28 @@ object AssetKey {
     implicit object AccountIsAsset extends AssetKey[Account] {
       override def isAccount = true
       override def isSymbol = false
-      override def security(t: Account) = t.security
+      override def security(t: Account): String = t.security
       override def exchangeOpt(t: Account) = Some(t.exchange)
-      override def withExchange(t: Account, ex: String) = t.copy(exchange = ex)
+      override def withExchange(t: Account, ex: String): Account = t.copy(exchange = ex)
     }
 
     implicit object SecurityIsAsset extends AssetKey[SecurityAsset] {
       override def isAccount = false
       override def isSymbol = true
-      override def security(t: SecurityAsset) = t
-      override def exchangeOpt(t: SecurityAsset) = None
+      override def security(t: SecurityAsset): String = t
+      override def exchangeOpt(t: SecurityAsset): None.type = None
       override def withExchange(t: SecurityAsset, ex: String) = Account(ex, t)
     }
 
     implicit def buildSecurityAsset(sym: String): SecurityAsset = Tag[String, AssetKeyTag](sym)
     implicit def unwrapSecurityAsset(tag: SecurityAsset): String = Tag.unwrap(tag)
+
+    implicit class AssetKeyOps[T: AssetKey](key: T) extends {
+      def security: String = implicitly[AssetKey[T]].security(key)
+      def account: Account =
+        if (implicitly[AssetKey[T]].isAccount) key.asInstanceOf[Account]
+        else throw new RuntimeException(s"$key is not an account")
+    }
   }
 
 //  def isAccount[T: AssetKey](x: T): Boolean = implicitly[AssetKey[T]].isAccount

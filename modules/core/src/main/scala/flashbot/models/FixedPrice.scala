@@ -9,8 +9,8 @@ class FixedPrice[B: AssetKey, Q: AssetKey](var price: Double,
 
   this.price = round8(price)
 
-  def base = pair._1
-  def quote = pair._2
+  def base: B = pair._1
+  def quote: Q = pair._2
 
   def flip: FixedPrice[Q, B] =
     new FixedPrice[Q, B](1.0 / price, (quote, base), !flipped)

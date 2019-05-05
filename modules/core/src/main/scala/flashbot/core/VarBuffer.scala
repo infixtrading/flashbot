@@ -15,9 +15,9 @@ import scala.reflect.{ClassTag, classTag}
   * used for the trading session. This is for loading vars into memory that exist in the report
   * from a previous run of the bot.
   */
-protected[flashbot] class VarBuffer(initialReportVals: Map[String, Any]) {
+protected[flashbot] class VarBuffer(initialReportVals: debox.Map[String, Any]) {
 
-  val vars = mutable.Map.empty[String, VarState]
+  val vars = debox.Map.empty[String, VarState]
 
   /**
     * Set and load a var. Update session. Handle errors.
@@ -93,8 +93,8 @@ protected[flashbot] class VarBuffer(initialReportVals: Map[String, Any]) {
     * Delete the var, no matter the type. Remove from session and from buffer.
     */
   def delete(key: String)(implicit ctx: TradingSession): Unit = {
-    sendValEvents(RemoveValueEvent(key))
-    vars - key
+    sendValEvent(RemoveValueEvent(key))
+    vars.remove(key)
   }
 
   /**
@@ -158,9 +158,9 @@ protected[flashbot] class VarBuffer(initialReportVals: Map[String, Any]) {
                    (implicit ctx: TradingSession, fmt: DeltaFmtJson[T]): Unit = {
     if (prev.isDefined) {
       val delta = fmt.diff(prev.get, current.value)
-      sendValEvents(UpdateValueEvent(current.key, fmt.deltaEn(delta)))
+      sendValEvent(UpdateValueEvent(current.key, fmt.deltaEn(delta)))
     } else {
-      sendValEvents(PutValueEvent(current.key, fmt.fmtName, fmt.modelEn(current.value)))
+      sendValEvent(PutValueEvent(current.key, fmt.fmtName, fmt.modelEn(current.value)))
     }
   }
 
@@ -175,7 +175,7 @@ protected[flashbot] class VarBuffer(initialReportVals: Map[String, Any]) {
 
   def warn(msg: String)(implicit ctx: TradingSession): Unit = {
     println(msg)
-    ctx.send(LogMessage(msg))
+//    ctx.send(LogMessage(msg))
   }
 }
 
@@ -191,7 +191,7 @@ protected[flashbot] object VarBuffer {
   case object Tombstone extends VarState
   case class Loaded[T](instance: Var[T]) extends VarState
 
-  def sendValEvents(valEvents: ValueEvent*)(implicit ctx: TradingSession) = {
-    ctx.send(valEvents.map(ReportValueEvent):_*)
+  def sendValEvent(valEvent: ValueEvent)(implicit ctx: TradingSession): Unit = {
+    ctx.reportEvent(ReportValueEvent(valEvent))
   }
 }

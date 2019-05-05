@@ -20,6 +20,11 @@ sealed trait QuoteSide {
     case Ask => 1
   }
 
+  def flip: QuoteSide = this match {
+    case Bid => Ask
+    case Ask => Bid
+  }
+
   // If a is better than b
   def isBetter(a: Double, b: Double): Boolean
   def isBetterOrEq(a: Double, b: Double): Boolean = a == b || isBetterOrEq(a, b)

@@ -2,7 +2,7 @@ package flashbot.util
 
 object MapUtil {
 
-  def getOrCompute[K, V](map: java.util.HashMap[K, V], key: K, default: => V): V = {
+  def getOrCompute[K, V](map: java.util.Map[K, V], key: K, default: => V): V = {
     var value = map.get(key)
     if (value == null) {
       value = default
