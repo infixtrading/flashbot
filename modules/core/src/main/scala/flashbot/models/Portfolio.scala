@@ -1,6 +1,5 @@
 package flashbot.models
 
-import flashbot.core.AssetKey.SecurityAsset
 import flashbot.core.DeltaFmt.HasUpdateEvent
 import flashbot.core.Instrument.Derivative
 import flashbot.core._
@@ -67,6 +66,8 @@ class Portfolio(private val assets: debox.Map[Account, Double],
     this
   }
 
+  def getPosition(market: Market): Position = positions(market)
+
   def getBalance(account: Account): Double = assets.get(account).getOrElse(0d)
   def getBalanceSize(account: Account): FixedSize = getBalance(account).of(account)
 
@@ -76,9 +77,11 @@ class Portfolio(private val assets: debox.Map[Account, Double],
   def updateAssetBalance(account: Account, fn: Double => Double): Portfolio =
     withBalance(account, fn(getBalance(account)))
 
+  private var lastCostAccount: Account = _
+
   /**
     * The initial margin/cost of posting an order PLUS fees. This returns the size of
-    * a specific asset that should would be placed on hold or used towards the order
+    * a specific quote asset that would be placed on hold or used towards the order
     * margin by the exchange.
     */
   def getOrderCost(market: Market, size: Double, price: Double, liquidity: Liquidity)
@@ -92,7 +95,8 @@ class Portfolio(private val assets: debox.Map[Account, Double],
     }
 
     instruments(market) match {
-      case _: Derivative =>
+      case inst: Derivative =>
+        lastCostAccount = market.settlementAccount
         // For derivatives, the order cost is the difference between the order margin
         // with the order and without.
         (addOrder(None, market, size, price).getOrderMargin(market) -
@@ -101,15 +105,26 @@ class Portfolio(private val assets: debox.Map[Account, Double],
       case _ =>
         // For non-derivatives, there is no margin.
         // Order cost for buys = size * price * (1 + fee).
-        if (size > 0)
+        if (size > 0) {
+          lastCostAccount = market.quoteAccount
           size * price * (1.0 + fee)
+        }
 
         // And order cost for asks is just the size of the order:
         // In order to sell something, you must have it first.
         // That is your only cost.
-        else
+        else {
+          lastCostAccount = market.baseAccount
           size.abs
+        }
     }
+  }
+
+  def getOrderCostSize(market: Market, size: Double, price: Double, liquidity: Liquidity)
+                      (implicit instruments: InstrumentIndex,
+                       exchangesParams: java.util.Map[String, ExchangeParams]): FixedSize = {
+    val cost = getOrderCost(market, size, price, liquidity)
+    FixedSize(cost, lastCostAccount.security)
   }
 
   /**
@@ -196,7 +211,7 @@ class Portfolio(private val assets: debox.Map[Account, Double],
       val position = positions(market)
       val (newPosition, realizedPnl) =
         position.updateSize(position.size + size, instrument, fill.price)
-      val feeCost = instrument.value(fill.price) * fill.size * fill.fee
+      val feeCost = instrument.valueDouble(fill.price) * fill.size * fill.fee
 
       updateAssetBalance(market.settlementAccount, _ + (realizedPnl - feeCost))
         .withPosition(market, newPosition)
@@ -273,7 +288,7 @@ class Portfolio(private val assets: debox.Map[Account, Double],
                     metrics: Metrics): Boolean =
     positions.vals.forall(_.isInitialized) &&
       assets.keys.forall(acc =>
-        !java.lang.Double.isNaN(prices.calcPrice[Account, SecurityAsset](acc, targetAsset)))
+        !java.lang.Double.isNaN(prices.calcPrice[Account, Symbol](acc, Symbol(targetAsset))))
 
   /**
     * What is the value of our portfolio in terms of `targetAsset`?
@@ -283,7 +298,7 @@ class Portfolio(private val assets: debox.Map[Account, Double],
                 instruments: InstrumentIndex,
                 metrics: Metrics): Double = {
     var equitySum = 0.0
-    val ta: SecurityAsset = targetAsset
+    val ta: Symbol = Symbol(targetAsset)
     positions.foreachKey(key =>
       equitySum += getPositionPnl(key).of(key.settlementAccount).as(ta).amount)
 
@@ -325,10 +340,12 @@ class Portfolio(private val assets: debox.Map[Account, Double],
   protected[flashbot] def withPosition(market: Market, position: Position): Portfolio =
     _step(PositionUpdated(market, Some(position)))
 
-//  def merge(portfolio: Portfolio): Portfolio = copy(
-//    assets = assets ++ portfolio.assets,
-//    positions = positions ++ portfolio.positions
-//  )
+  def merge(portfolio: Portfolio): Portfolio = {
+    portfolio.assets.foreach((acc, value) => {
+      assets += (acc -> value)
+    })
+    portfolio
+  }
 
   /**
     * Returns this portfolio without any elements that exist in `other`.
@@ -339,15 +356,17 @@ class Portfolio(private val assets: debox.Map[Account, Double],
 //      case (market, value) => other.positions.get(market).contains(value) }
 //  )
 
-//  def withoutExchange(name: String): Portfolio = {
-//    assets.keySet().stream().filter(_.exchange == name).forEach { acc =>
-//      step(BalanceUpdated(acc, None))
-//    }
-//    positions.keySet().stream().filter(_.exchange == name).forEach { ex =>
-//      step(PositionUpdated(ex, None))
-//    }
-//    this
-//  }
+  def withoutExchange(name: String): Portfolio = {
+    assets.foreachKey { acc =>
+      if (acc.exchange == name)
+        _step(BalanceUpdated(acc, None))
+    }
+    positions.foreachKey { ex =>
+      if (ex.exchange == name)
+        _step(PositionUpdated(ex, None))
+    }
+    this
+  }
 
   /**
     * Splits each account's total equity/buying power evenly among all given markets.

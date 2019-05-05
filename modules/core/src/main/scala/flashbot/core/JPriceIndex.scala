@@ -3,7 +3,6 @@ package flashbot.core
 import java.util
 import java.util.Collections
 
-import flashbot.core.AssetKey.SecurityAsset
 import flashbot.models.{Account, FixedPrice, Market}
 import flashbot.util.MapUtil._
 import flashbot.core.AssetKey.implicits._
@@ -135,7 +134,7 @@ class JPriceIndex(val conversions: Conversions) extends PriceIndex {
         else getOrCompute(
           pricePathCacheApprox, source.security, target.security, {
             isNewPath = true
-            computePath[SecurityAsset, SecurityAsset](source.security, target.security, strict)
+            computePath[Symbol, Symbol](Symbol(source.security), Symbol(target.security), strict)
           })
 
 

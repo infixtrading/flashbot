@@ -2,9 +2,8 @@ package flashbot.core
 
 import flashbot.models._
 import flashbot.models.OrderCommand.{PostLimitOrder, PostMarketOrder, PostOrderCommand}
-import flashbot.models.Order.Side
+import flashbot.models.Order.{Buy, Sell, Side}
 import flashbot.util.NumberUtils
-
 import java.util.UUID.randomUUID
 
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -173,7 +172,7 @@ sealed abstract class BuiltInOrder extends OrderRef {
 
   private var exchangeId: String = _
 
-  override def handleSubmit() = {
+  override def handleSubmit(): Unit = {
     // Submit the order directly to the exchange.
     exchange.order(submitCmd) onComplete {
 
@@ -193,7 +192,7 @@ sealed abstract class BuiltInOrder extends OrderRef {
     }
   }
 
-  override def handleCancel() = {
+  override def handleCancel(): Unit = {
     exchange.cancel(exchangeId, ctx.instruments(market)) onComplete {
       case Success(RequestSuccess) => // Do nothing on success
 
@@ -219,8 +218,13 @@ class LimitOrder(val market: Market,
 class MarketOrder(val market: Market,
                   val side: Side,
                   val size: Double) extends BuiltInOrder {
+
+  def this(market: Market, size: Double) {
+    this(market, if (size > 0) Buy else Sell, size)
+  }
+
   override def submitCmd = MarketOrderRequest(id, side, ctx.instruments(market), size)
 
-  override def handleCancel() =
+  override def handleCancel(): Unit =
     throw new UnsupportedOperationException("Market orders do not support cancellations.")
 }

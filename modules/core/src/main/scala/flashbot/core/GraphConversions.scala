@@ -8,7 +8,6 @@ import org.jgrapht.io.{ComponentNameProvider, DOTExporter}
 
 import scala.collection.JavaConverters._
 import AssetKey.implicits._
-import flashbot.core.AssetKey.SecurityAsset
 
 object GraphConversions extends Conversions {
   abstract class Edge[B: AssetKey, Q: AssetKey] {
@@ -104,7 +103,7 @@ object GraphConversions extends Conversions {
           val b = baseAccount
           val q = quoteAccount
 
-          val fp = new FixedPrice(inst.value(price), (baseAccount, quoteAccount))
+          val fp = new FixedPrice(inst.valueDouble(price), (baseAccount, quoteAccount))
 
           if (graph.addEdge(b, q, new PriceEdge(fp))) {
           }
@@ -121,7 +120,7 @@ object GraphConversions extends Conversions {
     accounts.foreach { case acc @ Account(ex, sec) =>
       // For the security + each of it's pegs.
       (prices.pegs.of(sec) + sec).foreach { sym: String =>
-        val securityNode: SecurityAsset = sym
+        val securityNode: Symbol = Symbol(sym)
 //        val nodeEx: Option[String] = implicitly[AssetKey[SecurityAsset]].exchangeOpt(securityNode)
 
         // If sym is the sink or source, link it

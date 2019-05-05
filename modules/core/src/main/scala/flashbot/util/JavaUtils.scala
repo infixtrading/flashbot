@@ -13,8 +13,6 @@ object JavaUtils {
   def toJava[T](future: scala.concurrent.Future[T]): CompletableFuture[T] =
     FutureConverters.toJava(future).toCompletableFuture
 
-//  def fromJava[T](list: java.util.List[T]):
-
-  def toJava[T](set: Set[T]): java.util.Set[T] = set.asJava
+//  def toJava[T](set: Set[T]): java.util.Set[T] = set.asJava
 
 }

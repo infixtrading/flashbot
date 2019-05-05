@@ -28,6 +28,8 @@ import org.java_websocket.handshake.ServerHandshake
 import com.softwaremill.sttp._
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import flashbot.core.DataType
+import flashbot.models.Order.{Buy, OrderType, Sell, TickDirection}
+import flashbot.models.{Candle, OrderBook}
 import flashbot.server.RequestService._
 
 import scala.concurrent.{ExecutionContext, Future, Promise, blocking}
@@ -405,10 +407,11 @@ object CoinbaseMarketDataSource {
         case Change =>
           OrderChange(order_id.get, CurrencyPair(product_id), price.map(_.toDouble), new_size.get.toDouble)
         case Match =>
-          OrderMatch(trade_id.get, CurrencyPair(product_id), micros, size.get.toDouble, price.get.toDouble,
+          OrderMatch(trade_id.get.toString, CurrencyPair(product_id), micros, size.get.toDouble, price.get.toDouble,
             TickDirection.ofMakerSide(side.get), maker_order_id.get, taker_order_id.get)
         case Received =>
-          OrderReceived(order_id.get, CurrencyPair(product_id), client_oid, OrderType.parseOrderType(order_type.get))
+          OrderReceived(order_id.get, CurrencyPair(product_id), client_oid.get,
+            OrderType.parseOrderType(order_type.get))
       }
     }
 
@@ -433,10 +436,11 @@ object CoinbaseMarketDataSource {
 
 
   @JsonCodec case class BookSnapshot(sequence: Long,
+                                     tickSize: Double,
                                      asks: Seq[(String, String, String)],
                                      bids: Seq[(String, String, String)]) {
     def toOrderBook: OrderBook = {
-      val withAsks = asks.foldLeft(OrderBook()) {
+      val withAsks = asks.foldLeft(new OrderBook(tickSize)) {
         case (book, askSeq) => book.open(askSeq._3, askSeq._1.toDouble, askSeq._2.toDouble, Sell)
       }
       bids.foldLeft(withAsks) {

@@ -8,13 +8,13 @@ import akka.stream.scaladsl.{Flow, Source}
 import akka.stream.{ActorMaterializer, ActorMaterializerSettings, Supervision}
 import akka.util.Timeout
 import akka.pattern.ask
+import flashbot.models.{DataAddress, StreamRequest, TimeRange}
 import flashbot.server.StreamResponse
-import flashbot.models.api.StreamRequest
-import flashbot.models.core.{DataAddress, TimeRange}
 import flashbot.util.time.FlashbotTimeout
 
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
+import scala.language.postfixOps
 
 package object stream {
 

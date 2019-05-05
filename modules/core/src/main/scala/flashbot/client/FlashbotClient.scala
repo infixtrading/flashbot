@@ -1,26 +1,24 @@
 package flashbot.client
 
 import java.time.Instant
-import java.util.concurrent.Executors
 
 import akka.actor.{Actor, ActorPath, ActorRef, ActorSystem, Props}
 import akka.pattern.{ask, pipe}
 import akka.stream.scaladsl.Source
 import akka.util.Timeout
 import akka.{Done, NotUsed}
-import flashbot.core._
-import flashbot.core.DataType.{LadderType, OrderBookType}
-import flashbot.server.{NetworkSource, StreamResponse}
-import flashbot.models.api._
-import flashbot.models.core._
 import flashbot.client.FlashbotClient._
+import flashbot.core.DataType.{LadderType, OrderBookType}
 import flashbot.core.FlashbotConfig.BotConfig
+import flashbot.core._
+import flashbot.models._
+import flashbot.server.{NetworkSource, StreamResponse}
 import flashbot.util.time.FlashbotTimeout
 import io.circe.Json
 
+import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent._
 import scala.concurrent.duration._
-import scala.concurrent.ExecutionContext.Implicits.global
 import scala.language.postfixOps
 import scala.reflect.ClassTag
 
@@ -164,15 +162,36 @@ class FlashbotClient(engine: ActorRef, skipTouch: Boolean = false) {
 
   implicit class RecoverOps[T](future: Future[Source[MarketData[T], NotUsed]]) {
 
-    def recoverNotFound(fut: =>Future[Source[MarketData[T], NotUsed]]) =
+    def recoverNotFound(fut: =>Future[Source[MarketData[T], NotUsed]]): Future[Source[MarketData[T], NotUsed]] =
       future.recoverWith { case err: DataNotFound[T] => fut }
 
-    def recoverLadder(path: DataPath[T], fut: => Future[Source[MarketData[OrderBook], NotUsed]]) =
+    // TODO: Implement this fully
+    def recoverLadder(path: DataPath[T],
+                      fut: => Future[Source[MarketData[OrderBook], NotUsed]])
+        : Future[Source[MarketData[T], NotUsed]] =
+
       path.datatype match {
-        case ladderType: LadderType => future.recoverNotFound(
-          fut.map(_.map(md =>
-            md.withData(Ladder.fromOrderBook(ladderType.depth.getOrElse(10))(md.data).asInstanceOf[T],
-              ladderType))))
+        case ladderType: LadderType =>
+          future.recoverNotFound(fut.map(_.statefulMapConcat(() => {
+            var ladder: Option[Ladder] = None
+            md: MarketData[OrderBook] => {
+              var lastUpdate = md.data.getLastUpdate
+              if (ladder.isEmpty || lastUpdate.isEmpty) {
+                ladder = Some(Ladder.fromOrderBook(10, md.data))
+
+              } else if (lastUpdate.nonEmpty) {
+                md.data.getLastUpdate match {
+                  case Some(ev: OrderBook.Open) =>
+                    ladder.get.qtyAtPrice(ev.price)
+//                    ladder.get.updateLevel(md.data.quoteSideOfPrice(ev.price), ev.price, ev.)
+                  case Some(ev: OrderBook.Done) =>
+                  case Some(ev: OrderBook.Change) =>
+                }
+//                ladder.get.updateLevel()
+              }
+              List(md.withData[T](ladder.asInstanceOf[T], ladderType))
+            }
+          })))
         case _ => future
       }
   }

@@ -4,10 +4,13 @@ import flashbot.models.OrderBook.OrderBookSide
 import flashbot.models.{Ladder, LadderSide, OrderBook}
 import flashbot.util.NumberUtils
 
-trait Matching extends Any {
+trait Matching {
 
-  val matchPrices: Array[Double] = Array[Double](200)
-  val matchQtys: Array[Double] = Array[Double](200)
+  private val _matchPrices: Array[Double] = Array[Double](200)
+  private val _matchQtys: Array[Double] = Array[Double](200)
+
+  def matchPrices: Array[Double] = _matchPrices
+  def matchQtys: Array[Double] = _matchQtys
 
   var matchCount: Int = 0
   var matchTotalQty: Double = 0d

@@ -47,9 +47,6 @@ sealed trait AssetKey[T] {
 
 object AssetKey {
 
-  sealed trait AssetKeyTag
-  type SecurityAsset = String @@ AssetKeyTag
-
   object implicits {
     implicit object AccountIsAsset extends AssetKey[Account] {
       override def isAccount = true
@@ -59,16 +56,17 @@ object AssetKey {
       override def withExchange(t: Account, ex: String): Account = t.copy(exchange = ex)
     }
 
-    implicit object SecurityIsAsset extends AssetKey[SecurityAsset] {
+    implicit object SecurityIsAsset extends AssetKey[Symbol] {
       override def isAccount = false
       override def isSymbol = true
-      override def security(t: SecurityAsset): String = t
-      override def exchangeOpt(t: SecurityAsset): None.type = None
-      override def withExchange(t: SecurityAsset, ex: String) = Account(ex, t)
+      override def security(t: Symbol): String = t.name
+      override def exchangeOpt(t: Symbol): None.type = None
+      override def withExchange(t: Symbol, ex: String) = Account(ex, t.name)
     }
 
-    implicit def buildSecurityAsset(sym: String): SecurityAsset = Tag[String, AssetKeyTag](sym)
-    implicit def unwrapSecurityAsset(tag: SecurityAsset): String = Tag.unwrap(tag)
+//    implicit def buildSecurityAssetSymbol(sym: Symbol): SecurityAsset = Tag[String, AssetKeyTag](sym.name)
+//    implicit def buildSecurityAsset(sym: String): SecurityAsset = Tag[String, AssetKeyTag](sym)
+//    implicit def unwrapSecurityAsset(tag: SecurityAsset): String = Tag.unwrap(tag)
 
     implicit class AssetKeyOps[T: AssetKey](key: T) extends {
       def security: String = implicitly[AssetKey[T]].security(key)

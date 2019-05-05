@@ -48,7 +48,7 @@ object BitMEX {
       size * (1.0d / entryPrice - 1.0d / exitPrice)
     }
 
-    override def value(price: Double): Double = 1d / price
+    override def valueDouble(price: Double): Double = 1d / price
   }
 
   object ETHUSD extends FuturesContract {
@@ -68,7 +68,7 @@ object BitMEX {
       (exitPrice - entryPrice) * bitcoinMultiplier * size
     }
 
-    override def value(price: Double) = price * bitcoinMultiplier
+    override def valueDouble(price: Double) = price * bitcoinMultiplier
   }
 
   object BXBT extends Index(".BXBT", "xbt", "usd")

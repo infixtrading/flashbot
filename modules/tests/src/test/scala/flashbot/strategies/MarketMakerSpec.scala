@@ -5,15 +5,13 @@ import java.time.temporal.ChronoUnit
 
 import akka.NotUsed
 import akka.actor.ActorSystem
-import akka.stream.ActorMaterializer
+import akka.stream.{ActorMaterializer, Materializer}
 import akka.stream.scaladsl.{Sink, Source}
 import io.circe.syntax._
 import flashbot.client.FlashbotClient
 import flashbot.core.MarketData.BaseMarketData
 import flashbot.core._
-import flashbot.models.api.DataOverride
-import flashbot.models.core.Order.TickDirection
-import flashbot.models.core._
+import flashbot.models.{Candle, DataOverride, Order, Portfolio, Position, TimeRange}
 
 import scala.concurrent.duration._
 import org.scalatest.{FlatSpec, Matchers}
@@ -59,6 +57,7 @@ class MarketMakerSpec extends FlatSpec with Matchers {
     implicit val config = FlashbotConfig.load()
     implicit val system = ActorSystem(config.systemName, config.conf)
     implicit val mat = ActorMaterializer()
+
     val engine = system.actorOf(TradingEngine.props("market-maker", config))
     val client = new FlashbotClient(engine)
 
@@ -69,12 +68,12 @@ class MarketMakerSpec extends FlatSpec with Matchers {
     val data = Seq(DataOverride("coinbase/btc_usd/candles_1m", candles))
 
     val report = client.backtest("market_maker", params.asJson, portfolio.toString, 1 minute, timeRange, data)
-    val prices = report.timeSeries("coinbase.btc_usd").map(_.close)
-    val fairPrices = report.timeSeries("fair_price_sma").map(_.close)
-    val equity = report.timeSeries("equity").map(_.close)
+    val prices = report.timeSeries("coinbase.btc_usd").close.toVector()
+    val fairPrices = report.timeSeries("fair_price_sma").close.toVector()
+    val equity = report.timeSeries("equity").close.toVector()
     (prices zip fairPrices zip equity).foreach(println)
 
-    report.trades.size shouldEqual 103
+    report.trades.len shouldEqual 103
 
     Await.ready(for {
       _ <- system.terminate()
@@ -111,12 +110,12 @@ class MarketMakerSpec extends FlatSpec with Matchers {
     val data = Seq(DataOverride("coinbase/btc_usd/candles_1h", candles))
 
     val report = client.backtest("market_maker", params.asJson, portfolio.toString, 1 hour, timeRange, data)
-    val prices = report.timeSeries("coinbase.btc_usd").map(_.close)
-    val fairPrices = report.timeSeries("fair_price_sma").map(_.close)
-    val equity = report.timeSeries("equity").map(_.close)
+    val prices = report.timeSeries("coinbase.btc_usd").close.toVector
+    val fairPrices = report.timeSeries("fair_price_sma").close.toVector
+    val equity = report.timeSeries("equity").close.toVector
     (prices zip fairPrices zip equity).foreach(println)
 
-    println("# trades: ", report.trades.size)
+    println("# trades: ", report.trades.len)
 
     equity.last > 4000 shouldBe true
 
@@ -145,18 +144,18 @@ class MarketMakerSpec extends FlatSpec with Matchers {
     val portfolio = Portfolio.empty
       .withBalance("coinbase/btc", 1.05)
       .withBalance("coinbase/usd", 1000)
-      .withPosition("bitmex/xbtusd", Position((-1.05 * 4000).toLong, 2, None))
+      .withPosition("bitmex/xbtusd", new Position((-1.05 * 4000).toLong, 2, java.lang.Double.NaN))
     val data = Seq(DataOverride("coinbase/btc_usd/trades", Source(trades)))
 
     val report = client.backtest("market_maker",
       params.asJson, portfolio.toString, 1 minute, timeRange, data)
 
-    val prices = report.timeSeries("coinbase.btc_usd").map(_.close)
-    val fairPrices = report.timeSeries("fair_price_sma").map(_.close)
-    val equity = report.timeSeries("equity").map(_.close)
-    val usd = report.timeSeries("cash").map(_.close)
-    val btc = report.timeSeries("position").map(_.close)
-    val hedge = report.timeSeries("hedge").map(_.close)
+    val prices = report.timeSeries("coinbase.btc_usd").close.toVector
+    val fairPrices = report.timeSeries("fair_price_sma").close.toVector
+    val equity = report.timeSeries("equity").close.toVector
+    val usd = report.timeSeries("cash").close.toVector
+    val btc = report.timeSeries("position").close.toVector
+    val hedge = report.timeSeries("hedge").close.toVector
 
     def round(d: Double): Double = BigDecimal.valueOf(d)
       .setScale(2, BigDecimal.RoundingMode.HALF_UP).doubleValue()

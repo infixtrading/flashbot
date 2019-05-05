@@ -46,7 +46,7 @@ class Position(var size: Double, var leverage: Double, var entryPrice: Double) {
   def isShort: Boolean = size < 0
 
   def initialMargin(instrument: Derivative): Double =
-    instrument.value(entryPrice) * size.abs / leverage
+    instrument.valueDouble(entryPrice) * size.abs / leverage
 
   def isInitialized: Boolean = java.lang.Double.isNaN(entryPrice)
 

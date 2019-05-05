@@ -16,10 +16,9 @@ import flashbot.client.FlashbotClient
 import flashbot.core.DataType.CandlesType
 import flashbot.core.FlashbotConfig.{BotConfig, ExchangeConfig, GrafanaConfig, StaticBotsConfig}
 import flashbot.core.ReportEvent._
+import flashbot.models._
 import flashbot.server.TradingSessionActor.{SessionPing, SessionPong, StartSession, StopSession}
 import flashbot.server._
-import flashbot.models.api._
-import flashbot.models.core.{Account, Market, Portfolio, _}
 import flashbot.strategies.TimeSeriesStrategy
 import flashbot.util._
 import flashbot.util.stream._
@@ -29,7 +28,6 @@ import io.circe.syntax._
 
 import scala.collection.immutable
 import scala.concurrent._
-//import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 import scala.language.postfixOps
 import scala.util.{Failure, Success}
@@ -113,12 +111,12 @@ class TradingEngine(engineId: String,
   val cluster: Option[Cluster] =
     if (context.system.hasExtension(Cluster)) Some(Cluster(context.system)) else None
 
-  override def preStart() = {
+  override def preStart(): Unit = {
     if (cluster.isDefined) {
       cluster.get.subscribe(self, initialStateMode = InitialStateAsEvents, classOf[MemberUp])
     }
   }
-  override def postStop() = {
+  override def postStop(): Unit = {
     if (cluster.isDefined) cluster.get.unsubscribe(self)
   }
 
@@ -153,7 +151,7 @@ class TradingEngine(engineId: String,
           // are started on boot.
           staticStartedEvents <- Future.sequence(staticEnabledKeys.map(startBot))
               .map(staticEnabledKeys zip _.map {
-                case startedEv @ SessionStarted(_, Some(botId), _, _, _, _, _, _) =>
+                case startedEv @ SessionStarted(_, Some(botId), _, _, _, _, _) =>
                   Seq(BotConfigured(engineStartMicros, botId, staticBotsConfig.configs(botId)),
                     BotEnabled(botId), startedEv)
               }).map(_.toMap)
@@ -219,15 +217,7 @@ class TradingEngine(engineId: String,
           List()
       }
 
-      val commonEvents = deltaEvents ++ doneEvents
-
-      Future.successful(event match {
-        case BalanceEvent(account, balance, micros) =>
-          (Done, BalancesUpdated(botId, account, balance) :: commonEvents)
-        case PositionEvent(market, position, micros) =>
-          (Done, PositionUpdated(botId, market, position) :: commonEvents)
-        case _ => (Done, commonEvents)
-      })
+      Future.successful((Done, deltaEvents ++ doneEvents))
 
     /**
       * TODO: Check that the bot is not running. Cannot configure a running bot.
@@ -430,10 +420,9 @@ class TradingEngine(engineId: String,
           new IllegalArgumentException("Patterns are not currently supported in time series queries."))
         else {
 
-          def viaBacktest: Future[Map[String, Vector[Candle]]] = {
+          def viaBacktest: Future[debox.Map[String, CandleFrame]] = {
             val params = TimeSeriesStrategy.Params(query.path)
-            (self ? BacktestQuery("time_series", params.asJson, query.range,
-              "", Some(query.interval)))
+            (self ? BacktestQuery("time_series", params.asJson, query.range, "", Some(query.interval)))
               .mapTo[ReportResponse]
               .map(_.report.timeSeries)
           }
@@ -469,7 +458,6 @@ class TradingEngine(engineId: String,
             } yield result
 
             case _ =>
-              log.debug("X")
               viaBacktest
           }
         }) pipeTo sender()
@@ -595,26 +583,30 @@ class TradingEngine(engineId: String,
                                   report: Report,
                                   dataOverrides: Seq[DataOverride[_]]): (ActorRef, Future[TradingEngineEvent]) = {
 
-    val sessionActor = context.actorOf(Props(new TradingSessionActor(
-      loader,
-      strategyClassNames,
+    val session = new TradingSession(
       strategyKey,
       strategyParams,
       mode,
+      dataServer,
+      loader,
+      log,
+      report,
+      system.scheduler,
       sessionEventsRef,
       portfolioRef,
-      report,
-      dataServer,
-      dataOverrides
-    )))
+      dataOverrides,
+      mat,
+      ec
+    )
+
+    val sessionActor = context.actorOf(Props(new TradingSessionActor(session)))
 
     // Start the session. We are only waiting for an initialization error, or a confirmation
     // that the session was started, so we don't wait for too long.
     val fut = (sessionActor ? StartSession).map[TradingEngineEvent] {
       case (sessionId: String, micros: Long) =>
         log.debug("Session started")
-        SessionStarted(sessionId, botId, strategyKey, strategyParams,
-          mode, micros, portfolioRef.getPortfolio(None), report)
+        SessionStarted(sessionId, botId, strategyKey, strategyParams, mode, micros, report)
     } recover {
       case err: Exception =>
         log.error(err, "Error during session init")
@@ -641,7 +633,7 @@ class TradingEngine(engineId: String,
             // portfolio from the last session as the initial portfolio for this session.
             // Otherwise, use the initial_assets and initial_positions from the bot config.
             val initialSessionPortfolio =
-              state.bots.get(name).flatMap(_.sessions.lastOption.map(_.portfolio))
+              state.bots.get(name).flatMap(_.sessions.lastOption.map(_.report.portfolio))
                 .getOrElse(Portfolio(initialAssets, initialPositions, Map.empty))
             new PortfolioRef.Isolated(initialSessionPortfolio.toString)
 
@@ -653,10 +645,9 @@ class TradingEngine(engineId: String,
 //              override def mergePortfolio(partial: Portfolio) = {
 //                globalPortfolio.put(globalPortfolio.take().merge(partial))
 //              }
-              override def getPortfolio(instruments: Option[InstrumentIndex]) =
-                globalPortfolio.get
+              override def getPortfolio(instruments: Option[InstrumentIndex]): Portfolio = globalPortfolio.get
 
-              override def printPortfolio = globalPortfolio.get.toString
+              override def printPortfolio: String = globalPortfolio.get.toString
             }
         }
 
@@ -689,7 +680,7 @@ class TradingEngine(engineId: String,
   /**
     * Let's keep this idempotent. Not thread safe, like most of the stuff in this class.
     */
-  def shutdownBotSession(name: String) = {
+  def shutdownBotSession(name: String): Unit = {
     log.info(s"Trying to shutdown session for bot $name")
 
     if (botSessions.isDefinedAt(name)) {
@@ -701,17 +692,17 @@ class TradingEngine(engineId: String,
     subscriptions -= name
   }
 
-  def publish(id: String, reportMsg: Any) = {
+  def publish(id: String, reportMsg: Any): Unit = {
     subscriptions.getOrElse(id, Set.empty).foreach { ref =>
       ref ! reportMsg
     }
   }
 
-  def pingBot(name: String) = Future {
+  def pingBot(name: String): Future[TradingSessionActor.SessionPong.type] = Future {
     Await.result(botSessions(name) ? SessionPing, 5 seconds).asInstanceOf[SessionPong.type]
   }
 
-  def botStatus(name: String) = state.bots.get(name) match {
+  def botStatus(name: String): Future[BotStatus] = state.bots.get(name) match {
     case None =>
       if (allBotConfigs contains name) Future.successful(Disabled)
       else Future.failed(new IllegalArgumentException(s"Unknown bot $name"))
@@ -729,9 +720,9 @@ class TradingEngine(engineId: String,
     for {
       exchange <- loader.loadNewExchange(name).toFut
       portfolio <- exchange.fetchPortfolio
-      assets = portfolio._1.map(kv => Account(name, kv._1) -> kv._2)
-      positions = portfolio._2.map(kv => Market(name, kv._1) -> kv._2)
-    } yield Portfolio(assets, positions, Map.empty)
+      assets = debox.Map.fromIterable(portfolio._1.map { case (k, v) => Account(name, k) -> v })
+      positions = debox.Map.fromIterable(portfolio._2.map { case (k, v) => Market(name, k) -> v})
+    } yield new Portfolio(assets, positions, debox.Map.empty)
 
   private def paramsForExchange(name: String): Option[Json] =
     state.exchanges.get(name).map(_.params).orElse(exchangeConfigs(name).params)

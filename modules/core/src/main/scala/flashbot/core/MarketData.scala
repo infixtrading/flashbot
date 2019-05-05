@@ -1,5 +1,7 @@
 package flashbot.core
 
+import akka.NotUsed
+import akka.stream.scaladsl.Flow
 import flashbot.models.DataPath
 
 /**
@@ -88,11 +90,11 @@ object MarketData {
   case class BaseMarketData[T](data: T, path: DataPath[T], micros: Long, bundle: Long, seqid: Long)
       extends MarketData[T] {
 
-    override def withMicros(newMicros: Long) = copy(micros = newMicros)
-    override def withBundle(newBundle: Long) = copy(bundle = bundle)
-    override def withData[B](newData: B, dataType: DataType[B]) =
+    override def withMicros(newMicros: Long): BaseMarketData[T] = copy(micros = newMicros)
+    override def withBundle(newBundle: Long): BaseMarketData[T] = copy(bundle = bundle)
+    override def withData[B](newData: B, dataType: DataType[B]): BaseMarketData[B] =
       copy(data = newData, path = path.withType(dataType))
-    override def withSeqId(newSeqId: Long) = copy(seqid = newSeqId)
+    override def withSeqId(newSeqId: Long): BaseMarketData[T] = copy(seqid = newSeqId)
   }
 
   trait Sequenced {

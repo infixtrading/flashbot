@@ -90,10 +90,9 @@ class MarketMaker extends Strategy[MarketMakerParams] with TimeSeriesMixin {
     Future.successful(extraPaths :+ path)
   }
 
-  override def onEvent(event: StrategyEvent)
-                      (implicit ctx: TradingSession) = event match {
-    case ExchangeErrorEvent(error) =>
-      println(error)
+  override def onEvent(event: OrderEvent): Unit = event match {
+    case err: ExchangeError =>
+      println(err)
     case _ =>
   }
 
@@ -103,7 +102,7 @@ class MarketMaker extends Strategy[MarketMakerParams] with TimeSeriesMixin {
     * around. When running this strategy on order book data, we use the actual
     * best ask and best bid.
     */
-  override def handleData(md: MarketData[_])(implicit ctx: TradingSession): Unit = {
+  override def onData(md: MarketData[_]): Unit = {
     md.data match {
       // Incoming trade data
       case trade: Trade =>
@@ -116,10 +115,10 @@ class MarketMaker extends Strategy[MarketMakerParams] with TimeSeriesMixin {
       // Incoming order book
       case book: OrderBook =>
         // Calculate the best ask price in the book. We will not bid above it.
-        val bestAskPrice = book.asks.index.head._1
+        val bestAskPrice = book.asks.bestPrice
 
         // Calculate the best bid price in the book. We will not ask below it.
-        val bestBidPrice = book.bids.index.head._1
+        val bestBidPrice = book.bids.bestPrice
 
         submitQuotes(md, bestAskPrice, bestBidPrice)
     }
@@ -148,13 +147,13 @@ class MarketMaker extends Strategy[MarketMakerParams] with TimeSeriesMixin {
     recordTimeSeries("ulcer", md.micros, ulcerVal)
 
     recordTimeSeries("position", md.micros,
-      ctx.getPortfolio.getBalance(market.securityAccount).size.amount)
+      ctx.getPortfolio.getBalance(market.securityAccount))
 
     recordTimeSeries("cash", md.micros,
-      ctx.getPortfolio.getBalance(market.settlementAccount).size.amount)
+      ctx.getPortfolio.getBalance(market.settlementAccount))
 
     recordTimeSeries("xbt", md.micros,
-      ctx.getPortfolio.getBalance(Account("bitmex", "xbt")).size.amount)
+      ctx.getPortfolio.getBalance(Account("bitmex", "xbt")))
 
     // Record the computed fair price value to a time series so that it's available
     // on dashboards.
@@ -193,7 +192,7 @@ class MarketMaker extends Strategy[MarketMakerParams] with TimeSeriesMixin {
   def tryQuote(portfolio: Portfolio, side: QuoteSide, price: Double,
                bestQuote: Double, index: Int)
               (implicit ctx: TradingSession): Portfolio = {
-    val instrument = ctx.getInstruments(params.market)
+    val instrument = ctx.instruments(params.market)
 
     // First get the order cost.
     val size = if (side == Ask) -params.quoteSize else params.quoteSize
@@ -204,7 +203,7 @@ class MarketMaker extends Strategy[MarketMakerParams] with TimeSeriesMixin {
       case Ask => price > bestQuote
       case Bid => price < bestQuote
     }) && {
-      val cost = portfolio.getOrderCost(market, size, price, Maker)
+      val cost = portfolio.getOrderCostSize(market, size, price, Maker)
 
       // Determine the account which the cost is in terms of.
       val account = Account(market.exchange, cost.security)
@@ -212,23 +211,24 @@ class MarketMaker extends Strategy[MarketMakerParams] with TimeSeriesMixin {
       // Now get the available balance of that account.
       val balance = portfolio.getAvailableBalance(account)
 
-      balance > cost
+      balance > cost.amount
     }
 
     // If the balance is big enough for the order, submit the order target.
-    // Otherwise, disable the target by setting the size to `0`.
-    val id = limitOrder(
-      market = market,
-      size = (if (shouldOrder) size else 0, instrument.base),
-      price = price,
-      key = s"${side}_$index",
-      postOnly = true
-    )
+    // Otherwise, disable the target by setting the size to 0.
+//    val id = limitOrder(
+//      market = market,
+//      size = (if (shouldOrder) size else 0, instrument.base),
+//      price = price,
+//      key = s"${side}_$index",
+//      postOnly = true
+//    )
 
     // Now, return the new temporary portfolio so that we can keep looping
     // over it.
-    if (shouldOrder) portfolio.addOrder(Some(id), market, size, price)
-    else portfolio
+//    if (shouldOrder) portfolio.addOrder(Some(id), market, size, price)
+//    else portfolio
+    ???
   }
 
   override def decodeParams(paramsStr: String) = decode[MarketMakerParams](paramsStr).toTry

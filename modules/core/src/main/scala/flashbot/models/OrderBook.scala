@@ -48,6 +48,8 @@ class OrderBook(val tickSize: Double,
   assert(bids.index.isEmpty)
   assert(lastUpdate.isEmpty)
 
+  def getLastUpdate: Option[Delta] = lastUpdate
+
   // Sizes
   private var askCount = 0
   private var bidCount = 0
@@ -112,10 +114,10 @@ class OrderBook(val tickSize: Double,
 
   def isInitialized: Boolean = !orders.isEmpty
 
-  override protected def withLastUpdate(d: Delta): OrderBook = {
-    this.lastUpdate = Some(d)
-    this
-  }
+//  override protected def withLastUpdate(d: Delta): OrderBook = {
+//    this.lastUpdate = Some(d)
+//    this
+//  }
 
   override protected def _step(event: Delta): OrderBook = event match {
     case Open(orderId, price, size, side) =>
@@ -291,25 +293,18 @@ class OrderBook(val tickSize: Double,
 
   override def matchMutable(quoteSide: QuoteSide,
                             approxPriceLimit: Double,
-                            approxSize: Double,
-                            matchPricesOut: Array[Double],
-                            matchQtysOut: Array[Double]): Double =
-    sideOf(quoteSide).matchMutable(quoteSide, approxPriceLimit,
-      approxSize, matchPricesOut, matchQtysOut)
+                            approxSize: Double): Double =
+    sideOf(quoteSide).matchMutable(quoteSide, approxPriceLimit, approxSize)
 
   override def matchSilent(quoteSide: QuoteSide,
                            approxPriceLimit: Double,
-                           approxSize: Double,
-                           matchPricesOut: Array[Double],
-                           matchQtysOut: Array[Double]): Double =
-    sideOf(quoteSide).matchSilent(quoteSide, approxPriceLimit,
-      approxSize, matchPricesOut, matchQtysOut)
+                           approxSize: Double): Double =
+    sideOf(quoteSide).matchSilent(quoteSide, approxPriceLimit, approxSize)
 
   override def matchSilentAvg(quoteSide: QuoteSide,
                               approxPriceLimit: Double,
                               approxSize: Double): (Double, Double) =
     sideOf(quoteSide).matchSilentAvg(quoteSide, approxPriceLimit, approxSize)
-
 
   def priceIterator: Iterator[java.lang.Double] =
     bids.priceIterator ++ asks.priceIterator

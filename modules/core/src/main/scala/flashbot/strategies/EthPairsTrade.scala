@@ -2,23 +2,26 @@ package flashbot.strategies
 
 import flashbot.core.DataType.{CandlesType, TradesType}
 import flashbot.core._
+import flashbot.core.AssetKey.implicits._
 import flashbot.models.{Candle, DataPath, Market, Portfolio}
 import FixedSize._
 import EthPairsTrade._
+import akka.NotUsed
 import akka.actor.ActorRef
 import akka.stream.Materializer
+import akka.stream.scaladsl.Source
 import com.github.andyglow.jsonschema.AsCirce._
 import flashbot.core.Instrument.CurrencyPair
 import flashbot.core.MarketData.BaseMarketData
 import flashbot.models.{DataOverride, DataSelection}
 import flashbot.stats.Cointegration
+import flashbot.util.NumberUtils
 import io.circe.generic.JsonCodec
 import io.circe.parser._
 
-import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration._
+import scala.concurrent.{ExecutionContext, Future}
 import scala.language.postfixOps
-import scala.math.BigDecimal.RoundingMode
 
 @JsonCodec
 case class PairsTradeParams(eth_market: String,
@@ -55,23 +58,23 @@ class EthPairsTrade extends Strategy[PairsTradeParams] with TimeSeriesMixin {
     ))
   }
 
-  lazy val threshold = params.threshold.num
+  private lazy val threshold = params.threshold
 
   var count = 0
 
-  override def handleData(data: MarketData[_])(implicit ctx: TradingSession) = data.data match {
+  override def onData(data: MarketData[_]): Unit = data.data match {
     case candle: Candle if data.path == btcPath =>
       // Ignore
 
     case candle: Candle =>
       if (data.path.market == ethMarket)
-        recordTimeSeries("eth_usd", data.micros, getPrice(ethMarket).toDouble())
+        recordTimeSeries("eth_usd", data.micros, getPrice(ethMarket))
       else if (data.path.market == hedgeMarket)
-        recordTimeSeries("hedge_usd", data.micros, getPrice(hedgeMarket).toDouble())
+        recordTimeSeries("hedge_usd", data.micros, getPrice(hedgeMarket))
 
-      recordTimeSeries("hedge", data.micros, ctx.getPortfolio.getBalance(hedgeMarket.baseAccount).toDouble())
-      recordTimeSeries("eth", data.micros, ctx.getPortfolio.getBalance(ethMarket.baseAccount).toDouble())
-      recordTimeSeries("usd", data.micros, ctx.getPortfolio.getBalance(ethMarket.quoteAccount).toDouble())
+      recordTimeSeries("hedge", data.micros, ctx.getPortfolio.getBalance(hedgeMarket.baseAccount))
+      recordTimeSeries("eth", data.micros, ctx.getPortfolio.getBalance(ethMarket.baseAccount))
+      recordTimeSeries("usd", data.micros, ctx.getPortfolio.getBalance(ethMarket.quoteAccount))
 
       // If the price indices are the same, update the kalman filter
       if (lastBarTime(ethMarket).isDefined &&
@@ -81,14 +84,14 @@ class EthPairsTrade extends Strategy[PairsTradeParams] with TimeSeriesMixin {
           recordTimeSeries("alpha", data.micros, alpha)
           recordTimeSeries("beta", data.micros, beta)
 
-          val estimate = alpha + beta * getPrice(ethMarket).toDouble()
-          recordTimeSeries("residual", data.micros, getPrice(hedgeMarket).toDouble() - estimate)
+          val estimate = alpha + beta * getPrice(ethMarket)
+          recordTimeSeries("residual", data.micros, getPrice(hedgeMarket) - estimate)
 
-          updatePositions(data.micros, estimate.num, beta.num)
+          updatePositions(data.micros, estimate, beta)
         }
 
         count = count + 1
-        coint.step(getPrice(ethMarket).toDouble(), getPrice(hedgeMarket).toDouble())
+        coint.step(getPrice(ethMarket), getPrice(hedgeMarket))
 
         if (count > 4) {
           recordTimeSeries("error", data.micros, coint.getError)
@@ -107,52 +110,49 @@ class EthPairsTrade extends Strategy[PairsTradeParams] with TimeSeriesMixin {
 
   var spreadPosition: SpreadPosition = Neutral
 
-  def updatePositions(micros: Long, hedgePrediction: Num, beta: Num)
-                     (implicit ctx: TradingSession)= {
+  def updatePositions(micros: Long, hedgePrediction: Double, beta: Double): Unit = {
     val spread = getPrice(hedgeMarket) - hedgePrediction
 
     // How much is every ETHUSD contract worth in ETH currently?
     val contractValInEth = ctx
-      .getInstruments("bitmex/ethusd")
+      .instruments("bitmex/ethusd")
       .value(getPrice(ethMarket))
-      .convert("xbt", "eth")
+      .as('eth)
+      .amount
 
     // What is the ETH size of our short ETH position?
-    val shortEthPos = contractValInEth * ctx.getPortfolio.positions("bitmex/ethusd").size
+    val shortEthPos = contractValInEth * ctx.getPortfolio.getPosition("bitmex/ethusd").size
 
     // What is our current ETH balance on the main exchange?
-    val ethBalance = ctx.getPortfolio.getBalance(ethMarket.baseAccount)
+    val ethBalance: Double = ctx.getPortfolio.getBalance(ethMarket.baseAccount)
 
     // Compute our total position using the values above.
     var totalEthPos = shortEthPos +
-      ctx.getPortfolio.getBalance("bitmex/xbt").convert("xbt", "eth") +
-      ethBalance
+      ctx.getPortfolio.getBalanceSize("bitmex/xbt").as('eth).amount + ethBalance
 
-    recordTimeSeries("short_eth_pos", micros, shortEthPos.toDouble())
-    recordTimeSeries("total_eth_pos", micros, totalEthPos.toDouble())
+    recordTimeSeries("short_eth_pos", micros, shortEthPos)
+    recordTimeSeries("total_eth_pos", micros, totalEthPos)
 
     // Balance the neutral position. Order/sell enough ETH so that it cancels out the
     // short position.
-    val roundedTotalEthPos = totalEthPos.toBigDecimial.setScale(2, RoundingMode.FLOOR).rounded.num
-    if (spreadPosition == Neutral && roundedTotalEthPos != `0`) {
-      marketOrder(ethMarket, (-roundedTotalEthPos).of("eth")).send()
+    val roundedTotalEthPos = NumberUtils.floor(totalEthPos, 2)
+    if (spreadPosition == Neutral && roundedTotalEthPos != 0) {
+      ctx.submit(new MarketOrder(ethMarket, -roundedTotalEthPos))
       totalEthPos = totalEthPos - roundedTotalEthPos
     }
 
     // Close position
     spreadPosition match {
-      case Long if spread > -threshold * `0.1` =>
+      case Long if spread > -threshold * 0.1 =>
         // We were long the spread, so we bought the hedge security and sold eth.
         // Now we want to exit by selling the security and buying back the eth.
         spreadPosition = Neutral
-        marketOrder(hedgeMarket,
-            (-ctx.getPortfolio.getBalance(hedgeMarket.securityAccount))
-              .of(hedgeMarket.securityAccount))
-          .send()
+        ctx.submit(new MarketOrder(hedgeMarket,
+          -ctx.getPortfolio.getBalance(hedgeMarket.securityAccount)))
 
         // Total eth position should be negative right now. Negate it again to make
         // a positive order size.
-        marketOrder(ethMarket, (-totalEthPos).of("eth")).send()
+        ctx.submit(new MarketOrder(ethMarket, -totalEthPos))
 
       case _ =>
     }
@@ -164,12 +164,12 @@ class EthPairsTrade extends Strategy[PairsTradeParams] with TimeSeriesMixin {
         // This means that ETH is relatively overvalued.
         // Sell all that we have.
         spreadPosition = Long
-        marketOrder(ethMarket, (-ethBalance).of("eth"))
+        ctx.submit(new MarketOrder(ethMarket, -ethBalance))
 
         // At the same time, buy the hedge security.
         // Amount of ETH sold * (1 + beta)
-        val hedgeAmount = ethBalance.convert("eth", hedgeMarket.securityAccount) * (`1` + beta)
-        marketOrder(hedgeMarket, hedgeAmount.of(hedgeMarket.securityAccount))
+        val hedgeAmount = ethBalance.of('eth).as(hedgeMarket.securityAccount).amount * (1.0 + beta)
+        ctx.submit(new MarketOrder(hedgeMarket, hedgeAmount))
 
       case _ =>
     }
@@ -178,7 +178,8 @@ class EthPairsTrade extends Strategy[PairsTradeParams] with TimeSeriesMixin {
   override def resolveMarketData[T](selection: DataSelection[T],
                                     dataServer: ActorRef,
                                     dataOverrides: Seq[DataOverride[Any]])
-                                   (implicit mat: Materializer, ec: ExecutionContext) = {
+                                   (implicit mat: Materializer, ec: ExecutionContext)
+      : Future[Source[MarketData[T], NotUsed]] =
     selection.path.datatype match {
       case CandlesType(d) if d > 1.minute =>
         val newPath = selection.path.withType(CandlesType(1 minute))
@@ -193,9 +194,8 @@ class EthPairsTrade extends Strategy[PairsTradeParams] with TimeSeriesMixin {
       case _ =>
         super.resolveMarketData(selection, dataServer, dataOverrides)
     }
-  }
 
-  override def info(loader: EngineLoader) = {
+  override def info(loader: EngineLoader): Future[StrategyInfo] = {
     implicit val ec: ExecutionContext = loader.ec
     for {
       markets <- loader.markets

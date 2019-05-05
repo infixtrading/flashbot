@@ -58,8 +58,7 @@ import scala.util.{Success, Try}
 //  override def insert(tick: Tick) = tickRef ! tick
 //}
 
-class TradingSession(val id: String,
-                     val strategyKey: String,
+class TradingSession(val strategyKey: String,
                      val params: Json,
                      val mode: TradingSessionMode,
                      val dataServer: ActorRef,
@@ -70,8 +69,10 @@ class TradingSession(val id: String,
                      private val sessionEventsRef: ActorRef,
                      private val portfolioRef: PortfolioRef,
                      private val dataOverrides: Seq[DataOverride[_]],
-                     private implicit val mat: Materializer,
-                     private implicit val ec: ExecutionContext) {
+                     implicit private val mat: Materializer,
+                     implicit private val ec: ExecutionContext) {
+
+  protected[flashbot] var id: Option[String] = None
 
   val prices: PriceIndex = new JPriceIndex(GraphConversions)
   lazy val instruments: InstrumentIndex = load.value.get.get.instruments
@@ -159,6 +160,7 @@ class TradingSession(val id: String,
       cancelOrderList(rest)
   }
 
+
   private var killSwitch: SyncVar[Option[SharedKillSwitch]] = new SyncVar()
   killSwitch.put(None)
 
@@ -230,7 +232,7 @@ class TradingSession(val id: String,
   protected[flashbot] lazy val run: Future[Report] = {
     assert(killSwitch.take().isEmpty)
 
-    val ks = KillSwitches.shared(id)
+    val ks = KillSwitches.shared(id.get)
     val done: Future[Report] = for {
       // Load all setup vals
       setup <- load

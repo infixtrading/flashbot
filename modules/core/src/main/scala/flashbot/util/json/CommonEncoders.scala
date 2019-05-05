@@ -3,15 +3,17 @@ package flashbot.util.json
 import io.circe.{Decoder, Encoder, JsonObject, KeyDecoder, KeyEncoder}
 import io.circe.syntax._
 
+import scala.reflect.ClassTag
+
 object CommonEncoders {
 
-  implicit def deboxBufferDe[T: Decoder]: Decoder[debox.Buffer[T]] =
-    Decoder.decodeSeq.map(debox.Buffer.fromIterable)
+  implicit def deboxBufferDe[T: Decoder:ClassTag]: Decoder[debox.Buffer[T]] =
+    Decoder.decodeSeq(implicitly[Decoder[T]]).map(debox.Buffer.fromIterable)
 
-  implicit def deboxBufferEn[T: Encoder]: Encoder[debox.Buffer[T]] =
-    Encoder.encodeSeq.contramapArray(_.toIterable.toSeq)
+  implicit def deboxBufferEn[T: Encoder:ClassTag]: Encoder[debox.Buffer[T]] =
+    Encoder.encodeSeq(implicitly[Encoder[T]]).contramapArray(_.toIterable.toSeq)
 
-  implicit def deboxMapDe[K: KeyDecoder, V: Decoder]: Decoder[debox.Map[K, V]] =
+  implicit def deboxMapDe[K: KeyDecoder:ClassTag, V: Decoder:ClassTag]: Decoder[debox.Map[K, V]] =
     Decoder.decodeJsonObject.map { o =>
       val kd = implicitly[KeyDecoder[K]]
       val dv = implicitly[Decoder[V]]
@@ -32,7 +34,6 @@ object CommonEncoders {
       }
       o
     }
-
 
 //  implicit def objArrayFIFOEncoder[T: Encoder]: Encoder[ObjectArrayFIFOQueue[T]] =
 //    Encoder.encodeList.contramapArray { fifo =>

@@ -1,6 +1,5 @@
 package flashbot.core
 
-import flashbot.core.AssetKey.SecurityAsset
 import flashbot.models.Account
 import flashbot.models.Order._
 import flashbot.core.AssetKey.implicits._
@@ -67,7 +66,7 @@ object FixedSize {
                        (implicit prices: PriceIndex,
                         instruments: InstrumentIndex,
                         metrics: Metrics): FixedSize = {
-      val sec: SecurityAsset = size.security
+      val sec: Symbol = Symbol(size.security)
       val price = prices.calcPrice(sec, key, strict)
       FixedSize(price * size.amount, key.security)
     }
@@ -88,6 +87,7 @@ object FixedSize {
 
   implicit class ToFixedSizeOps(qty: Double) {
     def of(key: Account): FixedSize = FixedSize(qty, key.security)
+    def of(key: Symbol): FixedSize = FixedSize(qty, key.name)
   }
 
 

@@ -35,7 +35,7 @@ object Margin {
 
   private def orderAmount(o: Order) = o.amount
   private def orderValue(instrument: Instrument): Order => Double =
-    o => instrument.value(o.price.get) * o.amount
+    o => instrument.valueDouble(o.price.get) * o.amount
 
   private def percent(remainder: Double, total: Double): Double =
     if (total == 0d) 0d else remainder / total

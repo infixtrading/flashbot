@@ -257,7 +257,7 @@ lazy val docSettings = allFBSettings ++ Seq(
 //lazy val jvmModules = Seq[Project](server, client, testing)
 //lazy val fbDocsModules = Seq[Project](docs)
 
-lazy val jvmProjects: Seq[Project] = Seq[Project](server, client, testing)
+lazy val jvmProjects: Seq[Project] = Seq[Project](server, testing)
 
 //lazy val jsProjects: Seq[Project] =
 //  (crossModules.map(_._2) ++ jsModules)
@@ -411,9 +411,7 @@ lazy val server = flashbotModule("server", previousFBVersion).settings(
       "com.h2database" % "h2" % "1.4.192",
       "org.postgresql" % "postgresql" % "42.2.5"
     ))
-).dependsOn(core, client)
-
-lazy val client = flashbotModule("client", previousFBVersion).dependsOn(core)
+).dependsOn(core)
 
 //lazy val scalajs = flashbotModule("scalajs", None).enablePlugins(ScalaJSPlugin).dependsOn(coreJS)
 
@@ -445,7 +443,7 @@ lazy val tests = flashbotModule("tests", previousFBVersion)
 //    sourceGenerators in Test += (sourceManaged in Test).map(Boilerplate.genTests).taskValue,
 //    unmanagedResourceDirectories in Compile +=
 //      file("modules/tests") / "shared" / "src" / "main" / "resources"
-  ).dependsOn(core)
+  ).dependsOn(core, server)
 
 //lazy val tests = testsBase.jvm.dependsOn(server, client)
 //lazy val testsJS = testsBase.js.dependsOn(scalajs)

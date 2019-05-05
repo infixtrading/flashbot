@@ -40,14 +40,15 @@ trait Instrument {
     * The value of one unit of this security/contract in terms of the settlement asset.
     */
 //  def valueDouble(price: Double): Double
-  def value(price: Double): Double
+  def valueDouble(price: Double): Double
+  def value(price: Double): FixedSize
 }
 
 object Instrument {
 
   case class CurrencyPair(base: String, quote: String) extends Instrument with Labelled {
     override def symbol = s"${base}_$quote"
-    override def label = s"$base/$quote".toUpperCase
+    override def label: String = s"$base/$quote".toUpperCase
     override def settledIn = Some(quote)
     override def security = Some(base)
 
@@ -74,7 +75,7 @@ object Instrument {
 //      }
 //    }
 
-    override def value(price: Double) = price
+    override def valueDouble(price: Double) = price
   }
 
   object CurrencyPair {
@@ -110,7 +111,7 @@ object Instrument {
 //    }
     override def canShort = false
 
-    override def value(price: Double) = ???
+    override def valueDouble(price: Double) = ???
   }
 
   trait Derivative extends Instrument {

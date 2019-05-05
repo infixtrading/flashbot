@@ -1,5 +1,7 @@
 package flashbot.models
 
+import akka.NotUsed
+import akka.stream.scaladsl.Flow
 import flashbot.core._
 import flashbot.core.DeltaFmt.HasUpdateEvent
 import flashbot.models.Ladder.LadderDelta
@@ -7,6 +9,7 @@ import flashbot.models.Order.{Buy, Sell, Side}
 import flashbot.util.{DoubleMap, NumberUtils}
 import io.circe._
 import io.circe.syntax._
+import scala.collection.JavaConverters._
 
 class Ladder(val depth: Int, val tickSize: Double,
              var asks: LadderSide = null,
@@ -131,22 +134,16 @@ class Ladder(val depth: Int, val tickSize: Double,
 
   override def matchMutable(quoteSide: QuoteSide,
                             approxPriceLimit: Double,
-                            approxSize: Double,
-                            matchPricesOut: Array[Double],
-                            matchQtysOut: Array[Double]): Double = {
+                            approxSize: Double): Double = {
     lastMatchedSide = sideOf(quoteSide)
-    lastMatchedSide.matchMutable(quoteSide, approxPriceLimit,
-      approxSize, matchPricesOut, matchQtysOut)
+    lastMatchedSide.matchMutable(quoteSide, approxPriceLimit, approxSize)
   }
 
   override def matchSilent(quoteSide: QuoteSide,
                            approxPriceLimit: Double,
-                           approxSize: Double,
-                           matchPricesOut: Array[Double],
-                           matchQtysOut: Array[Double]): Double = {
+                           approxSize: Double): Double = {
     lastMatchedSide = sideOf(quoteSide)
-    lastMatchedSide.matchSilent(quoteSide, approxPriceLimit,
-      approxSize, matchPricesOut, matchQtysOut)
+    lastMatchedSide.matchSilent(quoteSide, approxPriceLimit, approxSize)
   }
 
   override def matchSilentAvg(quoteSide: QuoteSide,
@@ -205,6 +202,20 @@ object Ladder {
 
   implicit val ladderFmt: DeltaFmtJson[Ladder] =
     DeltaFmt.updateEventFmtJson[Ladder, Seq[LadderDelta]]("ladder")
+
+
+  def fromOrderBook(depth: Int, book: OrderBook): Ladder = {
+    val ladder = new Ladder(depth, book.tickSize)
+    for (p <- book.asks.priceIterator.take(depth)) {
+      val sum = book.ordersAtPrice(p).values().iterator().asScala.map(_.amount).sum
+      ladder.updateLevel(Ask, p, sum)
+    }
+    for (p <- book.bids.priceIterator.take(depth)) {
+      val sum = book.ordersAtPrice(p).values().iterator().asScala.map(_.amount).sum
+      ladder.updateLevel(Bid, p, sum)
+    }
+    ladder
+  }
 
 //  implicit def ladderFmt: DeltaFmtJson[Ladder] = new DeltaFmtJson[Ladder] {
 //    override type D = Seq[LadderDelta]
