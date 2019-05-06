@@ -1,8 +1,14 @@
 package flashbot.core
 
-import flashbot.models.Ladder
+import flashbot.models.{Ladder, LadderSide}
+import flashbot.models.Ladder.LadderDelta
 import flashbot.util.TableUtil
+import io.circe.{Decoder, Encoder}
 import org.scalatest.{FlatSpec, Matchers}
+import io.circe.syntax._
+import io.circe.generic.semiauto._
+
+import scala.collection.immutable
 
 class LadderTest extends FlatSpec with Matchers {
   "Ladder" should "load asks and bids" in {
@@ -30,6 +36,6 @@ class LadderTest extends FlatSpec with Matchers {
       .map(Ladder.fromOrderBook(200, _))
       .zipWithIndex
       .toVector
-    TableUtil.print(seq)
+    TableUtil.print(seq.take(2))
   }
 }

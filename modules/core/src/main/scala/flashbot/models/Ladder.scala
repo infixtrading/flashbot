@@ -8,7 +8,9 @@ import flashbot.models.Ladder.LadderDelta
 import flashbot.models.Order.{Buy, Sell, Side}
 import flashbot.util.{DoubleMap, NumberUtils}
 import io.circe._
+import io.circe.generic.JsonCodec
 import io.circe.syntax._
+
 import scala.collection.JavaConverters._
 
 class Ladder(val depth: Int, val tickSize: Double,
