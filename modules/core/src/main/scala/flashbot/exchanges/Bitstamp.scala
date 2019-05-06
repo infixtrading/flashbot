@@ -2,10 +2,9 @@ package flashbot.exchanges
 
 import akka.actor.ActorSystem
 import akka.stream.{ActorMaterializer, Materializer}
-import flashbot.core.Exchange
+import flashbot.core.{Exchange, ExchangeParams, Instrument, InstrumentParams}
 import io.circe.Json
 import flashbot.core.Instrument.CurrencyPair
-import flashbot.core.Instrument
 import flashbot.models.{ExchangeResponse, PostOrderRequest}
 
 import scala.concurrent.Future
@@ -13,9 +12,21 @@ import scala.concurrent.Future
 class Bitstamp(implicit val system: ActorSystem,
                val mat: Materializer) extends Exchange {
 
-  override def makerFee: Double = .0005
+  override val params: ExchangeParams = {
+    new ExchangeParams(
+      // Base params
+      new InstrumentParams(){{
+        makerFee = .0005
+        takerFee = .0005
+      }},
 
-  override def takerFee: Double = .0005
+      // Instrument specific
+      new java.util.HashMap[String, InstrumentParams](){{
+        put("btc_usd", new InstrumentParams(){{
+          tickSize = 0.01
+        }})
+      }})
+  }
 
   override def order(req: PostOrderRequest): Future[ExchangeResponse] = ???
 

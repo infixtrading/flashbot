@@ -1,9 +1,10 @@
 package flashbot.exchanges
+import java.util
+
 import akka.actor.ActorSystem
 import akka.stream.{ActorMaterializer, Materializer}
 import flashbot.core.Instrument.CurrencyPair
-import flashbot.core.Exchange
-import flashbot.core.Instrument
+import flashbot.core.{Exchange, ExchangeParams, Instrument, InstrumentParams}
 import flashbot.models.PostOrderRequest
 
 import scala.concurrent.Future
@@ -11,8 +12,22 @@ import scala.concurrent.Future
 class Bitfinex(implicit val system: ActorSystem,
                val mat: Materializer) extends Exchange {
 
-  override def makerFee = .0000
-  override def takerFee = .0000
+  override val params: ExchangeParams = {
+    new ExchangeParams(
+      // Base params
+      new InstrumentParams(){{
+        makerFee = .0000
+        takerFee = .0000
+      }},
+
+      // Instrument specific
+      new java.util.HashMap[String, InstrumentParams](){{
+        put("btc_usd", new InstrumentParams(){{
+          tickSize = 0.1
+        }})
+      }})
+  }
+
   override def order(req: PostOrderRequest) = ???
   override def cancel(id: String, pair: Instrument) = ???
 

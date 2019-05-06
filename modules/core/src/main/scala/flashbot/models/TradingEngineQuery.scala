@@ -19,7 +19,12 @@ case class BacktestQuery(strategyName: String,
                          timeRange: TimeRange,
                          portfolio: String,
                          barSize: Option[FiniteDuration],
-                         eventsOut: Option[ActorRef] = None,
+
+                         // Accepts an initial Report snapshot message, followed by any number of
+                         // ReportEvent objects. When the session is done, the actor is sent a
+                         // Status.Success or Status.Failure message. This will auto close streams
+                         // created with Source.actorRef.
+                         reportListener: Option[ActorRef] = None,
                          dataOverrides: Seq[DataOverride[Any]] = Seq.empty) extends TradingEngineQuery
 
 case class BotReportQuery(botId: String) extends TradingEngineQuery

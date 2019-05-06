@@ -30,10 +30,7 @@ class Simulator(base: Exchange, ctx: TradingSession, latencyMicros: Long = 0) ex
   private var depths = new java.util.HashMap[String, Ladder]
   private var prices = debox.Map.empty[String, Double]
 
-  override def makerFee: Double = base.makerFee
-  override def takerFee: Double = base.takerFee
-
-  override def marketDataUpdate(md: MarketData[_]): Unit = {
+  override protected[flashbot] def marketDataUpdate(md: MarketData[_]): Unit = {
 
     // Update latest depth/pricing data.
     md.data match {

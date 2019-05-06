@@ -69,7 +69,7 @@ class Ladder(val depth: Int, val tickSize: Double,
 //  }
 
 
-  override var lastUpdate: MutableOpt[Seq[LadderDelta]] = MutableOpt.from(None)
+  override val lastUpdate: MutableOpt[Seq[LadderDelta]] = MutableOpt.from(None)
 
   override protected def _step(deltas: Seq[LadderDelta]): Ladder = {
     deltas.foreach { d =>

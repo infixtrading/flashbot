@@ -5,9 +5,6 @@ trait Instrument {
   // Unique string id such as "eth_usdt" or "xbtusd"
   def symbol: String
 
-  // The minimum price difference that can exist between two orders.
-  def tickSize: Double
-
   // The base asset/security of this instrument. I.e. what are we quoting?
   def base: String
 
@@ -41,7 +38,7 @@ trait Instrument {
     */
 //  def valueDouble(price: Double): Double
   def valueDouble(price: Double): Double
-  def value(price: Double): FixedSize
+  def value(price: Double): FixedSize = FixedSize(valueDouble(price), settledIn.get)
 }
 
 object Instrument {
@@ -75,7 +72,7 @@ object Instrument {
 //      }
 //    }
 
-    override def valueDouble(price: Double) = price
+    override def valueDouble(price: Double): Double = price
   }
 
   object CurrencyPair {

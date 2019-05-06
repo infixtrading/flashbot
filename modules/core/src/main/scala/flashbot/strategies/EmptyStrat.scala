@@ -34,7 +34,7 @@ class EmptyStrat extends Strategy[EmptyParams] with TimeSeriesMixin {
     Future.successful(params.markets.split(",").map(Market(_).path(dataType)))
   }
 
-  override def handleData(data: MarketData[_])(implicit ctx: TradingSession) = {
+  override def onData(data: MarketData[_]): Unit = {
   }
 
   override def resolveMarketData[T](selection: DataSelection[T],

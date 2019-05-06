@@ -96,7 +96,7 @@ object DeltaFmt {
       ret
     }
 
-    def lastUpdate: MutableOpt[D]
+    protected[flashbot] val lastUpdate: MutableOpt[D]
     protected def _step(delta: D): T
   }
 

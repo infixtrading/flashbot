@@ -90,8 +90,8 @@ class Portfolio(private val assets: debox.Map[Account, Double],
     assert(size != 0, "Order size cannot be 0")
 
     val fee = liquidity match {
-      case Maker => exchangesParams.get(market.exchange).makerFee
-      case Taker => exchangesParams.get(market.exchange).takerFee
+      case Maker => exchangesParams.get(market.exchange).makerFee(market.symbol)
+      case Taker => exchangesParams.get(market.exchange).takerFee(market.symbol)
     }
 
     instruments(market) match {
@@ -177,10 +177,11 @@ class Portfolio(private val assets: debox.Map[Account, Double],
   }
 
   def addOrder(id: Option[String], market: Market, size: Double, price: Double)
-              (implicit instrumentIndex: InstrumentIndex): Portfolio = {
+              (implicit instrumentIndex: InstrumentIndex,
+               exchangeParams: java.util.Map[String, ExchangeParams]): Portfolio = {
     val instr = instrumentIndex(market)
     var book = orders(market)
-    if (book == null) book = OrderBook(instr.tickSize)
+    if (book == null) book = OrderBook(exchangeParams.get(market.exchange).tickSize(market.symbol))
     val side = if (size > 0) Order.Buy else Order.Sell
 
     _step(OrdersUpdated(market,

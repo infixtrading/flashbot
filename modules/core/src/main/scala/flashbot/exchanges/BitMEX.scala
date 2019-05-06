@@ -11,9 +11,21 @@ import scala.concurrent.Future
 class BitMEX(implicit val system: ActorSystem,
              val mat: Materializer) extends Exchange {
 
-  override def makerFee: Double = -0.00025d
+  override val params: ExchangeParams = {
+    new ExchangeParams(
+      // Base params
+      new InstrumentParams(){{
+      }},
 
-  override def takerFee: Double = 0.00075d
+      // Instrument specific
+      new java.util.HashMap[String, InstrumentParams](){{
+        put("xbtusd", new InstrumentParams(){{
+          makerFee = -0.00025d
+          takerFee = 0.00075d
+          tickSize = 0.01
+        }})
+      }})
+  }
 
   override def cancel(id: String, pair: Instrument): Future[ExchangeResponse] = ???
 
@@ -68,7 +80,7 @@ object BitMEX {
       (exitPrice - entryPrice) * bitcoinMultiplier * size
     }
 
-    override def valueDouble(price: Double) = price * bitcoinMultiplier
+    override def valueDouble(price: Double): Double = price * bitcoinMultiplier
   }
 
   object BXBT extends Index(".BXBT", "xbt", "usd")

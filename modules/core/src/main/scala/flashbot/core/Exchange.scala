@@ -6,15 +6,12 @@ import flashbot.models._
 import flashbot.util.{NumberUtils, time}
 import io.circe.Json
 
+import scala.collection.mutable
 import scala.concurrent.Future
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.util.{Failure, Success, Try}
 
 abstract class Exchange {
-
-  // Fees used for simulation
-  def makerFee: Double
-  def takerFee: Double
 
   // Exchange API request implementations
   def order(req: PostOrderRequest): Future[ExchangeResponse]
@@ -129,8 +126,11 @@ abstract class Exchange {
   protected[flashbot] def roundBase(instrument: Instrument)(balance: Double): Double =
     NumberUtils.round(balance, baseAssetPrecision(instrument))
 
-  final def params: ExchangeParams = ExchangeParams(makerFee, takerFee)
+  def params: ExchangeParams = new ExchangeParams(null, new java.util.HashMap[String, InstrumentParams]())
 
+  protected[flashbot] def marketDataUpdate(md: MarketData[_]): Unit = {
+    throw new RuntimeException("marketDataUpdate in base exchange")
+  }
 
 }
 

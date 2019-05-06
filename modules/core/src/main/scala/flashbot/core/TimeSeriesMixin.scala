@@ -102,8 +102,8 @@ trait TimeSeriesMixin extends DataHandler { self: Strategy[_] =>
     if (addedBars > 0)
       (1 to addedBars).map(_ - 1).reverse.map(i =>
           CandleAdd(key, barToCandle(series.getBar(series.getEndIndex - i))))
-        .foreach(ctx.reportEvent(_))
-    else ctx.reportEvent(CandleUpdate(key, barToCandle(series.getLastBar)))
+        .foreach(ctx.emitReportEvent(_))
+    else ctx.emitReportEvent(CandleUpdate(key, barToCandle(series.getLastBar)))
 
     timer.close()
   }

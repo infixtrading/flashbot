@@ -61,7 +61,7 @@ case class TradingEngineState(bots: Map[String, BotState] = Map.empty,
     /**
       * A bot session started.
       */
-    case SessionStarted(id, Some(botId), strategyKey, strategyParams, mode, micros, report) =>
+    case SessionInitialized(id, Some(botId), strategyKey, strategyParams, mode, micros, report) =>
       val session = TradingSessionState(id, strategyKey, strategyParams, mode, micros, report)
       copy(bots = bots + (botId ->
         bots.getOrElse(botId, BotState.empty(micros)).pushSession(session) ))

@@ -33,7 +33,7 @@ class OrderBook(val tickSize: Double,
                 protected[flashbot] var bids: OrderBookSide = null,
 
                 // Used for streaming.
-                protected var lastUpdate: Option[Delta] = None)
+                protected[flashbot] val lastUpdate: MutableOpt[Delta] = MutableOpt.from(None))
 
       extends HasUpdateEvent[OrderBook, Delta] with Matching {
 
@@ -48,7 +48,7 @@ class OrderBook(val tickSize: Double,
   assert(bids.index.isEmpty)
   assert(lastUpdate.isEmpty)
 
-  def getLastUpdate: Option[Delta] = lastUpdate
+  def getLastUpdate: Option[Delta] = lastUpdate.toOption
 
   // Sizes
   private var askCount = 0

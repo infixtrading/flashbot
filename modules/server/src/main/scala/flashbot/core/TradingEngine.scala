@@ -3,6 +3,7 @@ package flashbot.core
 import java.time.Instant
 
 import akka.Done
+import akka.actor.Status.Status
 import akka.actor.{ActorLogging, ActorRef, ActorSystem, PoisonPill, Props, Status}
 import akka.cluster.Cluster
 import akka.cluster.ClusterEvent.{InitialStateAsEvents, MemberUp}
@@ -17,7 +18,6 @@ import flashbot.core.DataType.CandlesType
 import flashbot.core.FlashbotConfig.{BotConfig, ExchangeConfig, GrafanaConfig, StaticBotsConfig}
 import flashbot.core.ReportEvent._
 import flashbot.models._
-import flashbot.server.TradingSessionActor.{SessionPing, SessionPong, StartSession, StopSession}
 import flashbot.server._
 import flashbot.strategies.TimeSeriesStrategy
 import flashbot.util._
@@ -71,7 +71,7 @@ class TradingEngine(engineId: String,
     */
   var state = TradingEngineState()
 
-  var botSessions = Map.empty[String, ActorRef]
+  var botSessions = Map.empty[String, TradingSession]
   var subscriptions = Map.empty[String, Set[ActorRef]]
 
   system.scheduler.schedule(200 millis, 200 millis, self, EngineTick)
@@ -147,16 +147,19 @@ class TradingEngine(engineId: String,
         val dynamicEnabledKeys = state.bots.filter(_._2.enabled).keySet
 
         for {
-          // Static bots must emit BotConfigured, BotEnabled, and SessionStarted events when they
+          // Static bots must emit BotConfigured, BotEnabled, and SessionInitialized events when they
           // are started on boot.
           staticStartedEvents <- Future.sequence(staticEnabledKeys.map(startBot))
               .map(staticEnabledKeys zip _.map {
-                case startedEv @ SessionStarted(_, Some(botId), _, _, _, _, _) =>
-                  Seq(BotConfigured(engineStartMicros, botId, staticBotsConfig.configs(botId)),
-                    BotEnabled(botId), startedEv)
+                case startedEv @ SessionInitialized(_, Some(botId), _, _, _, _, _) =>
+                  Seq(
+                    BotConfigured(engineStartMicros, botId, staticBotsConfig.configs(botId)),
+                    BotEnabled(botId),
+                    startedEv
+                  )
               }).map(_.toMap)
 
-          // Dynamic bots on the other hand simply emit SessionStarted events on boot.
+          // Dynamic bots on the other hand simply emit SessionInitialized events on boot.
           dynamicStartedEvents <- Future.sequence(dynamicEnabledKeys.map(startBot(_).map(Seq(_))))
             .map(dynamicEnabledKeys zip _).map(_.toMap)
         } yield staticStartedEvents ++ dynamicStartedEvents
@@ -185,10 +188,7 @@ class TradingEngine(engineId: String,
       Future.successful((Done, events))
 
     /**
-      * A bot session emitted a ReportEvent. Here is where we decide what to do about it by
-      * emitting the ReportDeltas that we'd like to persist in state. Specifically, if there
-      * is a balance event, we want to save that to state. In addition to that, we always
-      * generate report deltas and save those.
+      * A bot session emitted a ReportEvent.
       */
     case ProcessBotReportEvent(botId, event) =>
       if (!state.bots.isDefinedAt(botId)) {
@@ -196,28 +196,24 @@ class TradingEngine(engineId: String,
         return Future.successful((Done, Seq.empty))
       }
 
+      // Update the report and publish to subscribers
       val currentReport = state.bots(botId).sessions.last.report
-      val deltas = currentReport.genDeltas(event)
-      val deltaEvents = deltas.map(ReportUpdated(botId, _)).toList
+      val newReport = currentReport.update(event)
+      publish(botId, newReport)
 
-      // Build a stream of reports from the deltas and publish.
-      deltas.scanLeft(currentReport) { case (report, delta) => report.update(delta) }
-        .drop(1)
-        .foreach { report => publish(botId, report) }
-
-      // Clean up and shutdown session when the session completes for any reason.
-      val doneEvents = event match {
-        case SessionComplete(None) =>
+      // Clean up and shutdown session when it completes for any reason.
+      val doneEvents: List[BotDisabled] = event match {
+        case SessionSuccess =>
           shutdownBotSession(botId)
           List(BotDisabled(botId))
-        case SessionComplete(Some(err)) =>
+        case SessionFailure(err) =>
           shutdownBotSession(botId)
           List(BotDisabled(botId))
         case _ =>
           List()
       }
 
-      Future.successful((Done, deltaEvents ++ doneEvents))
+      Future.successful((Done, ReportUpdated(botId, event) :: doneEvents))
 
     /**
       * TODO: Check that the bot is not running. Cannot configure a running bot.
@@ -466,72 +462,83 @@ class TradingEngine(engineId: String,
         * To resolve a backtest query, we start a trading session in Backtest mode and collect
         * all session events into a stream that we fold over to create a report.
         */
-      case BacktestQuery(strategyName, paramsJson, timeRange, portfolio, barSize, eventsOut, dataOverrides) =>
+      case BacktestQuery(strategyName, paramsJson, timeRange, portfolioStr,
+          barSize, reportJsonListener, dataOverrides) =>
 
         val timer = ServerMetrics.startTimer("backtest_ms")
 
-        // TODO: Remove the try catch
-        try {
-          val report = Report.empty(strategyName, paramsJson,
-            barSize.map(d => Duration.fromNanos(d.toNanos)))
+        val portfolioRef = new PortfolioRef.Isolated(portfolioStr)
 
-          val (ref, reportEventSrc) = Source
-            .actorRef[ReportEvent](Int.MaxValue, OverflowStrategy.fail)
-            .alsoTo(Sink.foreach { x =>
-              ServerMetrics.inc("report_event_count")
-            })
-            .preMaterialize()
+        // Serialize into json before any mutation can happen to the report instance.
+        // This is sent as the first message to reportJsonListener.
+//        val initialReportJson = initialReport.asJson
 
-          // Fold the empty report over the ReportEvents emitted from the session.
-          val fut: Future[Report] = reportEventSrc
-            .scan[(Report, scala.Seq[Json])]((report, Seq.empty))((r, ev) => {
-              // Complete this stream once a SessionComplete event comes in.
-              ev match {
-                case SessionComplete(None) => ref ! Status.Success(Done)
-                case SessionComplete(Some(_)) => ref ! PoisonPill
-                case _ => // Ignore other events that are not relevant to stream completion
-              }
+        val (ref, reportEventSrc) = Source
+          .actorRef[ReportEvent](Int.MaxValue, OverflowStrategy.fail)
+          .alsoTo(Sink.foreach { x =>
+            ServerMetrics.inc("report_event_count")
+          })
+          .preMaterialize()
 
-              val deltas = r._1.genDeltas(ev)
-              var jsonDeltas = Seq.empty[Json]
-
-              deltas.foreach { delta =>
-                jsonDeltas :+= delta.asJson
-                ServerMetrics.inc("backtest_report_delta_counter")
-              }
-              (deltas.foldLeft(r._1)(_.update(_)), jsonDeltas)
-            })
-            // Send the report deltas to the client if requested.
-            .alsoTo(Sink.foreach((rd: (Report, Seq[Json])) => {
-              eventsOut.foreach(ref => rd._2.foreach(ref ! _))
-            }))
-            .map(_._1)
-            .toMat(Sink.last)(Keep.right)
-            .run
-
-          // Always send the initial report back to let the client know we started the backtest.
-          eventsOut.foreach(_ ! report)
-
-          // Start the trading session
-          startTradingSession(None, strategyName, paramsJson, Backtest(timeRange),
-              ref, new PortfolioRef.Isolated(portfolio), report, dataOverrides)._2 onComplete {
-            case Success(event: TradingEngineEvent) =>
-              log.debug("Trading session started")
-              eventsOut.foreach(_ ! event)
-            case Failure(err) =>
-              log.error(err, "Trading session initialization error")
-              eventsOut.foreach(_ ! err)
-          }
-
-          fut.andThen {
-            case x =>
-              timer.close()
-          }.map(ReportResponse) pipeTo sender
-        } catch {
-          case err: Throwable =>
-            log.error("Uncaught error during backtesting", err)
-            throw err
+        // Helper method for sending events to actor refs.
+        def emitEvent(event: Any, listenerOnly: Boolean = false): Unit = {
+          if (!listenerOnly) ref ! event
+          if (reportJsonListener.isDefined) reportJsonListener.get ! event
         }
+
+        // Initialize the trading session
+        val (session: TradingSession, initEvent) = tryStartTradingSession(None, strategyName, paramsJson,
+          Backtest(timeRange), ref, portfolioRef, initialReport, dataOverrides)
+
+        // Must only be accessed after the session initialization future completes, because
+        // we are accessing `session.instruments` here.
+        lazy val initialReport = Report.empty(
+          strategyName, paramsJson, barSize.map(d => Duration.fromNanos(d.toNanos)),
+          portfolioRef.getPortfolio(Some(session.instruments))
+        )
+
+        // Fold the empty report over the ReportEvents emitted from the session.
+        def reportFuture(): Future[Report] = reportEventSrc
+          .scan[Report](initialReport)((r, ev) => {
+            // Metrics
+            ServerMetrics.inc("backtest_report_event_counter")
+
+            // Send the report event to the listener.
+            emitEvent(ev, listenerOnly = true)
+
+            // Shut down the main portfolio ref and the listener when a SessionComplete event arrives.
+            ev match {
+              case SessionSuccess => emitEvent(Status.Success(Done))
+              case SessionFailure(err) => emitEvent(Status.Failure(err))
+            }
+
+            // Update the report we're scanning over.
+            r.update(ev)
+          })
+          .toMat(Sink.last)(Keep.right)
+          .run
+
+        // Transform SessionInitializationError as a failure at the Future level.
+        initEvent transform {
+            case Success(ev: SessionInitialized) => Success(ev)
+            case Success(err: SessionInitializationError) => Failure(err)
+            case Failure(err) => Failure(err)
+
+        // Always send the initial report back to let the listener know we started the backtest
+        } andThen {
+          case Success(_: SessionInitialized) =>
+            emitEvent(initialReport, listenerOnly = true)
+
+        // On successful initialization, build our report from the ReportEvent stream.
+        } flatMap { _ =>
+          reportFuture()
+
+        // Finally, close the timer.
+        } andThen { case _ =>
+          timer.close()
+
+        // Map to a ReportResponse and pipe back to sender
+        } map ReportResponse pipeTo sender
 
       case q =>
         Future.failed(new IllegalArgumentException(s"Unsupported query: $q")) pipeTo sender
@@ -574,14 +581,15 @@ class TradingEngine(engineId: String,
       state = state.update(event)
   }
 
-  private def startTradingSession(botId: Option[String],
-                                  strategyKey: String,
-                                  strategyParams: Json,
-                                  mode: TradingSessionMode,
-                                  sessionEventsRef: ActorRef,
-                                  portfolioRef: PortfolioRef,
-                                  report: Report,
-                                  dataOverrides: Seq[DataOverride[_]]): (ActorRef, Future[TradingEngineEvent]) = {
+  private def tryStartTradingSession(botId: Option[String],
+                                     strategyKey: String,
+                                     strategyParams: Json,
+                                     mode: TradingSessionMode,
+                                     sessionEventsRef: ActorRef,
+                                     portfolioRef: PortfolioRef,
+                                     report: Report,
+                                     dataOverrides: Seq[DataOverride[_]])
+      : (TradingSession, Future[SessionInitEvent]) = {
 
     val session = new TradingSession(
       strategyKey,
@@ -599,21 +607,25 @@ class TradingEngine(engineId: String,
       ec
     )
 
-    val sessionActor = context.actorOf(Props(new TradingSessionActor(session)))
-
     // Start the session. We are only waiting for an initialization error, or a confirmation
     // that the session was started, so we don't wait for too long.
-    val fut = (sessionActor ? StartSession).map[TradingEngineEvent] {
-      case (sessionId: String, micros: Long) =>
-        log.debug("Session started")
-        SessionStarted(sessionId, botId, strategyKey, strategyParams, mode, micros, report)
-    } recover {
-      case err: Exception =>
-        log.error(err, "Error during session init")
-        SessionInitializationError(err, botId, strategyKey, strategyParams,
-          mode, portfolioRef.toString, report)
+    val fut = session.start() transform {
+      case Success(setup) =>
+        log.debug("Trading session initialized")
+        Success(SessionInitialized(setup.sessionId, botId, strategyKey, strategyParams,
+          mode, setup.sessionMicros, report))
+
+      case Failure(err: Exception) =>
+        log.error(err, "Error during trading session init. Wrapping in a SessionInitializationError.")
+        Success(SessionInitializationError(err, botId, strategyKey, strategyParams,
+          mode, portfolioRef.toString, report))
+
+      case Failure(err) =>
+        log.error(err, "Fatal error during trading session init")
+        Failure(err)
     }
-    (sessionActor, fut)
+
+    (session, fut)
   }
 
   private def startBot(name: String): Future[TradingEngineEvent] = {
@@ -639,15 +651,15 @@ class TradingEngine(engineId: String,
 
           case Live =>
             // Instantiate an anonymous PortfolioRef which uses the actor state in scope.
-            // This object will be called concurrently by strategies running in different
-            // threads, which is why we need globalPortfolio to be a SyncVar.
+            // Use locking to prevent race conditions when updating the portfolio.
             new PortfolioRef {
-//              override def mergePortfolio(partial: Portfolio) = {
-//                globalPortfolio.put(globalPortfolio.take().merge(partial))
-//              }
               override def getPortfolio(instruments: Option[InstrumentIndex]): Portfolio = globalPortfolio.get
 
               override def printPortfolio: String = globalPortfolio.get.toString
+
+              override def acquirePortfolio(ctx: TradingSession): Portfolio = globalPortfolio.take()
+
+              override def releasePortfolio(portfolio: Portfolio): Unit = globalPortfolio.put(portfolio)
             }
         }
 
@@ -667,29 +679,37 @@ class TradingEngine(engineId: String,
             log.error(err, s"Bot $name failed")
         }
 
-        val (sessionActor, startFut) =
-          startTradingSession(Some(name), strategy, params, mode, ref, portfolioRef,
+        val (session, startFut) =
+          tryStartTradingSession(Some(name), strategy, params, mode, ref, portfolioRef,
             Report.empty(strategy, params), Seq.empty)
 
-        botSessions += (name -> sessionActor)
+        botSessions += (name -> session)
 
         startFut
     }
   }
 
   /**
-    * Let's keep this idempotent. Not thread safe, like most of the stuff in this class.
+    * Let's keep this idempotent.
     */
-  def shutdownBotSession(name: String): Unit = {
+  def shutdownBotSession(name: String): Future[Done] = this.synchronized {
     log.info(s"Trying to shutdown session for bot $name")
 
-    if (botSessions.isDefinedAt(name)) {
-      botSessions(name) ! StopSession
+    val hasSubscriptions = subscriptions.isDefinedAt(name)
+    if (hasSubscriptions) {
+      publish(name, Status.Success(Done))
+      subscriptions -= name
     }
-    botSessions -= name
 
-    publish(name, Status.Success(Done))
-    subscriptions -= name
+    val session = botSessions.get(name)
+    if (session.isDefined) {
+      botSessions -= name
+      session.get.shutdown()
+    } else {
+      if (hasSubscriptions)
+        log.error(s"Subscriptions detected and removed for invalid bot $name")
+      Future.failed(new RuntimeException(s"$name is not a valid bot name"))
+    }
   }
 
   def publish(id: String, reportMsg: Any): Unit = {
@@ -698,8 +718,8 @@ class TradingEngine(engineId: String,
     }
   }
 
-  def pingBot(name: String): Future[TradingSessionActor.SessionPong.type] = Future {
-    Await.result(botSessions(name) ? SessionPing, 5 seconds).asInstanceOf[SessionPong.type]
+  def pingBot(name: String): Future[Pong] = Future {
+    Await.result(botSessions(name).ping, 5 seconds)
   }
 
   def botStatus(name: String): Future[BotStatus] = state.bots.get(name) match {
@@ -707,7 +727,7 @@ class TradingEngine(engineId: String,
       if (allBotConfigs contains name) Future.successful(Disabled)
       else Future.failed(new IllegalArgumentException(s"Unknown bot $name"))
     case Some(BotState(_, true, _, _)) => pingBot(name).transform {
-      case Success(SessionPong) => Success(Running)
+      case Success(Pong(_)) => Success(Running)
       case _ => Success(Crashed)
     }
     case Some(BotState(_, false, _, _)) => Future.successful(Disabled)

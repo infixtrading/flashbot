@@ -7,16 +7,19 @@ import akka.actor.{ActorRef, Cancellable, Scheduler}
 import akka.event.LoggingAdapter
 import akka.stream.{KillSwitches, Materializer, OverflowStrategy, SharedKillSwitch}
 import akka.stream.scaladsl.{Keep, Source}
-import flashbot.core.TradingSession.{DataStream, SessionSetup}
+import flashbot.core.Report.ReportError
+import flashbot.core.ReportEvent.{SessionComplete, SessionFailure, SessionSuccess}
+import flashbot.core.TradingSession.{DataStream, SessionSetup, Started}
 import flashbot.models.OrderCommand.CommandQueue
 import flashbot.models._
 import flashbot.server.{ServerMetrics, Simulator}
 import flashbot.util._
 import io.circe.Json
+import io.circe.syntax._
 
 import scala.annotation.tailrec
 import scala.concurrent._
-import scala.util.{Success, Try}
+import scala.util.{Failure, Success, Try}
 
 
 //trait TradingSession {
@@ -64,7 +67,7 @@ class TradingSession(val strategyKey: String,
                      val dataServer: ActorRef,
                      val loader: EngineLoader,
                      val log: LoggingAdapter,
-                     val report: Report,
+                     val initialReport: Report,
                      private val akkaScheduler: Scheduler,
                      private val sessionEventsRef: ActorRef,
                      private val portfolioRef: PortfolioRef,
@@ -73,6 +76,12 @@ class TradingSession(val strategyKey: String,
                      implicit private val ec: ExecutionContext) {
 
   protected[flashbot] var id: Option[String] = None
+
+  // Serialize a Json snapshot of the initial report.
+  private val initialReportJson = initialReport.asJson
+
+  // Immediately deserialize to make a deep copy of the report. This is the in-memory
+  // report that this session will be using as state.
 
   val prices: PriceIndex = new JPriceIndex(GraphConversions)
   lazy val instruments: InstrumentIndex = load.value.get.get.instruments
@@ -179,8 +188,16 @@ class TradingSession(val strategyKey: String,
   def setInterval(delayMicros: Long, tick: Tick): Cancellable = scheduler.setInterval(delayMicros, tick)
   def setInterval(delayMicros: Long, fn: Runnable): Cancellable = scheduler.setInterval(delayMicros, fn)
 
-  def reportEvent(event: ReportEvent): Unit = {
+  def emitReportEvent(event: ReportEvent): Unit = {
     sessionEventsRef
+  }
+
+  def ping: Future[Pong] = {
+    val pongPromise = Promise[Pong]
+    emit(Callback(() => {
+      pongPromise.success(Pong(Long.unbox(seqNr)))
+    }))
+    pongPromise.future
   }
 
   protected[flashbot] val exchangeParams: java.util.HashMap[String, ExchangeParams] = buildExMap(_.params)
@@ -224,16 +241,22 @@ class TradingSession(val strategyKey: String,
     else allOrdersByExchangeId.get(str)
   }
 
-  val backtestMDOrdering = Ordering.by[MarketData[_], Long](_.micros)
+  private var completeFut: Option[Future[Done]] = None
+  def future: Future[Done] = this.synchronized {
+    if (completeFut.isEmpty)
+      throw new RuntimeException("Session has not started yet.")
+    completeFut.get
+  }
 
   /**
-    * The "main method". It will never run more than once per session instance.
+    * The main method. It will never run more than once per session instance.
     */
-  protected[flashbot] lazy val run: Future[Report] = {
-    assert(killSwitch.take().isEmpty)
+  protected[flashbot] def start(): Future[SessionSetup] = this.synchronized {
+    assert(completeFut.isEmpty, "Session already started")
 
     val ks = KillSwitches.shared(id.get)
-    val done: Future[Report] = for {
+
+    val sessionInitFuture = for {
       // Load all setup vals
       setup <- load
       _ = {
@@ -243,14 +266,14 @@ class TradingSession(val strategyKey: String,
       // Prepare market data streams
       (dataStreamsDone, marketDataStream) =
 
-        // If this trading session is a backtest then we merge the data streams by time.
-        // But if this is a live trading session then data is sent first come, first serve
-        // to keep latencies low.
-        dataStreams.reduce[DataStream](
-              if (mode.isBacktest) _.mergeSorted(_)(backtestMDOrdering)
-              else _.merge(_))
-          .watchTermination()(Keep.right)
-          .preMaterialize()
+      // If this trading session is a backtest then we merge the data streams by time.
+      // But if this is a live trading session then data is sent first come, first serve
+      // to keep latencies low.
+      dataStreams.reduce[DataStream](
+        if (mode.isBacktest) _.mergeSorted(_)(Ordering.by[MarketData[_], Long](_.micros))
+        else _.merge(_))
+        .watchTermination()(Keep.right)
+        .preMaterialize()
 
       // Shutdown the session when market data streams are complete.
       _ = dataStreamsDone.onComplete(_ => ks.shutdown())
@@ -263,14 +286,20 @@ class TradingSession(val strategyKey: String,
         else marketDataStream
 
       // Set the kill switch
-      _ = { killSwitch.put(Some(ks)) }
+      _ = {
+        killSwitch.put(Some(ks))
+      }
+    } yield (setup, tickStream)
 
-      /**
-        * =============
-        *   Lift-off
-        * =============
-        */
-      _ <- tickStream.runForeach { tick =>
+
+    /**
+      * =============
+      *   Lift-off
+      * =============
+      */
+    val mainLoopFut = for {
+      (setup, tickStream) <- sessionInitFuture
+      done <- tickStream runForeach { tick =>
         tick match {
           case md: MarketData[_] =>
 
@@ -298,16 +327,24 @@ class TradingSession(val strategyKey: String,
 
         // Then process the tick itself
         processTick(tick)
+
+      } andThen {
+        // After the market data streams are done, fast forward the event loop so that backtests
+        // can process all ticks scheduled for after the last piece of market data.
+        case Success(_) =>
+          scheduler.fastForward(Long.MaxValue, processTick)
       }
+    } yield done
 
-    } yield report
+    // Emit the SessionComplete event
+    completeFut = Some(mainLoopFut andThen {
+      case Success(Done) =>
+        emitReportEvent(SessionSuccess)
+      case Failure(err) =>
+        emitReportEvent(SessionFailure(ReportError(err)))
+    })
 
-    // After the market data streams are done, fast forward the event loop so that backtests
-    // can process all ticks scheduled for after the last piece of market data.
-    done.andThen {
-      case Success(_) =>
-        scheduler.fastForward(Long.MaxValue, processTick)
-    }
+    sessionInitFuture.map(_._1)
   }
 
   def buildExMap[T](fn: Exchange => T): java.util.HashMap[String, T] = {
@@ -349,7 +386,6 @@ class TradingSession(val strategyKey: String,
 //        def send(events: m.Buffer[Any]): Unit = {
 //          sendFn(events)
 //        }
-
 
   def getPortfolio: Portfolio = portfolioRef.getPortfolio(Some(instruments))
 
@@ -404,10 +440,10 @@ class TradingSession(val strategyKey: String,
         _ = strategy.setParams(decodedParams)
 
         // Set the var buffer
-        _ = strategy.setVarBuffer(new VarBuffer(report.values.mapValues(_.value)))
+        _ = strategy.setVarBuffer(new VarBuffer(initialReport.values.mapValues(_.value)))
 
         // Set the bar size
-        _ = strategy.setSessionBarSize(report.barSize)
+        _ = strategy.setSessionBarSize(initialReport.barSize)
       } yield strategy
     } yield strategy
 
@@ -461,6 +497,8 @@ object TradingSession {
                           sessionId: String,
                           streams: Seq[Source[MarketData[_], NotUsed]],
                           sessionMicros: Long)
+
+  case class Started(sessionId: String, sessionMicros: Long)
 
 //  def closeActionForOrderId(actions: CommandQueue, ids: IdManager, id: String): CommandQueue =
 //    actions match {

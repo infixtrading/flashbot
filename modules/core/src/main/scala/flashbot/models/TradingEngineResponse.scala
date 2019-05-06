@@ -1,15 +1,12 @@
 package flashbot.models
 
-import java.time.Instant
 import flashbot.core.{Report, StrategyInfo}
 
 sealed trait TradingEngineResponse
 final case class GenericResponse[T](a: T) extends TradingEngineResponse
 sealed trait BuiltInResponse extends TradingEngineResponse
 
-case class Pong(startedAtMicros: Long) extends BuiltInResponse {
-  def startedAt: Instant = Instant.ofEpochMilli(startedAtMicros / 1000)
-}
+case class Pong(sequenceNumber: Long) extends BuiltInResponse
 case class ReportResponse(report: Report) extends BuiltInResponse
 case class BotResponse(id: String, reports: Seq[Report]) extends BuiltInResponse
 case class BotsResponse(bots: Seq[BotResponse]) extends BuiltInResponse

@@ -62,7 +62,7 @@ class EventLoopScheduler extends EventScheduler {
     })
   }
 
-  override protected def emit(event: Tick): Unit = this.setTimeout(0, event)
+  override protected[flashbot] def emit(event: Tick): Unit = this.setTimeout(0, event)
 
   override def currentMicros: Long = eventLoop.get.currentMicros
 }
@@ -85,5 +85,5 @@ class RealTimeScheduler(akkaScheduler: Scheduler, tickRef: ActorRef) extends Eve
     // noop
   }
 
-  override protected def emit(event: Tick): Unit = tickRef ! event
+  override protected[flashbot] def emit(event: Tick): Unit = tickRef ! event
 }

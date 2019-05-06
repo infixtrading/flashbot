@@ -1,18 +1,20 @@
 package flashbot.models
 
 import flashbot.core.FlashbotConfig.BotConfig
-import flashbot.core.{Report, ReportDelta}
+import flashbot.core.{Report, ReportEvent}
 import io.circe.Json
 
 sealed trait TradingEngineEvent
 
-case class SessionStarted(id: String,
-                          botId: Option[String],
-                          strategyKey: String,
-                          strategyParams: Json,
-                          mode: TradingSessionMode,
-                          micros: Long,
-                          report: Report) extends TradingEngineEvent
+sealed trait SessionInitEvent extends TradingEngineEvent
+
+case class SessionInitialized(id: String,
+                              botId: Option[String],
+                              strategyKey: String,
+                              strategyParams: Json,
+                              mode: TradingSessionMode,
+                              micros: Long,
+                              report: Report) extends SessionInitEvent
 
 case class SessionInitializationError(cause: Exception,
                                       botId: Option[String],
@@ -20,14 +22,18 @@ case class SessionInitializationError(cause: Exception,
                                       strategyParams: Json,
                                       mode: TradingSessionMode,
                                       portfolio: String,
-                                      report: Report) extends TradingEngineEvent
+                                      report: Report) extends Exception with SessionInitEvent {
+  override def getCause: Throwable = cause
+
+  override def getMessage: String = s"Session failed to start. Mode: $mode. Bot: $botId. Strategy: $strategyKey."
+}
 
 case class EngineStarted(micros: Long) extends TradingEngineEvent
 
 //sealed trait SessionUpdatedEvent extends TradingEngineEvent {
 //  def botId: String
 //}
-case class ReportUpdated(botId: String, delta: ReportDelta) extends TradingEngineEvent
+case class ReportUpdated(botId: String, event: ReportEvent) extends TradingEngineEvent
 
 case class BotConfigured(micros: Long, id: String, config: BotConfig) extends TradingEngineEvent
 

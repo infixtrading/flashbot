@@ -381,4 +381,8 @@ class JPriceIndex(val conversions: Conversions) extends PriceIndex {
     if (java.lang.Double.isNaN(ret)) None
     else Some(ret)
   }
+
+  override def apply(symbol: String): Double = getOpt(symbol).get
+
+  override def apply(market: Market): Double = getOpt(market).get
 }

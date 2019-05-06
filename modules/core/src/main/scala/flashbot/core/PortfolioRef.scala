@@ -7,17 +7,25 @@ trait PortfolioRef {
   def getPortfolio(instruments: Option[InstrumentIndex]): Portfolio
   def printPortfolio: String
 
-  // No locking by default. The isolated portfolio uses this default implementation.
+  def acquirePortfolio(ctx: TradingSession): Portfolio
+
+  def releasePortfolio(portfolio: Portfolio): Unit
+
   def update(ctx: TradingSession, fn: Portfolio => Portfolio): Unit = {
 
+    val p = acquirePortfolio(ctx)
+
     // Record the update.
-    getPortfolio(None).record(fn)
+    p.record(fn)
 
     // Grab the lastUpdate event, which will be a BatchPortfolioUpdate.
-    val batchEvent = getPortfolio(None).lastUpdate.get
+    val batchEvent = p.lastUpdate.get
 
-    // Emit it to the session.
-    ctx.reportEvent(batchEvent)
+    // Release it
+    releasePortfolio(p)
+
+    // Emit event to the session.
+    ctx.emitReportEvent(batchEvent)
   }
 }
 
@@ -36,5 +44,13 @@ object PortfolioRef {
       if (portfolio.isEmpty) initialPortfolioStr
       else portfolio.toString
 
+    override def acquirePortfolio(ctx: TradingSession): Portfolio = {
+      // Simply get the portfolio. No locking required.
+      getPortfolio(Some(ctx.instruments))
+    }
+
+    override def releasePortfolio(portfolio: Portfolio): Unit = {
+      // No-op
+    }
   }
 }

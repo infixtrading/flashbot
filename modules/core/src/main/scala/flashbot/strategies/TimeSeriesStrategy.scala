@@ -18,7 +18,7 @@ class TimeSeriesStrategy extends Strategy[Params] with TimeSeriesMixin {
   override def initialize(portfolio: Portfolio, loader: EngineLoader): Future[Seq[DataPath[_]]] =
     Future.successful(Seq(params.path))
 
-  override def handleData(marketData: MarketData[_])(implicit ctx: TradingSession) = marketData.data match {
+  override def onData(marketData: MarketData[_]): Unit = marketData.data match {
 
     case _: Priced =>
       ServerMetrics.inc("time_series_strategy_data_count")

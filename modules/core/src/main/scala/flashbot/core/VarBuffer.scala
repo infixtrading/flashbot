@@ -192,6 +192,6 @@ protected[flashbot] object VarBuffer {
   case class Loaded[T](instance: Var[T]) extends VarState
 
   def sendValEvent(valEvent: ValueEvent)(implicit ctx: TradingSession): Unit = {
-    ctx.reportEvent(ReportValueEvent(valEvent))
+    ctx.emitReportEvent(ReportValueEvent(valEvent))
   }
 }

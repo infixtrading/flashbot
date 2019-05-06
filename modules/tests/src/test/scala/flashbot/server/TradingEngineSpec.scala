@@ -4,7 +4,7 @@ import java.io.File
 import java.time.Instant
 import java.util.{Date, TimeZone}
 
-import akka.actor.{ActorSystem, Props}
+import akka.actor.{ActorSystem, Props, Status}
 import akka.pattern.ask
 import akka.stream.ActorMaterializer
 import akka.stream.scaladsl.Sink

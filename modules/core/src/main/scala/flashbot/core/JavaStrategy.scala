@@ -44,11 +44,11 @@ abstract class JavaStrategy[P] extends Strategy[P] with TimeSeriesMixin {
   def jInitialize(portfolio: Portfolio, loader: EngineLoader)
     : CompletableFuture[java.util.List[DataPath[Any]]]
 
-  final override def handleData(data: MarketData[_])(implicit ctx: TradingSession) = jHandleData(data)
+  final override def onData(data: MarketData[_]): Unit = jHandleData(data)
   def jHandleData(data: MarketData[_])(implicit ctx: TradingSession): Unit
 
-  final override def onEvent(event: StrategyEvent)(implicit ctx: TradingSession) = jHandleEvent(event)
-  def jHandleEvent(event: StrategyEvent)(implicit ctx: TradingSession): Unit
+  final override def onEvent(event: OrderEvent): Unit = jHandleEvent(event)
+  def jHandleEvent(event: OrderEvent)(implicit ctx: TradingSession): Unit
 
   final override def resolveMarketData[T](selection: DataSelection[T],
                                           dataServer: ActorRef, dataOverrides: Seq[DataOverride[Any]])

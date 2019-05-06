@@ -2,7 +2,6 @@ package flashbot.core
 
 import flashbot.core.DeltaFmt.HasUpdateEvent
 import flashbot.core.Report._
-import flashbot.core.ReportDelta._
 import flashbot.core.ReportEvent._
 import flashbot.models.{Candle, Portfolio}
 import flashbot.util.time._
@@ -26,14 +25,14 @@ class Report(val strategy: String,
              val values: debox.Map[String, ReportValue[Any]],
              var isComplete: Boolean,
              var error: Option[ReportError],
-             val lastUpdate: MutableOpt[ReportDelta]) extends HasUpdateEvent[Report, ReportDelta] {
+             val lastUpdate: MutableOpt[ReportEvent]) extends HasUpdateEvent[Report, ReportEvent] {
 
-  override protected def _step(delta: ReportDelta): Report = delta match {
-    case TradeAdd(tradeEvent) =>
-      trades += tradeEvent
+  override protected def _step(delta: ReportEvent): Report = delta match {
+    case ev: TradeEvent =>
+      trades += ev
       this
 
-    case CollectionAdd(CollectionEvent(name, item)) =>
+    case CollectionEvent(name, item) =>
       var coll = collections.get(name)
       if (coll.isEmpty) {
         val buf = debox.Buffer[Json](item)
@@ -59,12 +58,12 @@ class Report(val strategy: String,
         this
     }
 
-    case RawEvent(SessionComplete(errOpt)) =>
+    case SessionComplete(errOpt) =>
       isComplete = true
       error = errOpt
       this
 
-    case RawEvent(event: CandleEvent) => event match {
+    case candleEvent: CandleEvent => candleEvent match {
       case CandleAdd(series, candle) =>
         var frame = timeSeries.get(series)
         if (frame.isEmpty) {
@@ -88,7 +87,7 @@ class Report(val strategy: String,
         this
     }
 
-    case RawEvent(portfolioDelta: PortfolioDelta) =>
+    case portfolioDelta: PortfolioDelta =>
       portfolio.update(portfolioDelta)
       this
   }
@@ -104,17 +103,17 @@ class Report(val strategy: String,
     rv.value = fmt.update(rv.value, dv)
   }
 
-  def genDeltas(event: ReportEvent): Seq[ReportDelta] = event match {
-    case tradeEvent: TradeEvent =>
-      TradeAdd(tradeEvent) :: Nil
-
-    case collectionEvent: CollectionEvent =>
-      CollectionAdd(collectionEvent) :: Nil
-
-    case e: ReportValueEvent => List(e.event)
-
-    case other => Seq(RawEvent(other))
-  }
+//  def genDeltas(event: ReportEvent): Seq[ReportDelta] = event match {
+//    case tradeEvent: TradeEvent =>
+//      TradeAdd(tradeEvent) :: Nil
+//
+//    case collectionEvent: CollectionEvent =>
+//      CollectionAdd(collectionEvent) :: Nil
+//
+//    case e: ReportValueEvent => List(e.event)
+//
+//    case other => Seq(RawEvent(other))
+//  }
 
 
   /**
@@ -140,7 +139,11 @@ class Report(val strategy: String,
 object Report {
 
   case class ReportError(name: String, message: String, trace: Seq[String],
-                         cause: Option[ReportError])
+                         cause: Option[ReportError]) extends Exception {
+    override def getCause: Throwable = cause.orNull
+
+    override def getMessage: String = message
+  }
   object ReportError {
     def apply(err: Throwable): ReportError =
       ReportError(err.getClass.getName, err.getMessage,
@@ -228,18 +231,19 @@ object Report {
       debox.Map[String, debox.Buffer[Json]],
       debox.Map[String, CandleFrame],
       debox.Map[String, ReportValue[Any]],
-      Boolean, Option[ReportError], MutableOpt[ReportDelta]
+      Boolean, Option[ReportError], MutableOpt[ReportEvent]
     ]("strategy", "params", "barSize", "portfolio", "trades", "collections",
       "timeSeries", "values", "isComplete", "error", "lastUpdate"
   )(new Report(_, _, _, _, _, _, _, _, _, _, _))
 
   def empty(strategyName: String,
             params: Json,
-            barSize: Option[FiniteDuration] = None): Report = new Report(
+            barSize: Option[FiniteDuration] = None,
+            portfolio: Portfolio = Portfolio.empty): Report = new Report(
     strategyName,
     params,
     barSize.getOrElse(1 hour),
-    Portfolio.empty,
+    portfolio,
     debox.Buffer.empty,
     debox.Map.empty,
     debox.Map.empty,
@@ -250,6 +254,6 @@ object Report {
   )
 
   implicit val reportFmt: DeltaFmtJson[Report] =
-    DeltaFmt.updateEventFmtJson[Report, ReportDelta]("report")
+    DeltaFmt.updateEventFmtJson[Report, ReportEvent]("report")
 }
 
