@@ -8,8 +8,6 @@ import io.circe.syntax._
 import com.bethecoder.ascii_table
 import com.bethecoder.ascii_table.ASCIITable
 
-import scala.collection.JavaConverters._
-
 object TableUtil {
   def print[T: Encoder](items: Seq[T]): Unit = {
     val out = new ByteArrayOutputStream()

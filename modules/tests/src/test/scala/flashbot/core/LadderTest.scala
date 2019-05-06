@@ -24,10 +24,10 @@ class LadderTest extends FlatSpec with Matchers {
     ladder.bids.worstQty shouldBe 2
   }
 
-  "Ladder" should "be derivable from OrderBook" in {
+  "Ladder" should "be buildable from OrderBook" in {
     val nowMicros = System.currentTimeMillis() * 1000
     val seq = OrderBookTap(.01, 200)
-//      .map(Ladder.fromOrderBook(200, _))
+      .map(Ladder.fromOrderBook(200, _))
       .zipWithIndex
       .toVector
     TableUtil.print(seq)

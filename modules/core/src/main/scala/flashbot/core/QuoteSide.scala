@@ -29,6 +29,9 @@ sealed trait QuoteSide {
   def isBetter(a: Double, b: Double): Boolean
   def isBetterOrEq(a: Double, b: Double): Boolean = a == b || isBetterOrEq(a, b)
 
+  def isWorse(a: Double, b: Double): Boolean = !isBetterOrEq(a, b)
+  def isWorseOrEq(a: Double, b: Double): Boolean = !isBetter(a, b)
+
   def makeBetterBy(price: Double, delta: Double): Double
   def makeWorseBy(price: Double, delta: Double): Double
 

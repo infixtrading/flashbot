@@ -267,7 +267,7 @@ class LadderSide(val maxDepth: Int,
 
   def hasNextPrice(curPrice: Double): Boolean =
     if (java.lang.Double.isNaN(curPrice)) nonEmpty
-    else curPrice < worstPrice
+    else side.isBetter(curPrice, worstPrice)
 
   def nextPrice(curPrice: Double): Double = {
     if (!hasNextPrice(curPrice)) return java.lang.Double.NaN
@@ -275,7 +275,7 @@ class LadderSide(val maxDepth: Int,
 
     var l = levelOfPrice(curPrice) + 1
     var p = priceOfLevel(l)
-    while (p == 0) {
+    while (qtyAtPrice(p) == 0) {
       l += 1
       p = priceOfLevel(l)
     }
@@ -292,7 +292,7 @@ class LadderSide(val maxDepth: Int,
 
     var l = levelOfPrice(curPrice) + 1
     var p = priceOfLevel(l)
-    while (p == 0) {
+    while (qtyAtPrice(p) == 0) {
       l -= 1
       p = priceOfLevel(l)
     }
