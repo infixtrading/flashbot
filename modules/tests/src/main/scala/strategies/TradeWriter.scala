@@ -5,8 +5,7 @@ import akka.stream.scaladsl.Source
 import flashbot.core.MarketData.BaseMarketData
 import flashbot.core.{EngineLoader, _}
 import flashbot.core.VarState.ops._
-import flashbot.models.api.{DataOverride, DataSelection}
-import flashbot.models.Portfolio
+import flashbot.models.{DataOverride, DataSelection, Portfolio}
 import io.circe.generic.semiauto._
 import io.circe.parser._
 
@@ -26,7 +25,7 @@ class TradeWriter extends Strategy[Params] {
   def initialize(portfolio: Portfolio, loader: EngineLoader) =
     Future.successful(Seq("bitfinex/btc_usd/trades"))
 
-  def handleData(data: MarketData[_])(implicit ctx: TradingSession) = data.data match {
+  override def onData(data: MarketData[_]): Unit = data.data match {
     case trade: Trade =>
       "last_trade" set trade
   }

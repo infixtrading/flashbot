@@ -171,7 +171,7 @@ object Ladder {
   implicit val ladderSideEncoder: Encoder[LadderSide] =
     Encoder.encodeSeq[LadderDelta].contramapArray(ls => {
       val buf = Array.ofDim[LadderDelta](ls.depth)
-      var p = ls.it
+      var p = ls.bestPrice
       var i = 0
       while (ls.hasNextPrice(p)) {
         p = ls.nextPrice(p)

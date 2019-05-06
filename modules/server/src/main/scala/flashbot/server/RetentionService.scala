@@ -6,7 +6,7 @@ import akka.actor.{Actor, ActorLogging}
 import akka.stream.alpakka.slick.javadsl.SlickSession
 import flashbot.util.stream._
 import flashbot.db._
-import flashbot.models.core.DataPath
+import flashbot.models.DataPath
 
 import scala.concurrent.ExecutionContext
 

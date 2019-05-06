@@ -12,7 +12,7 @@ import flashbot.core.DataSource
 import flashbot.util.stream._
 import flashbot.db._
 import flashbot.core.DeltaFmtJson
-import flashbot.models.core.DataPath
+import flashbot.models.DataPath
 import io.circe.Printer
 import io.circe.syntax._
 

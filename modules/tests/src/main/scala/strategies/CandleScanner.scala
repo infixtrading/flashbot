@@ -5,8 +5,7 @@ import akka.stream.Materializer
 import akka.stream.scaladsl.Source
 import flashbot.core.MarketData.BaseMarketData
 import flashbot.core.{EngineLoader, _}
-import flashbot.models.api.{DataOverride, DataSelection}
-import flashbot.models.{Candle, Portfolio}
+import flashbot.models.{Candle, DataOverride, DataSelection, Portfolio}
 import io.circe.generic.auto._
 import io.circe.parser._
 
@@ -27,7 +26,7 @@ class CandleScanner extends Strategy[CandleScannerParams] {
     Future.successful(Seq("bitfinex/btc_usd/candles_1d"))
   }
 
-  override def handleData(data: MarketData[_])(implicit ctx: TradingSession) = {
+  override def onData(data: MarketData[_]) = {
     println(data)
   }
 

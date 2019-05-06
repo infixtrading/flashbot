@@ -1,17 +1,18 @@
 package flashbot.core
 
+import java.{lang, util}
+
+import debox.Buffer
 import flashbot.core.DeltaFmt.HasUpdateEvent
 import flashbot.core.Report._
 import flashbot.core.ReportEvent._
 import flashbot.models.{Candle, Portfolio}
+import flashbot.util.JavaUtils
 import flashbot.util.time._
 import flashbot.util.json.CommonEncoders._
 import io.circe._
 import io.circe.generic.semiauto._
-import io.circe.syntax._
-import it.unimi.dsi.fastutil.objects.{Object2ObjectOpenHashMap, ObjectArrayFIFOQueue}
 
-import scala.collection.mutable
 import scala.concurrent.duration._
 import scala.language.postfixOps
 
@@ -26,6 +27,11 @@ class Report(val strategy: String,
              var isComplete: Boolean,
              var error: Option[ReportError],
              val lastUpdate: MutableOpt[ReportEvent]) extends HasUpdateEvent[Report, ReportEvent] {
+
+  def collectionsJava: util.Map[String, Buffer[Json]] = JavaUtils.fromDebox(collections)
+  def timeSeriesJava: util.Map[String, CandleFrame] = JavaUtils.fromDebox(timeSeries)
+  def valuesJava: util.Map[String, ReportValue[Any]] = JavaUtils.fromDebox(values)
+  def tradesJava: lang.Iterable[TradeEvent] = JavaUtils.fromDebox(trades)
 
   override protected def _step(delta: ReportEvent): Report = delta match {
     case ev: TradeEvent =>
@@ -58,10 +64,15 @@ class Report(val strategy: String,
         this
     }
 
-    case SessionComplete(errOpt) =>
-      isComplete = true
-      error = errOpt
-      this
+    case completeEvent: SessionComplete => completeEvent match {
+      case SessionSuccess =>
+        isComplete = true
+        this
+      case SessionFailure(err: ReportError) =>
+        isComplete = true
+        error = Some(err)
+        this
+    }
 
     case candleEvent: CandleEvent => candleEvent match {
       case CandleAdd(series, candle) =>
@@ -103,37 +114,7 @@ class Report(val strategy: String,
     rv.value = fmt.update(rv.value, dv)
   }
 
-//  def genDeltas(event: ReportEvent): Seq[ReportDelta] = event match {
-//    case tradeEvent: TradeEvent =>
-//      TradeAdd(tradeEvent) :: Nil
-//
-//    case collectionEvent: CollectionEvent =>
-//      CollectionAdd(collectionEvent) :: Nil
-//
-//    case e: ReportValueEvent => List(e.event)
-//
-//    case other => Seq(RawEvent(other))
-//  }
-
-
-  /**
-    * Generates either a CandleSave followed by a CandleAdd, or a CandleUpdate by itself.
-    */
-//  private def genTimeSeriesDelta[T <: Timestamped](series: String,
-//                                                   event: T,
-//                                                   valueFn: T => Double): ReportDelta = {
-//    val value = valueFn(event)
-//    val newBarMicros = (event.micros / barSize.toMicros) * barSize.toMicros
-//    val currentTS: Seq[Candle] = timeSeries.getOrElse(series, Vector.empty)
-//    if (currentTS.lastOption.exists(_.micros == newBarMicros))
-//      CandleUpdate(series, currentTS.last.add(value))
-//    else
-//      CandleAdd(series, Candle(newBarMicros, value, value, value, value))
-//  }
-
-
   def getval[T](key: String): ReportValue[T] = values.get(key).asInstanceOf[ReportValue[T]]
-
 }
 
 object Report {
@@ -186,39 +167,6 @@ object Report {
   implicit val rvAnyEncoder: Encoder[ReportValue[Any]] =
     rvJsonEncoder.contramap(rv => ReportValue(rv.fmtName, rv.toJson))
 
-//  implicit val vMapEn: Encoder[debox.Map[String, ReportValue[Any]]] =
-//    implicitly[Encoder[debox.Map[String, ReportValue[Json]]]].contramap(_.mapValues(rvEncode))
-
-//  def rvEncode[T](rv: ReportValue[Any]): Json =
-//    rvJsonEncoder(ReportValue(rv.fmtName,
-//      DeltaFmt.formats[T](rv.fmtName).modelEn(rv.value.asInstanceOf[T])))
-
-//  implicit val vMapEn: Encoder[debox.Map[String, Any]] = new Encoder[debox.Map[String, Any]] {
-//    override def apply(a: debox.Map[String, Any]): Json = {
-//      var jsonMap: JsonObject = JsonObject()
-//      a.foreachKey { key =>
-//        jsonMap = jsonMap.add(key, rvEncode(a(key)))
-//      }
-//      jsonMap.asJson
-//    }
-
-//  }
-
-//  implicit val vMapDe: Decoder[debox.Map[String, ReportValue[Any]]] = Decoder.decodeJsonObject.map { o =>
-//    val vmap = debox.Map[String, ReportValue[Any]]()
-//    for (key <- o.keys) {
-//      vmap(key) = _reportVal(o(key).get)
-//    }
-//    vmap
-//  }
-
-//  private def _reportVal(obj: Json): ReportValue[Any] =
-//    rvJsonDecoder.decodeJson(obj) match {
-//      case Right(rv) =>
-//        val fmt = DeltaFmt.formats(rv.fmtName)
-//        ReportValue(rv.fmtName, fmt.modelDe.decodeJson(rv.value).right.get)
-//    }
-
   implicit val reportEn: Encoder[Report] = Encoder.forProduct11(
     "strategy", "params", "barSize", "portfolio", "trades", "collections",
     "timeSeries", "values", "isComplete", "error", "lastUpdate")(r =>
@@ -238,12 +186,11 @@ object Report {
 
   def empty(strategyName: String,
             params: Json,
-            barSize: Option[FiniteDuration] = None,
-            portfolio: Portfolio = Portfolio.empty): Report = new Report(
+            barSize: Option[FiniteDuration] = None): Report = new Report(
     strategyName,
     params,
     barSize.getOrElse(1 hour),
-    portfolio,
+    Portfolio.empty,
     debox.Buffer.empty,
     debox.Map.empty,
     debox.Map.empty,

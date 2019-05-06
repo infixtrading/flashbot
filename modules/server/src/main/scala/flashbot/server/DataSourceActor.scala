@@ -12,12 +12,11 @@ import flashbot.core.DataSource._
 import flashbot.core.MarketData.BaseMarketData
 import flashbot.core._
 import flashbot.db._
-import flashbot.models.api.StreamLiveData
 import flashbot.util.stream._
 import com.typesafe.config.Config
 import flashbot.core.FlashbotConfig.{DataSourceConfig, ExchangeConfig, IngestConfig}
 import flashbot.core.{DataType, DeltaFmt, DeltaFmtJson, MarketData}
-import flashbot.models.core.DataPath
+import flashbot.models.{DataPath, StreamLiveData}
 import io.circe.Printer
 
 import scala.concurrent.duration._

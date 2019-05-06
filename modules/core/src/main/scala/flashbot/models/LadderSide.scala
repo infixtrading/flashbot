@@ -298,5 +298,19 @@ class LadderSide(val maxDepth: Int,
     p
   }
 
-  val it: Double = java.lang.Double.NaN
+  def iterator(): Iterator[(Double, Double)] = new LadderSidePriceIterator().map(p => (p, qtyAtPrice(p)))
+
+  class LadderSidePriceIterator(initialPrice: Double = java.lang.Double.NaN) extends Iterator[Double] {
+
+    private var p = initialPrice
+
+    override def hasNext: Boolean = hasNextPrice(p)
+
+    override def next(): Double = {
+      val n = nextPrice(p)
+      p = n
+      n
+    }
+  }
+
 }

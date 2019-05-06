@@ -1,6 +1,7 @@
 package flashbot.server
 
-import flashbot.models.core.OrderOpen
+import flashbot.core.OrderOpen
+
 
 //import akka.actor.Actor
 //import akka.event.Logging

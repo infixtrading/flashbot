@@ -1,7 +1,7 @@
 package flashbot.db
 
 import flashbot.core.DataType
-import flashbot.models.core.DataPath
+import flashbot.models.DataPath
 import slick.lifted.Tag
 import slick.jdbc.PostgresProfile.api._
 

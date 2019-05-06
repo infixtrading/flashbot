@@ -18,7 +18,7 @@ class MarginSpec extends FlatSpec with Matchers {
               1d / (v / qty)
           }
           Order(i.toString, if (qty < 0) Order.Sell else Order.Buy, qty.abs, Some(price))
-      }.foldLeft(OrderBook())(_ open _)
+      }.foldLeft(OrderBook(.01))(_ open _)
     round(Margin.calcOrderMargin(pos, leverage, book, instrument))
   }
 

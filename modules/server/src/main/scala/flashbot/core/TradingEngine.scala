@@ -486,16 +486,14 @@ class TradingEngine(engineId: String,
           if (reportJsonListener.isDefined) reportJsonListener.get ! event
         }
 
-        // Initialize the trading session
-        val (session: TradingSession, initEvent) = tryStartTradingSession(None, strategyName, paramsJson,
-          Backtest(timeRange), ref, portfolioRef, initialReport, dataOverrides)
-
         // Must only be accessed after the session initialization future completes, because
         // we are accessing `session.instruments` here.
         lazy val initialReport = Report.empty(
-          strategyName, paramsJson, barSize.map(d => Duration.fromNanos(d.toNanos)),
-          portfolioRef.getPortfolio(Some(session.instruments))
-        )
+          strategyName, paramsJson, barSize.map(d => Duration.fromNanos(d.toNanos)))
+
+        // Initialize the trading session
+        val (session: TradingSession, initEvent) = tryStartTradingSession(None, strategyName, paramsJson,
+          Backtest(timeRange), ref, portfolioRef, initialReport, dataOverrides)
 
         // Fold the empty report over the ReportEvents emitted from the session.
         def reportFuture(): Future[Report] = reportEventSrc
@@ -634,8 +632,8 @@ class TradingEngine(engineId: String,
 
         log.debug(s"Starting bot $name")
 
-        val initialAssets = initial_assets.map(kv => Account.parse(kv._1) -> kv._2)
-        val initialPositions = initial_positions.map(kv => Market.parse(kv._1) -> kv._2)
+        val initialAssets = debox.Map.fromIterable(initial_assets.map(kv => Account.parse(kv._1) -> kv._2))
+        val initialPositions = debox.Map.fromIterable(initial_positions.map(kv => Market.parse(kv._1) -> kv._2))
 
         // Build our PortfolioRef. Paper trading bots have an isolated portfolio while live bots
         // share the global one.
@@ -646,7 +644,7 @@ class TradingEngine(engineId: String,
             // Otherwise, use the initial_assets and initial_positions from the bot config.
             val initialSessionPortfolio =
               state.bots.get(name).flatMap(_.sessions.lastOption.map(_.report.portfolio))
-                .getOrElse(Portfolio(initialAssets, initialPositions, Map.empty))
+                .getOrElse(new Portfolio(initialAssets, initialPositions, debox.Map.empty))
             new PortfolioRef.Isolated(initialSessionPortfolio.toString)
 
           case Live =>

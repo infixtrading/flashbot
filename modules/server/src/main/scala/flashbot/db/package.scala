@@ -7,7 +7,7 @@ import akka.stream.scaladsl.Source
 import com.typesafe.config.Config
 import flashbot.core.DeltaFmtJson
 import flashbot.db._
-import flashbot.models.core.DataPath
+import flashbot.models.DataPath
 import slick.lifted.TableQuery
 
 import scala.concurrent.Future

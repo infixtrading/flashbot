@@ -8,9 +8,8 @@ import akka.event.LoggingAdapter
 import akka.stream.{KillSwitches, Materializer, OverflowStrategy, SharedKillSwitch}
 import akka.stream.scaladsl.{Keep, Source}
 import flashbot.core.Report.ReportError
-import flashbot.core.ReportEvent.{SessionComplete, SessionFailure, SessionSuccess}
-import flashbot.core.TradingSession.{DataStream, SessionSetup, Started}
-import flashbot.models.OrderCommand.CommandQueue
+import flashbot.core.ReportEvent.{SessionFailure, SessionSuccess}
+import flashbot.core.TradingSession.{DataStream, SessionSetup}
 import flashbot.models._
 import flashbot.server.{ServerMetrics, Simulator}
 import flashbot.util._
@@ -69,7 +68,7 @@ class TradingSession(val strategyKey: String,
                      val log: LoggingAdapter,
                      val initialReport: Report,
                      private val akkaScheduler: Scheduler,
-                     private val sessionEventsRef: ActorRef,
+                     private val reportEventsRef: ActorRef,
                      private val portfolioRef: PortfolioRef,
                      private val dataOverrides: Seq[DataOverride[_]],
                      implicit private val mat: Materializer,
@@ -189,7 +188,7 @@ class TradingSession(val strategyKey: String,
   def setInterval(delayMicros: Long, fn: Runnable): Cancellable = scheduler.setInterval(delayMicros, fn)
 
   def emitReportEvent(event: ReportEvent): Unit = {
-    sessionEventsRef
+    reportEventsRef
   }
 
   def ping: Future[Pong] = {
@@ -367,37 +366,7 @@ class TradingSession(val strategyKey: String,
     _ = { killSwitch.put(ks) }
   } yield Done
 
-  /**
-    * Events sent to the session are either emitted as a Tick, or added to the event buffer
-    * if we can, so that the strategy can process events synchronously when possible.
-    */
-//        protected[server] var sendFn: m.Buffer[Any] => Unit = { _ =>
-//          throw new RuntimeException("sendFn not defined yet.")
-//        }
-
-  // Reusable buffer for sending single events.
-//        private val singleEventBuf: m.Buffer[Any] = m.ArrayBuffer.empty
-
-//        def send(event: Any): Unit = {
-//          singleEventBuf(0) = event
-//          sendFn(singleEventBuf)
-//        }
-//
-//        def send(events: m.Buffer[Any]): Unit = {
-//          sendFn(events)
-//        }
-
   def getPortfolio: Portfolio = portfolioRef.getPortfolio(Some(instruments))
-
-//  def tryRound(market: Market, size: FixedSize) = {
-//    val instrument = instruments(market)
-//    val exchange = exchanges(market.exchange)
-//    if (size.security == instrument.security.get)
-//      Some(size.map(exchange.roundBase(instrument)))
-//    else if (size.security == instrument.settledIn.get)
-//      Some(size.map(exchange.roundQuote(instrument)))
-//    else None
-//  }
 
   protected[flashbot] lazy val load: Future[SessionSetup] = {
 
@@ -454,14 +423,14 @@ class TradingSession(val strategyKey: String,
         .toTry(s"Unknown strategy: $strategyKey")
         .toFut
 
+      // Load the instruments
+      instruments <- loader.loadInstruments
+
       // Load strategy
       strategy <- {
         val strat: Future[Strategy[_]] = loadStrat(strategyClassName)
         strat
       }
-
-      // Load the instruments
-      instruments <- loader.loadInstruments
 
       // Initialize the strategy and collect data paths
       paths <- strategy.initialize(portfolioRef.getPortfolio(Some(instruments)), loader)
@@ -497,17 +466,4 @@ object TradingSession {
                           sessionId: String,
                           streams: Seq[Source[MarketData[_], NotUsed]],
                           sessionMicros: Long)
-
-  case class Started(sessionId: String, sessionMicros: Long)
-
-//  def closeActionForOrderId(actions: CommandQueue, ids: IdManager, id: String): CommandQueue =
-//    actions match {
-//      case ActionQueue(Some(action), _) if ids.actualIdForTargetId(action.targetId).contains(id) =>
-//        actions.closeActive
-//
-//      case _ => actions
-//    }
-
-//  implicit def implicitInstruments(implicit ctx: TradingSession): InstrumentIndex = ctx.instruments
-//  implicit def implicitPrices(implicit ctx: TradingSession): PriceIndex = ctx.prices
 }

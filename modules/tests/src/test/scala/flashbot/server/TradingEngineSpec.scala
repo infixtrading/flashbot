@@ -208,10 +208,10 @@ class TradingEngineSpec extends WordSpecLike
         "lookahead",
         params.asJson,
         TimeRange.build(now, 1 hour),
-        Portfolio(
-          Map(Account("bitfinex/eth") -> 0, Account("bitfinex/usd") -> 800),
-          Map.empty,
-          Map.empty
+        new Portfolio(
+          debox.Map.fromIterable(Map(Account("bitfinex/eth") -> 0, Account("bitfinex/usd") -> 800)),
+          debox.Map.fromIterable(Map.empty),
+          debox.Map.fromIterable(Map.empty),
         ).toString,
         Some(1 minute),
         None
@@ -233,7 +233,7 @@ class TradingEngineSpec extends WordSpecLike
       def buildCandleSeries(report: Report, key: String): OHLCSeries = {
         val priceSeries = new OHLCSeries(key)
         val timeClass = reportTimePeriod(report)
-        report.timeSeries(key).foreach { candle =>
+        report.timeSeries(key).toCandlesArray.foreach { candle =>
           val time =  RegularTimePeriod.createInstance(timeClass,
             new Date(candle.micros / 1000), TimeZone.getDefault)
 //          println("adding", timeClass, time, candle)

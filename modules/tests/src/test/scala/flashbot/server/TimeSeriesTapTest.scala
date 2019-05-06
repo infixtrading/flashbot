@@ -7,7 +7,7 @@ import akka.stream.ActorMaterializer
 import akka.stream.scaladsl.{Keep, Sink, Source}
 import akka.util.Timeout
 import flashbot.core.TimeSeriesTap
-import flashbot.models.core.TimeRange
+import flashbot.models.TimeRange
 import org.scalatest.{FlatSpec, Matchers}
 
 import scala.concurrent.{Await, Future}

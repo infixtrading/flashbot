@@ -18,8 +18,8 @@ class TestLadderDataSource extends DataSource {
                         (implicit ctx: ActorContext, mat: ActorMaterializer) = datatype match {
     case LadderType(depth) =>
       val nowMicros = System.currentTimeMillis() * 1000
-      val seq = OrderBookTap(200)
-        .map(Ladder.fromOrderBook(20))
+      val seq = OrderBookTap(.01, 200)
+        .map(Ladder.fromOrderBook(20, _))
         .zipWithIndex
         .map {
           case (ladder, i) => (nowMicros + i * MicrosPerMinute, ladder.asInstanceOf[T])

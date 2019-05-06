@@ -25,7 +25,7 @@ object CommonEncoders {
       map
     }
 
-  implicit def deboxMapEn[K: KeyEncoder, V: Encoder]: Encoder[debox.Map[K, V]] =
+  implicit def deboxMapEn[K: KeyEncoder:ClassTag, V: Encoder:ClassTag]: Encoder[debox.Map[K, V]] =
     Encoder.encodeJsonObject.contramapObject { map =>
       var o = JsonObject()
       val ke = implicitly[KeyEncoder[K]]

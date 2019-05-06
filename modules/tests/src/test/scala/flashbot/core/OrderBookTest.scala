@@ -1,7 +1,5 @@
 package flashbot.core
 
-import flashbot.core.Num._
-import flashbot.core.Num.ImplicitConversions._
 import flashbot.models.Order._
 import flashbot.models.OrderBook
 import org.scalatest.{FlatSpec, Matchers}
@@ -10,7 +8,7 @@ import io.circe.parser._
 
 class OrderBookTest extends FlatSpec with Matchers {
   "OrderBook" should "encode to JSON" in {
-    val book = new OrderBook()
+    val book = new OrderBook(.01)
       .open("1", 2.3, 3.3, Buy)
       .open("2", 4.4, 4.5, Sell)
 

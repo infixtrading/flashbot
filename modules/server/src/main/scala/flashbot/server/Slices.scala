@@ -1,8 +1,8 @@
 package flashbot.server
 
 import de.sciss.fingertree.RangedSeq
-import flashbot.models.core.Slice
-import flashbot.models.core.Slice.SliceId
+import flashbot.models.Slice
+import flashbot.models.Slice.SliceId
 
 object Slices {
 

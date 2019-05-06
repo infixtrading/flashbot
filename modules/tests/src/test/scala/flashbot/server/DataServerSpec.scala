@@ -10,7 +10,7 @@ import akka.util.Timeout
 import com.typesafe.config.ConfigFactory
 import flashbot.core.FlashbotConfig.{DataSourceConfig, IngestConfig}
 import flashbot.core._
-import flashbot.models.Ladder
+import flashbot.models.{DataSelection, DataStreamReq, Ladder}
 import org.scalatest.concurrent.{Eventually, IntegrationPatience}
 import org.scalatest.time.{Millis, Seconds, Span}
 import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpecLike}

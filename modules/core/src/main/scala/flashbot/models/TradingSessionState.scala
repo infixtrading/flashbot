@@ -1,6 +1,6 @@
 package flashbot.models
 
-import flashbot.core.{Report, ReportDelta}
+import flashbot.core.{Report, ReportEvent}
 import io.circe.Json
 
 case class TradingSessionState(id: String,
@@ -9,13 +9,8 @@ case class TradingSessionState(id: String,
                                mode: TradingSessionMode,
                                startedAt: Long,
                                report: Report) {
-  def updateReport(delta: ReportDelta): TradingSessionState = {
-    report.update(delta)
+  def updateReport(event: ReportEvent): TradingSessionState = {
+    report.update(event)
     this
   }
-
-//  def updatePortfolio(delta: PortfolioDelta): TradingSessionState = {
-//    portfolio.update(delta)
-//    this
-//  }
 }

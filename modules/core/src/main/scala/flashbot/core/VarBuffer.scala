@@ -1,10 +1,9 @@
 package flashbot.core
 
-import flashbot.core.ReportDelta.{PutValueEvent, RemoveValueEvent, UpdateValueEvent, ValueEvent}
-import flashbot.core.ReportEvent.ReportValueEvent
 import flashbot.core.VarBuffer.{Loaded, Tombstone, VarState}
 import flashbot.core.VarState.Var
 import VarBuffer._
+import flashbot.core.ReportEvent.{PutValueEvent, RemoveValueEvent, UpdateValueEvent, ValueEvent}
 
 import scala.collection.mutable
 import scala.reflect.{ClassTag, classTag}
@@ -93,7 +92,7 @@ protected[flashbot] class VarBuffer(initialReportVals: debox.Map[String, Any]) {
     * Delete the var, no matter the type. Remove from session and from buffer.
     */
   def delete(key: String)(implicit ctx: TradingSession): Unit = {
-    sendValEvent(RemoveValueEvent(key))
+    ctx.emitReportEvent(RemoveValueEvent(key))
     vars.remove(key)
   }
 
@@ -158,9 +157,9 @@ protected[flashbot] class VarBuffer(initialReportVals: debox.Map[String, Any]) {
                    (implicit ctx: TradingSession, fmt: DeltaFmtJson[T]): Unit = {
     if (prev.isDefined) {
       val delta = fmt.diff(prev.get, current.value)
-      sendValEvent(UpdateValueEvent(current.key, fmt.deltaEn(delta)))
+      ctx.emitReportEvent(UpdateValueEvent(current.key, fmt.deltaEn(delta)))
     } else {
-      sendValEvent(PutValueEvent(current.key, fmt.fmtName, fmt.modelEn(current.value)))
+      ctx.emitReportEvent(PutValueEvent(current.key, fmt.fmtName, fmt.modelEn(current.value)))
     }
   }
 
@@ -191,7 +190,7 @@ protected[flashbot] object VarBuffer {
   case object Tombstone extends VarState
   case class Loaded[T](instance: Var[T]) extends VarState
 
-  def sendValEvent(valEvent: ValueEvent)(implicit ctx: TradingSession): Unit = {
-    ctx.emitReportEvent(ReportValueEvent(valEvent))
-  }
+//  def sendValEvent(valEvent: ValueEvent)(implicit ctx: TradingSession): Unit = {
+//    ctx.emitReportEvent(ReportValueEvent(valEvent))
+//  }
 }

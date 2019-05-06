@@ -79,11 +79,11 @@ class FlashbotClient(engine: ActorRef, skipTouch: Boolean = false) {
   def index(): Map[String, DataPath[Any]] = await(indexAsync())
 
   def pricesAsync(path: DataPath[Priced], timeRange: TimeRange,
-                  interval: FiniteDuration) : Future[Map[String, Vector[Candle]]] =
-    req[Map[String, Vector[Candle]]](PriceQuery(path, timeRange, interval))
+                  interval: FiniteDuration) : Future[Map[String, CandleFrame]] =
+    req[Map[String, CandleFrame]](PriceQuery(path, timeRange, interval))
 
   def prices(path: DataPath[Priced], timeRange: TimeRange,
-             interval: FiniteDuration): Map[String, Vector[Candle]] =
+             interval: FiniteDuration): Map[String, CandleFrame] =
     await(pricesAsync(path, timeRange, interval))
 
   def backtestAsync(strategy: String, params: Json, initialPortfolio: String,

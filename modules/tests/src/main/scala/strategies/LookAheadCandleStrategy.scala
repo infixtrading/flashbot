@@ -8,7 +8,6 @@ import flashbot.core.DataType.CandlesType
 import flashbot.core.Instrument.CurrencyPair
 import flashbot.core.MarketData.BaseMarketData
 import flashbot.core.{EngineLoader, _}
-import flashbot.models.api.{DataOverride, DataSelection, OrderTarget}
 import flashbot.models._
 import io.circe.{Decoder, Encoder}
 import io.circe.generic.semiauto._
@@ -46,8 +45,6 @@ class LookAheadCandleStrategy extends Strategy[LookaheadParams]
     with Predictor1[MarketData[Candle], Double]
     with TimeSeriesMixin {
 
-  import FixedSize.numericDouble._
-
   override def decodeParams(paramsStr: String) = decode[LookaheadParams](paramsStr).toTry
 
   // Source the data from the strategy itself.
@@ -80,7 +77,7 @@ class LookAheadCandleStrategy extends Strategy[LookaheadParams]
 
   var prediction: Option[Double] = None
 
-  override def handleData(md: MarketData[_])(implicit ctx: TradingSession) = md.data match {
+  override def onData(md: MarketData[_]) = md.data match {
     case candle: Candle =>
 
       recordCandle((md.source, md.topic), candle)
@@ -101,11 +98,13 @@ class LookAheadCandleStrategy extends Strategy[LookaheadParams]
         val pair = CurrencyPair(md.topic)
         val quoteAccount = Account(md.source, pair.quote)
 
-        def buy() = marketOrder(market,
-          ctx.getPortfolio.getBalance(quoteAccount).of)
-
-        def sell() = marketOrder(market,
-          -ctx.getPortfolio.getBalance(Account(md.source, pair.base)).size)
+//        def buy() = marketOrder(market,
+//          ctx.getPortfolio.getBalance(quoteAccount).of)
+        def buy() = ???
+        def sell() = ???
+//
+//        def sell() = marketOrder(market,
+//          -ctx.getPortfolio.getBalance(Account(md.source, pair.base)).size)
 
         // Price about to go up, buy as much as we can.
         if (prediction.get > candle.close) {

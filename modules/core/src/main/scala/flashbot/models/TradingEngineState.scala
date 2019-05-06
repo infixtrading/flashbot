@@ -66,8 +66,8 @@ case class TradingEngineState(bots: Map[String, BotState] = Map.empty,
       copy(bots = bots + (botId ->
         bots.getOrElse(botId, BotState.empty(micros)).pushSession(session) ))
 
-    case ReportUpdated(botId, delta) =>
-      copy(bots = bots + (botId -> bots(botId).updateLastSession(_.updateReport(delta))))
+    case ReportUpdated(botId, reportEvent) =>
+      copy(bots = bots + (botId -> bots(botId).updateLastSession(_.updateReport(reportEvent))))
 
 //
 //      case BalancesUpdated(botId, account, balance) =>

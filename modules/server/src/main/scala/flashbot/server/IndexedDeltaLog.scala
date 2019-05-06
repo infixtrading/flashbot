@@ -2,19 +2,16 @@ package flashbot.server
 
 import java.io.File
 
-import de.sciss.fingertree.RangedSeq
 import io.circe.{Decoder, Encoder, Json}
 import io.circe.generic.semiauto._
 import io.circe.syntax._
-import io.circe.parser._
-import flashbot.core.DataSource.Bundle
 import flashbot.core._
 import flashbot.server.IndexedDeltaLog._
 import flashbot.server.Slices.SliceIndex
 import flashbot.server.TimeLog.ScanDuration
 import flashbot.core.DeltaFmtJson
-import flashbot.models.core.Slice
-import flashbot.models.core.Slice.SliceId
+import flashbot.models.Slice
+import flashbot.models.Slice.SliceId
 
 import scala.concurrent.duration._
 

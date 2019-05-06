@@ -4,6 +4,7 @@ import debox.Buffer
 import flashbot.models.Candle
 import flashbot.util.json.CommonEncoders._
 import io.circe.generic.JsonCodec
+import spire.syntax.cfor._
 
 /**
   * Efficiently stores time series of candles.
@@ -51,4 +52,16 @@ case class CandleFrame(time: debox.Buffer[Long] = debox.Buffer[Long](),
       "Replacement candle must have same timestamp as last candle")
     put(candle)
   }
+
+  def toCandlesArray: Array[Candle] = {
+    val candles = Array.ofDim[Candle](size)
+    cfor(0)(_ < size, _ + 1) { i =>
+      candles(i) = Candle(time(i), open(i), high(i), low(i), close(i), volume(i))
+    }
+    candles
+  }
+}
+
+object CandleFrame {
+  def empty = new CandleFrame()
 }

@@ -11,9 +11,11 @@ import akka.http.scaladsl.model.StatusCodes._
 import akka.stream.Materializer
 import akka.stream.scaladsl.Sink
 import flashbot.core.DataType.{LadderType, TradesType}
-import flashbot.core.{DataType, MarketData, Report, Trade}
+import flashbot.core.{CandleFrame, DataType, MarketData, Report, Trade}
+import flashbot.core.Report._
 import flashbot.util.time._
 import flashbot.util._
+import flashbot.util.json.CommonEncoders._
 import io.circe._
 import io.circe.syntax._
 import io.circe.parser._
@@ -22,9 +24,7 @@ import io.circe.generic.JsonCodec
 import io.circe.generic.extras._
 import de.heikoseeberger.akkahttpcirce.ErrorAccumulatingCirceSupport._
 import flashbot.client.FlashbotClient
-import flashbot.core.Report.ValuesMap
-import flashbot.models.api.TakeLast
-import flashbot.models.core._
+import flashbot.models.{Candle, DataPath, Ladder, TakeLast, TimeRange}
 
 import scala.collection.SortedMap
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor, Future}
@@ -88,7 +88,7 @@ object GrafanaServer {
 
   @ConfiguredJsonCodec case class Table(columns: Seq[Column], rows: Seq[Seq[Json]], @JsonKey("type") Type: String) extends DataSeries
 
-  @JsonCodec case class TimeSeries(target: String, datapoints: Seq[(Double, Long)]) extends DataSeries
+  @JsonCodec case class TimeSeries(target: String, datapoints: Array[(Double, Long)]) extends DataSeries
 
   @JsonCodec case class Annotation(name: String, datasource: String, iconColor: String, enable: Boolean, query: String)
 
@@ -205,7 +205,7 @@ object GrafanaServer {
                     val cacheKey = BacktestCacheKey(strategy, paramsToJson(paramsOpt.get),
                       portfolioOpt.get, barSize, body.range)
                     getBacktestReport(client, cacheKey).map(report => {
-                      Seq(buildSeries(key, key, report.timeSeries))
+                      Seq(buildSeries(key, key, report.timeSeries.iterator.toMap))
                     })
 
                   case ("table", _, Some(strategy)) =>
@@ -214,10 +214,11 @@ object GrafanaServer {
                       portfolioOpt.get, barSize, body.range)
 
                     getBacktestReport(client, cacheKey).map(report => {
-                      if (report.collections.isDefinedAt(key))
-                        Seq(buildTable(report.collections(key).flatMap(_.asObject), List()))
-                      else if (report.values.isDefinedAt(key)) {
-                        val foo: Json = report.values.asJson(Report.vMapEn).asObject.get(key).get
+                      if (report.collections.contains(key))
+                        Seq(buildTable(report.collections(key).toList.flatMap(_.asObject), List()))
+                      else if (report.values.contains(key)) {
+                        val en = implicitly[Encoder[debox.Map[String, ReportValue[Any]]]]
+                        val foo: Json = report.values.asJson(en).asObject.get(key).get
                         Seq(buildTable(Seq(JsonObject("value" -> foo)), List()))
                       } else Seq(buildTable(Seq(JsonObject("error" -> "no data".asJson)), List()))
                     })
@@ -238,8 +239,8 @@ object GrafanaServer {
                     for {
                       streamSrc <- client.pollingMarketDataAsync[Ladder](path)
                       ladder <- streamSrc.runWith(Sink.head)
-                      askObjects = ladder.data.asks.toSeq.map(_.asJsonObject(askEncoder))
-                      bidObjects = ladder.data.bids.toSeq.map(_.asJsonObject(bidEncoder))
+                      askObjects = ladder.data.asks.iterator().toSeq.map(_.asJsonObject(askEncoder))
+                      bidObjects = ladder.data.bids.iterator().toSeq.map(_.asJsonObject(bidEncoder))
                       t = buildTable(
                         askObjects.zipAll(bidObjects, JsonObject(), JsonObject())
                           .map(Function.tupled(mergeObjects)),
@@ -253,7 +254,7 @@ object GrafanaServer {
                       .map(ts => Seq(
                         buildSeries("price", s"${path.source}.${path.topic}", ts),
                         buildSeries("volume", s"${path.source}.${path.topic}", ts,
-                          _.volume, scaleTo(0, 1))))
+                          _.volume.toArray, scaleTo(0, 1))))
                 }
 
               case Failure(exception) => Future.failed(exception)
@@ -318,29 +319,27 @@ object GrafanaServer {
   }
 
   def buildSeries(target: String, seriesKey: String,
-                  seriesMap: Map[String, Seq[Candle]],
-                  valFn: Candle => Double = _.close,
-                  transform: Seq[Double] => Seq[Double] = x => x): TimeSeries =
-    {
-      val (values, times) = seriesMap
-        .getOrElse[Seq[Candle]](seriesKey, Seq.empty)
-        .map(c => (valFn(c), c.micros / 1000)).unzip
-      TimeSeries(target, transform(values).zip(times))
-    }
+                  seriesMap: Map[String, CandleFrame],
+                  valFn: CandleFrame => Array[Double] = _.close.toArray(),
+                  transform: Array[Double] => Array[Double] = x => x): TimeSeries = {
+    val frame = seriesMap.getOrElse(seriesKey, CandleFrame.empty)
+    val times = frame.time.toArray.map(_ / 1000)
+    TimeSeries(target, transform(valFn(frame)).zip(times))
+  }
 
   def mergeObjects(a: JsonObject, b: JsonObject): JsonObject =
     b.toIterable.foldLeft(a) {
       case (memo, (key, value)) => memo.add(key, value)
     }
 
-  def scaleTo(lower: Double, upper: Double) = transformation(values => {
+  def scaleTo(lower: Double, upper: Double): Array[Double] => Array[Double] = transformation(values => {
     val min = values.min
     val max = values.max
     val scale = (upper - lower) / (max - min)
     values.map(v => v * scale - min * scale)
   })
 
-  def transformation(fn: Seq[Double] => Seq[Double]): Seq[Double] => Seq[Double] =
+  def transformation(fn: Array[Double] => Array[Double]): Array[Double] => Array[Double] =
     values => if (values.isEmpty) values else fn(values)
 
 }

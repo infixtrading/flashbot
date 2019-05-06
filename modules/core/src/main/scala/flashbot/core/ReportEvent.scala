@@ -77,8 +77,8 @@ object ReportEvent {
 
   @JsonCodec
   sealed trait SessionComplete extends ReportEvent
-  case object SessionSuccess extends ReportEvent
-  case class SessionFailure(err: ReportError) extends ReportEvent
+  case object SessionSuccess extends SessionComplete
+  case class SessionFailure(err: ReportError) extends SessionComplete
 
 //  case class ReportValueEvent(event: ValueEvent) extends ReportEvent
 
