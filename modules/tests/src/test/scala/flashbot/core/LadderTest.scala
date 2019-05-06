@@ -1,6 +1,7 @@
 package flashbot.core
 
 import flashbot.models.Ladder
+import flashbot.util.TableUtil
 import org.scalatest.{FlatSpec, Matchers}
 
 class LadderTest extends FlatSpec with Matchers {
@@ -21,5 +22,14 @@ class LadderTest extends FlatSpec with Matchers {
     ladder.bids.bestQty shouldBe 1
     ladder.bids.worstPrice shouldBe 98.5
     ladder.bids.worstQty shouldBe 2
+  }
+
+  "Ladder" should "be derivable from OrderBook" in {
+    val nowMicros = System.currentTimeMillis() * 1000
+    val seq = OrderBookTap(.01, 200)
+//      .map(Ladder.fromOrderBook(200, _))
+      .zipWithIndex
+      .toVector
+    TableUtil.print(seq)
   }
 }

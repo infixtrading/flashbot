@@ -65,6 +65,7 @@ class LadderSide(val maxDepth: Int,
     * @param qty the qty at that price, or 0 to remove the price level.
     */
   def update(price: Double, qty: Double): Unit = {
+
     val level = levelOfPrice(price)
     if (qty == 0) {
       assert(depth > 0, "Cannot remove level from empty ladder")

@@ -87,6 +87,10 @@ lazy val statsDeps = List(
   "org.scalanlp" %% "breeze-natives" % "1.0-RC2"
 )
 
+lazy val utilDeps = List(
+  "com.github.agourlay" %% "json-2-csv" % "0.4.2"
+)
+
 val compilerOptions = Seq(
   "-deprecation",
   "-encoding",
@@ -149,7 +153,7 @@ lazy val baseSettings = Seq(
   unmanagedClasspath in Compile ++= update.value.select(configurationFilter(CompileTime.name)),
   unmanagedClasspath in Test ++= update.value.select(configurationFilter(CompileTime.name)),
 
-  libraryDependencies ++= jsonDeps
+  libraryDependencies ++= (jsonDeps ++ utilDeps)
 ) ++ macroSettings
 
 lazy val allFBSettings = baseSettings ++ publishSettings

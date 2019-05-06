@@ -12,7 +12,6 @@ import scala.util.Random
   */
 object OrderBookTap {
 
-
   /**
     * 1. Build initial book with a random amount of orders of random sizes at each price level.
     * 2. On every iteration:
