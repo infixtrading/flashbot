@@ -124,7 +124,7 @@ class LadderSide(val maxDepth: Int,
   private def truncate(): Unit = {
     while (depth > maxDepth) {
       val removedQty = dequeueDouble()
-      worstPrice = round(side.betterBy(worstPrice, tickSize))
+      worstPrice = round(side.makeBetterBy(worstPrice, tickSize))
       if (removedQty > 0) {
         depth -= 1
       }
@@ -141,11 +141,11 @@ class LadderSide(val maxDepth: Int,
     } else {
       while (firstDouble() == 0) {
         dequeueDouble()
-        bestPrice = round(side.worseBy(bestPrice, tickSize))
+        bestPrice = round(side.makeWorseBy(bestPrice, tickSize))
       }
       while (lastDouble() == 0) {
         dequeueLastDouble()
-        worstPrice = round(side.betterBy(worstPrice, tickSize))
+        worstPrice = round(side.makeBetterBy(worstPrice, tickSize))
       }
     }
   }
@@ -154,7 +154,7 @@ class LadderSide(val maxDepth: Int,
     var i = 0
     while (i < n) {
       enqueueFirst(0)
-      bestPrice = round(side.betterBy(bestPrice, tickSize))
+      bestPrice = round(side.makeBetterBy(bestPrice, tickSize))
       i += 1
     }
   }
@@ -163,7 +163,7 @@ class LadderSide(val maxDepth: Int,
     var i = 0
     while (i < n) {
       enqueue(0)
-      worstPrice = round(side.worseBy(worstPrice, tickSize))
+      worstPrice = round(side.makeWorseBy(worstPrice, tickSize))
       i += 1
     }
   }
@@ -175,10 +175,10 @@ class LadderSide(val maxDepth: Int,
   def qtyAtPrice(price: Double): Double = qtyAtLevel(levelOfPrice(price))
 
   def levelOfPrice(price: Double): Int =
-    math.round(side.betterBy(price, bestPrice) / tickSize).toInt
+    math.round(side.isWorseBy(price, bestPrice) / tickSize).toInt
 
   def priceOfLevel(level: Int): Double =
-    round(side.worseBy(bestPrice, level * tickSize))
+    round(side.makeWorseBy(bestPrice, level * tickSize))
 
   def nonEmpty: Boolean = !isEmpty
 

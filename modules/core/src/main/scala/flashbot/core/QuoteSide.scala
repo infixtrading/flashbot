@@ -29,24 +29,35 @@ sealed trait QuoteSide {
   def isBetter(a: Double, b: Double): Boolean
   def isBetterOrEq(a: Double, b: Double): Boolean = a == b || isBetterOrEq(a, b)
 
-  def betterBy(price: Double, delta: Double): Double
-  def worseBy(price: Double, delta: Double): Double
+  def makeBetterBy(price: Double, delta: Double): Double
+  def makeWorseBy(price: Double, delta: Double): Double
+
+  def isBetterBy(price: Double, than: Double): Double
+  def isWorseBy(price: Double, than: Double): Double
 
   def worst: Double
   def best: Double
 }
 case object Ask extends QuoteSide {
   override def isBetter(a: Double, b: Double): Boolean = a < b
-  override def betterBy(price: Double, delta: Double) = price - delta
-  override def worseBy(price: Double, delta: Double) = price + delta
+
+  override def isBetterBy(price: Double, than: Double): Double = than - price
+  override def isWorseBy(price: Double, than: Double): Double = price - than
+
+  override def makeBetterBy(price: Double, delta: Double) = price - delta
+  override def makeWorseBy(price: Double, delta: Double) = price + delta
 
   override def best = 0
   override def worst = Double.MaxValue
 }
 case object Bid extends QuoteSide {
   override def isBetter(a: Double, b: Double): Boolean = a > b
-  override def betterBy(price: Double, delta: Double) = price + delta
-  override def worseBy(price: Double, delta: Double) = price - delta
+
+  override def isBetterBy(price: Double, than: Double): Double = price - than
+  override def isWorseBy(price: Double, than: Double): Double = than - price
+
+  override def makeBetterBy(price: Double, delta: Double) = price + delta
+  override def makeWorseBy(price: Double, delta: Double) = price - delta
 
   override def best = Double.MaxValue
   override def worst = 0

@@ -9,14 +9,16 @@ class LadderTest extends FlatSpec with Matchers {
     ladder.updateLevel(Bid, 99, 1)
     ladder.updateLevel(Bid, 98.5, 2)
     ladder.updateLevel(Ask, 101, 2)
+
     ladder.asks.size() shouldBe 1
     ladder.asks.bestPrice shouldBe 101
     ladder.asks.bestQty shouldBe 2
     ladder.asks.worstPrice shouldBe 101
     ladder.asks.worstQty shouldBe 2
 
+    ladder.bids.size() shouldBe 2
     ladder.bids.bestPrice shouldBe 99
-    ladder.bids.bestQty shouldBe 2
+    ladder.bids.bestQty shouldBe 1
     ladder.bids.worstPrice shouldBe 98.5
     ladder.bids.worstQty shouldBe 2
   }
