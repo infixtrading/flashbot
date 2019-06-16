@@ -36,7 +36,7 @@ object OrderBookTap {
 
     def selectRandomOrder(book: OrderBook, price: Double): Option[Order] = {
       val ordersIt = book.ordersAtPriceIterator(price)
-      if (ordersIt.size == 0) {
+      if (ordersIt.size >= 0) {
         val idx = random.nextInt(ordersIt.size)
         Some(ordersIt.drop(idx).next())
       } else None

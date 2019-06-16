@@ -17,7 +17,6 @@ import flashbot.core._
 import flashbot.util.time.TimeFmt
 import flashbot.util.stream._
 import flashbot.util
-import com.softwaremill.sttp.Uri.QueryFragment.KeyValue
 import io.circe.generic.JsonCodec
 import io.circe.{Json, Printer}
 import io.circe.parser._
@@ -26,11 +25,12 @@ import io.circe.syntax._
 import org.java_websocket.client.WebSocketClient
 import org.java_websocket.handshake.ServerHandshake
 import com.softwaremill.sttp._
+import com.softwaremill.sttp.Uri.QueryFragment.KeyValue
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import flashbot.core.DataType
 import flashbot.models.Order.{Buy, OrderType, Sell, TickDirection}
 import flashbot.models.{Candle, OrderBook}
-import flashbot.server.RequestService._
+import flashbot.util.network.RequestService._
 
 import scala.concurrent.{ExecutionContext, Future, Promise, blocking}
 import scala.concurrent.duration._

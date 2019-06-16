@@ -124,13 +124,15 @@ class LadderSide(val maxDepth: Int,
   // Removes elements from tail while depth exceeds the max depth.
   private def truncate(): Unit = {
     while (depth > maxDepth) {
-      val removedQty = dequeueDouble()
+      val removedQty = dequeueLastDouble()
       worstPrice = round(side.makeBetterBy(worstPrice, tickSize))
+
       if (removedQty > 0) {
         depth -= 1
       }
+
+      trimLevels()
     }
-    trimLevels()
   }
 
   // Ensures that `start` and `end` always point to non-empty levels.

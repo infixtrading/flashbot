@@ -46,7 +46,7 @@ abstract class DataSource {
     Future.failed(new NotImplementedError("ingestGroup is not implemented by this data source."))
 
   /**
-    * Ingests a single topic. Returns the corresponding data stream source.
+    * Ingests a single topic. Returns the corresponding data stream.
     */
   def ingest[T](topic: String, datatype: DataType[T])
                (implicit ctx: ActorContext, mat: ActorMaterializer)

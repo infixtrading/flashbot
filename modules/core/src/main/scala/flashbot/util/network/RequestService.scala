@@ -1,4 +1,4 @@
-package flashbot.server
+package flashbot.util.network
 
 import java.util.concurrent.Executors
 
@@ -7,8 +7,8 @@ import akka.stream.scaladsl.{RestartSource, Sink, Source}
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import com.softwaremill.sttp.{Request, Response, SttpBackend}
 
-import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration._
+import scala.concurrent.{ExecutionContext, Future}
 import scala.language.postfixOps
 import scala.util.{Failure, Success}
 
@@ -20,7 +20,7 @@ object RequestService {
   private implicit val okHttpBackend: SttpBackend[Future, Nothing] =
     OkHttpFutureBackend()(ec)
 
-  def retry429[T](rsp: Response[T]) = rsp.code == 429
+  def retry429[T](rsp: Response[T]): Boolean = rsp.code == 429
 
   implicit class RequestOps[T](req: Request[T, Nothing]) {
     def sendWithRetries(minBackoff: FiniteDuration = 1 second,
