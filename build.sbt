@@ -308,8 +308,8 @@ lazy val flashbot = project
       """.stripMargin
   )
   .settings(fork in run := true)
-  .aggregate(core, server, testing)
-  .dependsOn(core, server, testing)
+  .aggregate(core, server, testing, tools)
+  .dependsOn(core, server, testing, tools)
 
 //lazy val numbersTestingBase = circeCrossModule("numbers-testing", previousCirceVersion, CrossType.Pure).settings(
 //  scalacOptions ~= {
@@ -416,6 +416,9 @@ lazy val server = flashbotModule("server", previousFBVersion).settings(
       "org.postgresql" % "postgresql" % "42.2.5"
     ))
 ).dependsOn(core)
+
+
+lazy val tools = flashbotModule("tools", previousFBVersion).dependsOn(core, server)
 
 //lazy val scalajs = flashbotModule("scalajs", None).enablePlugins(ScalaJSPlugin).dependsOn(coreJS)
 

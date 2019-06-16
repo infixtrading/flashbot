@@ -30,7 +30,7 @@ class LadderTest extends FlatSpec with Matchers {
       .map(Ladder.fromOrderBook(200, _))
       .zipWithIndex
       .toVector
-    TableUtil.print(seq.take(2))
+    TableUtil.render(seq.take(2))
   }
 
   "Ladder" should "truncate sparse order books" in {
