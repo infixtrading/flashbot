@@ -109,20 +109,20 @@ abstract class OrderRef {
   protected[flashbot] def _handleEvent(event: OrderEvent): Unit = handleEvent(event)
 }
 
-class PersistentQuote(val market: Market,
+class ContinuousQuote(val market: Market,
                       val side: Side,
                       var size: Double,
                       var price: Double) extends OrderRef {
 
   private val qtys = debox.Map.empty[String, Double]
 
-  private def currentTotal = {
+  private def currentTotal: Double = {
     var total = 0d
     qtys.foreachValue(total += _)
     total
   }
 
-  override def handleSubmit() = {
+  override def handleSubmit(): Unit = {
     submitRemainder()
   }
 
@@ -146,7 +146,7 @@ class PersistentQuote(val market: Market,
       }
   }
 
-  override def handleCancel() = {
+  override def handleCancel(): Unit = {
     qtys.foreachKey(ctx.cancel)
   }
 

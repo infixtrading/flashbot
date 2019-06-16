@@ -170,7 +170,7 @@ class Simulator(base: Exchange, ctx: TradingSession, latencyMicros: Long = 0) ex
   /**
     * Opens an order in the book with padding orders. A padding order is an order that
     * represents all other orders which aren't ours. They are used to maintain an estimated
-    * queue position for our orders in order to simulate fills more accurately.
+    * queue position for our orders so that we can simulate fills more accurately.
     */
   private def openOrderWithPadding(orders: FIFOQueue, clientId: String, product: String,
                                    side: Side, price: Double, size: Double): Unit = {

@@ -1,7 +1,6 @@
 package flashbot.core
 
 import java.util
-
 import akka.{Done, NotUsed}
 import akka.actor.{ActorRef, Cancellable, Scheduler}
 import akka.event.LoggingAdapter
@@ -20,46 +19,6 @@ import scala.annotation.tailrec
 import scala.concurrent._
 import scala.util.{Failure, Success, Try}
 
-
-//trait TradingSession {
-//  def id: String
-////  def send(event: Any): Unit
-////  def send(events: mutable.Buffer[Any])
-//  def getPortfolio: Portfolio
-////  def cmdQueues: java.util.Map[String, CommandQueue]
-//  def prices: PriceIndex
-//  def instruments: InstrumentIndex
-//  protected[flashbot] def exchanges: Map[String, Exchange]
-//  def exchangeParams: java.util.Map[String, ExchangeParams]
-////  protected[flashbot] def orderManagers: java.util.Map[String, TargetManager]
-//
-//  // A weak reference to this iteration of the session. It must be GC'd after the current
-//  // iteration is done. Therefore, DO NOT HOLD ON TO THIS REFERENCE! Instead, use it as
-//  // the key in WeakHashMaps for caching computations in between Strategy mixins.
-//  protected[flashbot] def ref: java.lang.Long
-//
-//  def tryRound(market: Market, size: FixedSize): Option[FixedSize]
-//  def round(market: Market, size: FixedSize): FixedSize =
-//    tryRound(market, size).getOrElse({
-//      throw new RuntimeException(s"Can't round $size for market $market")
-//    })
-//}
-
-//trait TickCollector {
-//  def insertTick(event: ): Unit
-//}
-//
-//class BacktestTickCollector extends TickCollector {
-//  override def insert(event: Any) = ???
-//}
-
-/**
-  * Live tick collector simply sends each tick to the tick actor ref.
-  */
-//class LiveTickCollector(tickRef: ActorRef) extends TickCollector {
-//  override def insert(tick: Tick) = tickRef ! tick
-//}
-
 class TradingSession(val strategyKey: String,
                      val params: Json,
                      val mode: TradingSessionMode,
@@ -77,27 +36,25 @@ class TradingSession(val strategyKey: String,
   protected[flashbot] var id: Option[String] = None
 
   // Serialize a Json snapshot of the initial report.
-  private val initialReportJson = initialReport.asJson
+//  private val initialReportJson = initialReport.asJson
 
   // Immediately deserialize to make a deep copy of the report. This is the in-memory
   // report that this session will be using as state.
 
-  val prices: PriceIndex = new JPriceIndex(GraphConversions)
+  private val prices: PriceIndex = new JPriceIndex(GraphConversions)
   lazy val instruments: InstrumentIndex = load.value.get.get.instruments
   lazy val exchanges: Map[String, Exchange] = load.value.get.get.exchanges
-  private lazy val dataStreams = load.value.get.get.streams
+  private lazy val dataStreams: Seq[Source[MarketData[_], NotUsed]] = load.value.get.get.streams
 
   // Only backtests have an event loop.
-  val eventLoop: Option[EventLoop] =
+  private val eventLoop: Option[EventLoop] =
     if (mode.isBacktest) Some(new EventLoop)
     else None
 
-  var scope: OrderRef = _
+  protected[flashbot] var scope: OrderRef = _
 
-  val topLevelOrders = new OrderIndex
-  def currentOrderIndex: OrderIndex =
-    if (scope == null) topLevelOrders
-    else scope.children
+  private val topLevelOrders = new OrderIndex
+  private def currentOrderIndex: OrderIndex = if (scope == null) topLevelOrders else scope.children
 
   val allOrdersByClientId = new java.util.HashMap[String, OrderRef]
   val allOrdersByExchangeId = new java.util.HashMap[String, OrderRef]
@@ -467,3 +424,47 @@ object TradingSession {
                           streams: Seq[Source[MarketData[_], NotUsed]],
                           sessionMicros: Long)
 }
+
+
+
+
+//trait TradingSession {
+//  def id: String
+////  def send(event: Any): Unit
+////  def send(events: mutable.Buffer[Any])
+//  def getPortfolio: Portfolio
+////  def cmdQueues: java.util.Map[String, CommandQueue]
+//  def prices: PriceIndex
+//  def instruments: InstrumentIndex
+//  protected[flashbot] def exchanges: Map[String, Exchange]
+//  def exchangeParams: java.util.Map[String, ExchangeParams]
+////  protected[flashbot] def orderManagers: java.util.Map[String, TargetManager]
+//
+//  // A weak reference to this iteration of the session. It must be GC'd after the current
+//  // iteration is done. Therefore, DO NOT HOLD ON TO THIS REFERENCE! Instead, use it as
+//  // the key in WeakHashMaps for caching computations in between Strategy mixins.
+//  protected[flashbot] def ref: java.lang.Long
+//
+//  def tryRound(market: Market, size: FixedSize): Option[FixedSize]
+//  def round(market: Market, size: FixedSize): FixedSize =
+//    tryRound(market, size).getOrElse({
+//      throw new RuntimeException(s"Can't round $size for market $market")
+//    })
+//}
+
+//trait TickCollector {
+//  def insertTick(event: ): Unit
+//}
+//
+//class BacktestTickCollector extends TickCollector {
+//  override def insert(event: Any) = ???
+//}
+
+/**
+  * Live tick collector simply sends each tick to the tick actor ref.
+  */
+//class LiveTickCollector(tickRef: ActorRef) extends TickCollector {
+//  override def insert(tick: Tick) = tickRef ! tick
+//}
+
+
