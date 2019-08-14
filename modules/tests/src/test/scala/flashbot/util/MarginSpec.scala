@@ -30,7 +30,7 @@ class MarginSpec extends FlatSpec with Matchers {
     _calcOrderMargin(25, Seq(
       (75, 0.0086), (-20, 0.0030), (50, 0.0060),
       (-10, 0.0040), (-15, 0.0024)
-    ), 5.0, BitMEX.ETHUSD) shouldBe  round(0.0032883555555555553)
+    ), 5.0, BitMEX.ETHUSD) shouldBe round(0.0032883555555555553)
 
     _calcOrderMargin(25, Seq(
       (45, 0.0051), (-20, 0.0030), (50, 0.0060),

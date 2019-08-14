@@ -1,12 +1,11 @@
 package flashbot.core
 
-import java.util.Comparator
-
+import debox.Buffer
 import it.unimi.dsi.fastutil.longs.{Long2ObjectOpenHashMap, LongHeapPriorityQueue}
 import spire.syntax.cfor._
 
 class EventBuffer(initialCapacity: Int) {
-  lazy val buffer = debox.Buffer.fill[Tick](initialCapacity)(null)
+  lazy val buffer: Buffer[Tick] = debox.Buffer.fill[Tick](initialCapacity)(null)
   var size: Int = 0
 
   def +=(event: Tick): Unit = {

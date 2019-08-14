@@ -25,7 +25,7 @@ class LadderTest extends FlatSpec with Matchers {
   }
 
   "Ladder" should "be buildable from OrderBook" in {
-    val nowMicros = System.currentTimeMillis() * 1000
+//    val nowMicros = System.currentTimeMillis() * 1000
     val seq = OrderBookTap(.01, 200)
       .map(Ladder.fromOrderBook(200, _))
       .zipWithIndex

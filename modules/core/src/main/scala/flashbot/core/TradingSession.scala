@@ -41,7 +41,7 @@ class TradingSession(val strategyKey: String,
   // Immediately deserialize to make a deep copy of the report. This is the in-memory
   // report that this session will be using as state.
 
-  private val prices: PriceIndex = new JPriceIndex(GraphConversions)
+  protected[flashbot] val prices: PriceIndex = new JPriceIndex(GraphConversions)
   lazy val instruments: InstrumentIndex = load.value.get.get.instruments
   lazy val exchanges: Map[String, Exchange] = load.value.get.get.exchanges
   private lazy val dataStreams: Seq[Source[MarketData[_], NotUsed]] = load.value.get.get.streams
