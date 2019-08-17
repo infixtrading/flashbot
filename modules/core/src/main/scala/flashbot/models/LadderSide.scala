@@ -1,6 +1,8 @@
 package flashbot.models
 
-import flashbot.core.{Matching, QuoteSide}
+import java.lang
+
+import flashbot.core.{Ask, Bid, Matching, QuoteSide}
 import flashbot.util.NumberUtils
 import it.unimi.dsi.fastutil.doubles.DoubleArrayFIFOQueue
 
@@ -114,8 +116,12 @@ class LadderSide(val maxDepth: Int,
         array(indexOfLevel(level)) = qty
         truncate()
       }
-    } else
-      throw new RuntimeException("Quantity cannot be set to a negative number")
+    } else throw new RuntimeException("Quantity cannot be set to a negative number")
+
+    // TODO: Debugging, remove check
+//    if (iterator().exists(_._1 <= 0)) {
+//      throw new RuntimeException("Price is invalid")
+//    }
   }
 
   private def firstIndex: Int = start
@@ -123,6 +129,7 @@ class LadderSide(val maxDepth: Int,
 
   // Removes elements from tail while depth exceeds the max depth.
   private def truncate(): Unit = {
+    trimLevels()
     while (depth > maxDepth) {
       val removedQty = dequeueLastDouble()
       worstPrice = round(side.makeBetterBy(worstPrice, tickSize))
@@ -138,18 +145,25 @@ class LadderSide(val maxDepth: Int,
   // Ensures that `start` and `end` always point to non-empty levels.
   // Also updates the best and worst prices.
   private def trimLevels(): Unit = {
-    if (depth == 0) {
+    var removedFromBest: Int = 0
+    var removedFromWorst: Int = 0
+
+    while (nonEmpty && firstDouble() == 0) {
+      dequeueDouble()
+      removedFromBest = removedFromBest + 1
+    }
+
+    while (nonEmpty && lastDouble() == 0) {
+      dequeueLastDouble()
+      removedFromWorst = removedFromWorst + 1
+    }
+
+    if (isEmpty) {
       bestPrice = java.lang.Double.NaN
       worstPrice = java.lang.Double.NaN
     } else {
-      while (firstDouble() == 0) {
-        dequeueDouble()
-        bestPrice = round(side.makeWorseBy(bestPrice, tickSize))
-      }
-      while (lastDouble() == 0) {
-        dequeueLastDouble()
-        worstPrice = round(side.makeBetterBy(worstPrice, tickSize))
-      }
+      bestPrice = round(side.makeWorseBy(bestPrice, tickSize * removedFromBest))
+      worstPrice = round(side.makeBetterBy(worstPrice, tickSize * removedFromWorst))
     }
   }
 
@@ -171,14 +185,27 @@ class LadderSide(val maxDepth: Int,
     }
   }
 
-  def indexOfLevel(level: Int): Int = (start + level) % length
+  def indexOfLevel(level: Int): Int = (start + level + math.abs(level * length)) % length
 
-  def qtyAtLevel(level: Int): Double = array(indexOfLevel(level))
+  def qtyAtLevel(level: Int): Double = {
+    try {
+      array(indexOfLevel(level))
+    } catch {
+      case e: ArrayIndexOutOfBoundsException =>
+        e.printStackTrace()
+        throw e
+    }
+  }
 
   def qtyAtPrice(price: Double): Double = qtyAtLevel(levelOfPrice(price))
 
-  def levelOfPrice(price: Double): Int =
+  def levelOfPrice(price: Double): Int = {
+    if (isEmpty) {
+      return 0;
+    }
+
     math.round(side.isWorseBy(price, bestPrice) / tickSize).toInt
+  }
 
   def priceOfLevel(level: Int): Double =
     round(side.makeWorseBy(bestPrice, level * tickSize))
@@ -195,15 +222,16 @@ class LadderSide(val maxDepth: Int,
     val priceLimit = round(approxPriceLimit)
     var remainder = size
     var i = 0
-    while (nonEmpty && remainder > 0 && side.isBetterOrEq(bestPrice, priceLimit)) {
+    while (this.nonEmpty && remainder > 0 && side.isBetterOrEq(bestPrice, priceLimit)) {
       val matchQty = math.min(remainder, bestQty)
       remainder = NumberUtils.round8(remainder - matchQty)
       matchPrices(i) = bestPrice
       matchQtys(i) = matchQty
       matchCount += 1
       matchTotalQty = matchQty + matchTotalQty
-      update(bestPrice, round(bestQty - matchQty))
-      i += 1
+      val newqty = NumberUtils.round8(bestQty - matchQty)
+      update(bestPrice, newqty)
+      if (newqty > 0) i += 1
     }
     matchPrices(i) = -1
     matchQtys(i) = -1

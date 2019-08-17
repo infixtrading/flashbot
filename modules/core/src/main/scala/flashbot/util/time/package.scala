@@ -48,8 +48,8 @@ package object time {
   }
 
   implicit def DurationDecoder: Decoder[FiniteDuration] = new Decoder[FiniteDuration] {
-    override def apply(c: HCursor) = {
-      val strDecoder = Decoder[String]
+    override def apply(c: HCursor): Either[DecodingFailure, FiniteDuration] = {
+      val strDecoder: Decoder[String] = Decoder[String]
       strDecoder(c).right.map(parseDuration)
     }
   }

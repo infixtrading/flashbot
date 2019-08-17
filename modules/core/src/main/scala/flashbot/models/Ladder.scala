@@ -44,6 +44,8 @@ class Ladder(val depth: Int, val tickSize: Double,
 
   def spread: Double = round(asks.bestPrice - bids.bestPrice)
 
+  def isEmpty: Boolean = bids.isEmpty && asks.isEmpty
+
   /**
     * @param side the side of the incoming, taker order
     * @param unroundedPrice price limit of taker order

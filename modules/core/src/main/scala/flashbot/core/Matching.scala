@@ -6,8 +6,8 @@ import flashbot.util.NumberUtils
 
 trait Matching {
 
-  private val _matchPrices: Array[Double] = Array[Double](200)
-  private val _matchQtys: Array[Double] = Array[Double](200)
+  private val _matchPrices: Array[Double] = Array.ofDim[Double](200)
+  private val _matchQtys: Array[Double] = Array.ofDim[Double](200)
 
   def matchPrices: Array[Double] = _matchPrices
   def matchQtys: Array[Double] = _matchQtys

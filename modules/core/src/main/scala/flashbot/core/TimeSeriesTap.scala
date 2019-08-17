@@ -66,7 +66,7 @@ object TimeSeriesTap {
     * @return
     */
   def prices(initialPrice: Double, mu: Double, sigma: Double, timeRange: TimeRange,
-             timeStep: Duration): Source[(Instant, Double), NotUsed] = {
+             timeStep: Duration, infinite: Boolean = false): Source[(Instant, Double), NotUsed] = {
 
     val gaussian = Gaussian(0, 1)
 
@@ -77,16 +77,18 @@ object TimeSeriesTap {
     val numTimeSteps: Long = endIndex - startIndex + 1
     val timeStepFraction: Double = 1.0/numTimeSteps
 
-    val brownian = Source(Seq.range(0, numTimeSteps).toIndexedSeq).scan(0d) {
+    val infiniteSrc = Source(Stream.from(0))
+    val brownian = infiniteSrc.scan(0d) {
       case (sum: Double, i) =>
         sum + (gaussian.draw() * math.sqrt(timeStepFraction))
-    }.take(numTimeSteps.toInt)
-
-    brownian.zipWithIndex.map {
-      case (w, i) =>
-        val expBody = (mu - (.5 * math.pow(sigma, 2))) * (i.toDouble / numTimeSteps) + sigma * w
-        (Instant.ofEpochMilli((startIndex + i) * timeStep.toMillis), initialPrice * math.exp(expBody))
     }
+
+    (if (infinite) brownian else brownian.take(numTimeSteps.toInt))
+      .zipWithIndex.map {
+        case (w, i) =>
+          val expBody = (mu - (.5 * math.pow(sigma, 2))) * (i.toDouble / numTimeSteps) + sigma * w
+          (Instant.ofEpochMilli((startIndex + i) * timeStep.toMillis), initialPrice * math.exp(expBody))
+      }
   }
 
   // Just some default parameters for when it doesn't matter

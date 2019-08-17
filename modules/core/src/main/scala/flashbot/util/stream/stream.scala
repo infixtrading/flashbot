@@ -55,6 +55,7 @@ package object stream {
   def buildMaterializer()(implicit system: ActorSystem): ActorMaterializer =
     ActorMaterializer(ActorMaterializerSettings(system).withSupervisionStrategy { err =>
       println(s"Exception in stream: $err")
+      err.printStackTrace()
       Supervision.Stop
     })(system)
 

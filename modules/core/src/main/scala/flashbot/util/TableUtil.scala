@@ -18,7 +18,7 @@ object TableUtil {
     ASCIITable.getInstance().printTable(rows.head.split(","), rows.drop(1).toArray.map(_.split(",")))
   }
 
-  def renderLadder(ladder: Ladder): Unit = {
+  def renderLadder(ladder: Ladder, depthZoom: Int = 20000): Unit = {
     val depth = 10
     val data = Array((1 to (depth * 2 + 1)).map(_ => Array("", "", "", "")):_*)
 
@@ -30,7 +30,7 @@ object TableUtil {
         data(idx)(1) = size.toString
         askTotal += size
         data(idx)(2) = askTotal.toString
-        data(idx)(3) = "|" * (askTotal / 20000).toInt
+        data(idx)(3) = String.format("%-30s", "|" * (askTotal / depthZoom).toInt)
     }
 
     var bidTotal: Double = 0
@@ -41,7 +41,7 @@ object TableUtil {
         data(idx)(1) = size.toString
         bidTotal += size
         data(idx)(2) = bidTotal.toString
-        data(idx)(3) = "|" * (bidTotal / 20000).toInt
+        data(idx)(3) = String.format("%-30s", "|" * (bidTotal / depthZoom).toInt)
     }
 
     ASCIITable.getInstance().printTable(Array("Price", "Size", "Total", "Depth"), data, -1)

@@ -7,6 +7,8 @@ import org.scalatest.{FlatSpec, Matchers}
 class LadderTest extends FlatSpec with Matchers {
   "Ladder" should "load asks and bids" in {
     val ladder = new Ladder(depth = 25, .5)
+    ladder.qtyAtPrice(99) shouldEqual 0
+
     ladder.updateLevel(Bid, 99, 1)
     ladder.updateLevel(Bid, 98.5, 2)
     ladder.updateLevel(Ask, 101, 2)
@@ -22,6 +24,49 @@ class LadderTest extends FlatSpec with Matchers {
     ladder.bids.bestQty shouldBe 1
     ladder.bids.worstPrice shouldBe 98.5
     ladder.bids.worstQty shouldBe 2
+  }
+
+  "Ladder" should "go back to it's original state if orders are removed" in {
+    val ladder = new Ladder(10, 1)
+
+    ladder.bids.depth shouldEqual 0
+
+    ladder.updateLevel(Bid, 101, 1)
+    ladder.updateLevel(Bid, 102, 1)
+    ladder.updateLevel(Bid, 103, 1)
+
+    ladder.bids.depth shouldEqual 3
+
+    // Removing from worst
+    ladder.updateLevel(Bid, 101, 0)
+    ladder.updateLevel(Bid, 102, 0)
+    ladder.updateLevel(Bid, 103, 0)
+
+    ladder.isEmpty shouldEqual true
+    ladder.bids.isEmpty shouldBe true
+
+    // Re-add
+    ladder.updateLevel(Bid, 101, 1)
+    ladder.updateLevel(Bid, 102, 1)
+    ladder.updateLevel(Bid, 103, 1)
+
+    // Also to asks
+    ladder.updateLevel(Ask, 101, 1)
+    ladder.updateLevel(Ask, 102, 1)
+
+    ladder.isEmpty shouldEqual false
+    ladder.bids.depth shouldEqual 3
+    ladder.asks.depth shouldEqual 2
+
+    // Removing from best
+    ladder.updateLevel(Ask, 102, 0)
+    ladder.updateLevel(Ask, 101, 0)
+
+    ladder.updateLevel(Bid, 103, 0)
+    ladder.updateLevel(Bid, 102, 0)
+    ladder.updateLevel(Bid, 101, 0)
+
+    ladder.isEmpty shouldEqual true
   }
 
   "Ladder" should "be buildable from OrderBook" in {

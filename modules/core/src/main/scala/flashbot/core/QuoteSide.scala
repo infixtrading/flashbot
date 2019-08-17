@@ -27,7 +27,7 @@ sealed trait QuoteSide {
 
   // If a is better than b
   def isBetter(a: Double, b: Double): Boolean
-  def isBetterOrEq(a: Double, b: Double): Boolean = a == b || isBetterOrEq(a, b)
+  def isBetterOrEq(a: Double, b: Double): Boolean = a == b || isBetter(a, b)
 
   def isWorse(a: Double, b: Double): Boolean = !isBetterOrEq(a, b)
   def isWorseOrEq(a: Double, b: Double): Boolean = !isBetter(a, b)
@@ -40,6 +40,8 @@ sealed trait QuoteSide {
 
   def worst: Double
   def best: Double
+
+//  def isBestFirst: Boolean
 }
 case object Ask extends QuoteSide {
   override def isBetter(a: Double, b: Double): Boolean = a < b
@@ -53,6 +55,7 @@ case object Ask extends QuoteSide {
   override def best = 0
   override def worst = Double.MaxValue
 }
+
 case object Bid extends QuoteSide {
   override def isBetter(a: Double, b: Double): Boolean = a > b
 

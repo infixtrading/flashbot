@@ -75,10 +75,7 @@ lazy val serviceDeps = configDeps ++ List(
 
 lazy val timeSeriesDeps = List(
   // Time series
-  "org.ta4j" % "ta4j-core" % "0.12",
-
-  // Charting
-  "de.sciss" %% "scala-chart" % "0.6.0"
+  "org.ta4j" % "ta4j-core" % "0.12"
 )
 
 lazy val statsDeps = List(
@@ -418,7 +415,12 @@ lazy val server = flashbotModule("server", previousFBVersion).settings(
 ).dependsOn(core)
 
 
-lazy val tools = flashbotModule("tools", previousFBVersion).dependsOn(core, server)
+lazy val tools = flashbotModule("tools", previousFBVersion)
+  .settings(
+    // Charting
+    libraryDependencies ++= Seq("de.sciss" %% "scala-chart" % "0.6.0")
+  )
+  .dependsOn(core, server)
 
 //lazy val scalajs = flashbotModule("scalajs", None).enablePlugins(ScalaJSPlugin).dependsOn(coreJS)
 
@@ -427,9 +429,8 @@ lazy val testing = flashbotModule("testing", previousFBVersion)
   .settings(
     scalacOptions ~= {
       _.filterNot(Set("-Yno-predef"))
-    },
-    libraryDependencies ++= Seq(
-    )
+    }
+//    libraryDependencies += "org.vegas-viz" %% "vegas" % "0.3.11"
   ).dependsOn(core)
 
 //lazy val testing = testingBase.jvm.dependsOn(server, client)
@@ -445,6 +446,7 @@ lazy val tests = flashbotModule("tests", previousFBVersion)
       "org.scalactic" %% "scalactic" % "3.0.5",
       "org.scalatest" %% "scalatest" % "3.0.5" % "test",
       "org.scalacheck" %% "scalacheck" % scalaCheckVersion,
+      "de.sciss" %% "scala-chart" % "0.6.0",
       "com.typesafe.akka" %% "akka-testkit" % akkaVersion % Test
     )
 //    sourceGenerators in Test += (sourceManaged in Test).map(Boilerplate.genTests).taskValue,
