@@ -19,7 +19,7 @@ object TableUtil {
   }
 
   def renderLadder(ladder: Ladder, depthZoom: Int = 20000): Unit = {
-    val depth = 10
+    val depth = 20
     val data = Array((1 to (depth * 2 + 1)).map(_ => Array("", "", "", "")):_*)
 
     var askTotal: Double = 0

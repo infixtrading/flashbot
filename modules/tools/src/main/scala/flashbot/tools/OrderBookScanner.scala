@@ -5,7 +5,7 @@ import java.time.Instant
 
 import akka.NotUsed
 import akka.actor.{Actor, ActorSystem, Props}
-import akka.stream.ActorMaterializer
+import akka.stream.{ActorAttributes, ActorMaterializer}
 import akka.util.Timeout
 import flashbot.core.DataType.LadderType
 import flashbot.core.{FlashbotConfig, OrderBookTap, TimeSeriesTap}
@@ -21,7 +21,7 @@ import org.jfree.data.time.{RegularTimePeriod, Second}
 import scala.concurrent.duration._
 import scala.concurrent.{Await, ExecutionContextExecutor, Future}
 import scala.language.postfixOps
-import scala.util.{Failure, Success}
+import scala.util.{Failure, Random, Success}
 import language.implicitConversions
 import java.util.Date
 
@@ -43,27 +43,39 @@ object OrderBookScanner extends App {
 
   implicit def jdate2jfree(d: Date): RegularTimePeriod = new Second(d)
 
-  implicit val config: FlashbotConfig = FlashbotConfig.load()
-  implicit val system: ActorSystem = ActorSystem(config.systemName, config.conf)
-  implicit val mat: ActorMaterializer = buildMaterializer()
-  implicit val ec: ExecutionContextExecutor = system.dispatcher
-  implicit val timeout: Timeout = Timeout(10 seconds)
+//  implicit val config: FlashbotConfig = FlashbotConfig.load()
+//  implicit val system: ActorSystem = ActorSystem(config.systemName, config.conf)
+//  implicit val mat: ActorMaterializer = buildMaterializer()
+//  implicit val ec: ExecutionContextExecutor = system.dispatcher
+//  implicit val timeout: Timeout = Timeout(10 seconds)
 
   OrderBookTap
     .simpleLadderSimulation()
-    .take(2000)
-    .runForeach { ladder =>
-      Thread.sleep(5)
-      TableUtil.renderLadder(ladder, 5)
+//    .withAttributes(ActorAttributes.dispatcher(""))
+    .zipWithIndex.filter(_._2 % 50000 == 0).map(_._1)
+  //    .take(10000000)
+//    .filter(_ => Random.nextInt(100000) == 0)
+//    .groupedWithin(100000, 50 millis)
+//    .map(_.lastOption)
+//    .collect { case Some(x) => x }
+    .foreach { ladder =>
+      //      Thread.sleep(1)
+      TableUtil.renderLadder(ladder, 1000)
     }
-    .onComplete {
-      case Success(_) =>
-        println("Done")
-      case Failure(err) =>
-        println("FOOOOOOOOOOOOOOOOOO BAR")
-        println(err)
-        println(err.getStackTrace)
-    }
+
+    System.exit(0)
+//    .runForeach { ladder =>
+//      Thread.sleep(1)
+//      TableUtil.renderLadder(ladder, 5)
+//    }
+//    .onComplete {
+//      case Success(_) =>
+//        println("Done")
+//      case Failure(err) =>
+//        println("FOOOOOOOOOOOOOOOOOO BAR")
+//        println(err)
+//        println(err.getStackTrace)
+//    }
 
 //  val pp: List[(Date, Double)] = Await.result(TimeSeriesTap
 //    .prices(100, .5, .5, TimeRange.build(Instant.now, "now", "24h"), 1 minute)

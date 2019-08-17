@@ -6,6 +6,8 @@ import flashbot.core.{Ask, Bid, Matching, QuoteSide}
 import flashbot.util.NumberUtils
 import it.unimi.dsi.fastutil.doubles.DoubleArrayFIFOQueue
 
+import scala.util.Random
+
 /**
   * A ring buffer of the sizes at the top N levels of a side of a ladder.
   * FIFO is misleading here because it supports deque (double ended queue) ops.
@@ -26,7 +28,7 @@ class LadderSide(val maxDepth: Int,
   // The number of non-empty levels in the ladder. This will be equal to `size` if
   // there are no empty levels between the best and worst.
   var depth: Int = 0
-  var totalSize: Double = 0
+  var totalQty: Double = 0
 
   var tickScale: Int = NumberUtils.scale(tickSize)
 
@@ -36,6 +38,8 @@ class LadderSide(val maxDepth: Int,
   def bestQty: Double = array(firstIndex)
   def worstQty: Double = array(lastIndex)
   def round(price: Double): Double = NumberUtils.round(price, tickScale)
+
+  private val random = new Random()
 
   def copy(): LadderSide = {
     val newLadder = new LadderSide(maxDepth, tickSize, side)
@@ -57,7 +61,7 @@ class LadderSide(val maxDepth: Int,
     if (dest.start != start) dest.start = start
     if (dest.end != end) dest.end = end
     if (dest.depth != depth) dest.depth = depth
-    if (dest.totalSize != totalSize) dest.totalSize = totalSize
+    if (dest.totalQty != totalQty) dest.totalQty = totalQty
     if (dest.bestPrice != bestPrice) dest.bestPrice = bestPrice
     if (dest.worstPrice != worstPrice) dest.worstPrice = worstPrice
   }
@@ -70,12 +74,19 @@ class LadderSide(val maxDepth: Int,
 
     val level = levelOfPrice(price)
     if (qty == 0) {
-      assert(depth > 0, "Cannot remove level from empty ladder")
+      try {
+        assert(depth > 0, "Cannot remove level from empty ladder")
+      } catch {
+        case e: AssertionError =>
+          throw e
+      }
       val qtyToRemove = qtyAtLevel(level)
 
-      assert(qtyToRemove > 0, s"Cannot remove empty level: $level")
-      depth -= 1
-      totalSize = NumberUtils.round8(totalSize - qtyToRemove)
+//      assert(qtyToRemove > 0, s"Cannot remove empty level: $level")
+      if (qtyToRemove > 0) {
+        depth -= 1
+        totalQty = NumberUtils.round8(totalQty - qtyToRemove)
+      }
       array(indexOfLevel(level)) = 0
       trimLevels()
 
@@ -86,7 +97,7 @@ class LadderSide(val maxDepth: Int,
         bestPrice = price
         worstPrice = price
         depth = 1
-        totalSize = qty
+        totalQty = qty
 
       // If level < 0, then we need to prepend that many empty levels and set the
       // qty of the first level to the given qty.
@@ -94,7 +105,7 @@ class LadderSide(val maxDepth: Int,
         padLeft(-level)
         array(firstIndex) = qty
         depth += 1
-        totalSize = NumberUtils.round8(totalSize + qty)
+        totalQty = NumberUtils.round8(totalQty + qty)
         truncate()
 
       // If level >= size, then we need to append that many levels and set the qty
@@ -104,7 +115,7 @@ class LadderSide(val maxDepth: Int,
         padRight(level - size + 1)
         array(lastIndex) = qty
         depth += 1
-        totalSize = NumberUtils.round8(totalSize + qty)
+        totalQty = NumberUtils.round8(totalQty + qty)
 
       // Otherwise, we are updating an existing, possibly empty, level.
       } else {
@@ -112,7 +123,7 @@ class LadderSide(val maxDepth: Int,
         if (existingQty == 0) {
           depth += 1
         }
-        totalSize = NumberUtils.round8(qty - existingQty)
+        totalQty = NumberUtils.round8(totalQty + (qty - existingQty))
         array(indexOfLevel(level)) = qty
         truncate()
       }
@@ -122,6 +133,21 @@ class LadderSide(val maxDepth: Int,
 //    if (iterator().exists(_._1 <= 0)) {
 //      throw new RuntimeException("Price is invalid")
 //    }
+  }
+
+  // Returns a price level from this ladder side at random where levels with higher qtys
+  // have a higher chance of being selected.
+  def randomPriceLevelWeighted: Double = {
+    if (isEmpty) throw new IllegalStateException("Cannot select random price from empty ladder side")
+    val limit = random.nextDouble() * totalQty;
+    var sum = 0d
+    var price = bestPrice
+    val it = iterator()
+    while (it.hasNext && sum < limit) {
+      price = it.next()._1
+      sum += qtyAtPrice(price)
+    }
+    price
   }
 
   private def firstIndex: Int = start
