@@ -6,6 +6,7 @@ import java.util.{Date, UUID}
 import akka.NotUsed
 import akka.stream.scaladsl.Source
 import breeze.stats.distributions.Gaussian
+import flashbot.core.OrderBookTap.QuoteImbalance.{Balanced, Bearish, Bullish}
 import flashbot.models.Order.{Buy, Sell, Side}
 import flashbot.models.{Candle, Ladder, Order, OrderBook, TimeRange}
 import flashbot.util.{NumberUtils, TableUtil}
@@ -27,26 +28,62 @@ object OrderBookTap {
   //      Quote imbalance transition matrix
   // =============================================
   //             Bearish    Balanced     Bullish
-  //   Bearish     .7         .05          .25
+  //   Bearish     .7         .15          .15
   //   Balanced    .25        .5           .25
-  //   Bullish     .25        .05          .7
+  //   Bullish     .15        .15          .7
   // =============================================
   //
 
-  sealed trait ArrivalRateImbalance
-  case object Bearish extends ArrivalRateImbalance
-  case object Balanced extends ArrivalRateImbalance
-  case object Bullish extends ArrivalRateImbalance
+  sealed trait QuoteImbalance {
 
-  def transition(from: ArrivalRateImbalance, to: ArrivalRateImbalance): Double = {
-    (from, to) match {
-      case (Balanced, Balanced) => .5
-      case (Balanced, _) => .25
-      case (a, Balanced) => .05
-      case (a, b) if a == b => .7
-      case (a, b) if a != b => .25
+    private val random = new Random()
+
+    def transitionRatio(from: QuoteImbalance, to: QuoteImbalance): Double = {
+      (from, to) match {
+        case (Balanced, Balanced) => .5
+        case (Balanced, _) => .25
+        case (a, Balanced) => .15
+        case (a, b) if a == b => .7
+        case (a, b) if a != b => .15
+      }
     }
+
+    def states: Set[QuoteImbalance] = Set(Bearish, Balanced, Bullish)
+
+    def step(): QuoteImbalance = {
+      var ratioSum = 0D
+      var next: Option[QuoteImbalance] = None
+      var rand = random.nextDouble()
+      states.foreach { state =>
+        val ratio = transitionRatio(this, state)
+        ratioSum += ratio
+        if (next.isEmpty && rand < ratioSum) {
+          next = Some(state)
+        }
+      }
+      assert(NumberUtils.round8(ratioSum) == 1.0,
+        s"Markov transition ratio sums for $this must equal 1.0")
+      next.get
+    }
+
+    def value: Double
   }
+
+  object QuoteImbalance {
+    case object Bearish extends QuoteImbalance {
+      override def value = .2
+    }
+    case object Balanced extends QuoteImbalance {
+      override def value = .5
+    }
+    case object Bullish extends QuoteImbalance {
+      override def value = .8
+    }
+
+    def detectImbalance(buyLiquidity: Double, sellLiquidity: Double): Double =
+      buyLiquidity / (buyLiquidity + sellLiquidity)
+  }
+
 
   /**
     * 1. Build initial book with a random amount of orders of random sizes at each price level.
@@ -155,6 +192,10 @@ object OrderBookTap {
 
     val random = new Random()
     val gauss = Gaussian(0, 25)
+    val gaussTradeCoeff = Gaussian(10, 3)
+
+    var currentImbalance: Double = -1
+    var targetImbalance: QuoteImbalance = Balanced
 
     def addLiquidity(ladder: Ladder, ratio: Double = .5) = {
       val quoteSide = if (random.nextDouble() < ratio) Bid else Ask
@@ -167,7 +208,7 @@ object OrderBookTap {
           otherSide.bestPrice
         }
         else if (ladderSide.nonEmpty) ladderSide.bestPrice
-        else 100
+        else 10100
       val price = Math.max(quoteSide.makeWorseBy(referencePrice, delta), ladder.tickSize)
       ladder.updateLevel(quoteSide, price, ladder.qtyAtPrice(price) + 1)
     }
@@ -176,30 +217,33 @@ object OrderBookTap {
       addLiquidity(initialLadder)
     }
 
-    var isBullish = false
+    var second: Long = 0
 
     Iterator.from(0)
       .scanLeft(initialLadder) {
         case (ladder, i) =>
 
-          // Order arrival flow
-          if (isBullish && ladder.asks.bestPrice > 115) {
-            isBullish = false;
-          } else if (!isBullish && ladder.bids.bestPrice < 85) {
-            isBullish = true;
+          // Detect current imbalance
+          currentImbalance = QuoteImbalance.detectImbalance(ladder.bids.totalQty, ladder.asks.totalQty)
+
+          // Every second, step the markov process
+          val currentSecond: Long = i / 1000000
+          if (second != currentSecond) {
+            targetImbalance = targetImbalance.step()
+            second = currentSecond
           }
 
-          addLiquidity(ladder, if (isBullish) .51 else .49)
+          addLiquidity(ladder, .5 + (targetImbalance.value - currentImbalance) / 5)
 
           // Market order flow and cancellations
           if (random.nextInt(10) == 0) {
             val n = random.nextInt(100)
             if (n < 8) {
-              val tradeAmt = 10
-              val qSide = if (random.nextBoolean()) Bid else Ask
-              ladder.matchMutable(qSide, qSide.worst, tradeAmt)
-              if (ladder.asks.bestPrice < ladder.bids.bestPrice) {
-                throw new RuntimeException("Invalid ladder")
+              val tradeMultiplier = 30
+              if (random.nextInt(tradeMultiplier) == 0) {
+                val tradeAmt = gaussTradeCoeff.draw() * tradeMultiplier
+                val qSide = if (random.nextBoolean()) Bid else Ask
+                ladder.matchMutable(qSide, qSide.worst, tradeAmt)
               }
             } else {
               // Random order cancellations

@@ -58,6 +58,7 @@ object OrderBookScanner extends App {
 
   val plot: CombinedDomainXYPlot = new CombinedDomainXYPlot(new DateAxis())
   val rangeAxis = new NumberAxis()
+  rangeAxis.setAutoRangeIncludesZero(false)
   val renderer = new XYLineAndShapeRenderer(true, false)
   val simulatedPricePlot = new XYPlot(prices, null, rangeAxis, renderer)
   plot.add(simulatedPricePlot);
@@ -101,7 +102,7 @@ object OrderBookScanner extends App {
       }
 
       // Add close price into dataset
-      if (i > 0 && i % 30000 == 0) {
+      if (i > 0 && i % 60000 == 0) {
         prices.getSeries(0).add(
           timePeriod(Date.from(START.plusMillis(i))),
           closePrice
