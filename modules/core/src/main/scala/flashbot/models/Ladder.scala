@@ -33,6 +33,11 @@ class Ladder(val depth: Int, val tickSize: Double,
   private val tickScale = NumberUtils.scale(tickSize)
   def round(price: Double): Double = NumberUtils.round(price, tickScale)
 
+  def roundToTick(price: Double): Double =
+    round((price / tickSize).toLong * tickSize)
+
+  def totalQty: Double = NumberUtils.round8(bids.totalQty + asks.totalQty)
+
   def ladderSideFor(side: QuoteSide): LadderSide = if (side == Bid) bids else asks
 
   def ladderSideForTaker(side: Side): LadderSide = ladderSideFor(side.flip.toQuote)
@@ -136,11 +141,33 @@ class Ladder(val depth: Int, val tickSize: Double,
   override def matchPrices: Array[Double] = lastMatchedSide.matchPrices
   override def matchQtys: Array[Double] = lastMatchedSide.matchQtys
 
+  def matchPriceIt: Iterator[Double] =
+    if (matchCount > 0) matchPrices.iterator.take(matchCount)
+    else Iterator.empty
+
+  def matchQtyIt: Iterator[Double] =
+    if (matchCount > 0) matchQtys.iterator.take(matchCount)
+    else Iterator.empty
+
+  def matchesIt: Iterator[(Double, Double)] = matchPriceIt.zip(matchPriceIt)
+
+  // Incrementing sequence id for each call to `matchMutable`
+  var aggTradeSeqId: Long = 0
+
   override def matchMutable(quoteSide: QuoteSide,
                             approxPriceLimit: Double,
                             approxSize: Double): Double = {
     lastMatchedSide = sideOf(quoteSide)
-    lastMatchedSide.matchMutable(quoteSide, approxPriceLimit, approxSize)
+    val remainder = lastMatchedSide
+      .matchMutable(quoteSide, approxPriceLimit, approxSize)
+
+    matchCount = lastMatchedSide.matchCount
+
+    if (lastMatchedSide.matchCount > 0) {
+      aggTradeSeqId += 1
+    }
+
+    remainder
   }
 
   override def matchSilent(quoteSide: QuoteSide,

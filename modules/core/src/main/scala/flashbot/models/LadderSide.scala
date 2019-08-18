@@ -128,11 +128,6 @@ class LadderSide(val maxDepth: Int,
         truncate()
       }
     } else throw new RuntimeException("Quantity cannot be set to a negative number")
-
-    // TODO: Debugging, remove check
-//    if (iterator().exists(_._1 <= 0)) {
-//      throw new RuntimeException("Price is invalid")
-//    }
   }
 
   // Returns a price level from this ladder side at random where levels with higher qtys
@@ -247,21 +242,19 @@ class LadderSide(val maxDepth: Int,
     val size = NumberUtils.round8(approxSize)
     val priceLimit = round(approxPriceLimit)
     var remainder = size
-    var i = 0
     while (this.nonEmpty && remainder > 0 && side.isBetterOrEq(bestPrice, priceLimit)) {
       val matchQty = math.min(remainder, bestQty)
       remainder = NumberUtils.round8(remainder - matchQty)
-      matchPrices(i) = bestPrice
-      matchQtys(i) = matchQty
+      matchPrices(matchCount) = bestPrice
+      matchQtys(matchCount) = matchQty
       matchCount += 1
       matchTotalQty = matchQty + matchTotalQty
-      val newqty = NumberUtils.round8(bestQty - matchQty)
-      update(bestPrice, newqty)
-      if (newqty > 0) i += 1
+      update(bestPrice, NumberUtils.round8(bestQty - matchQty))
     }
-    matchPrices(i) = -1
-    matchQtys(i) = -1
+    matchPrices(matchCount) = -1
+    matchQtys(matchCount) = -1
     matchTotalQty = NumberUtils.round8(matchTotalQty)
+
     remainder
   }
 

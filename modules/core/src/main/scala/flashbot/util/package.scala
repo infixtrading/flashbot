@@ -1,5 +1,7 @@
 package flashbot
 
+import java.time.Duration
+
 import scala.concurrent.Future
 import scala.util.{Failure, Success, Try}
 import scala.util.matching.Regex
@@ -33,4 +35,5 @@ package object util {
   implicit class TryFutOps[A](t: Try[A]) {
     def toFut: Future[A] = Future.fromTry(t)
   }
+
 }

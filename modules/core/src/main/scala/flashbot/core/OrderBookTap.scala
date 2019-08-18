@@ -151,40 +151,53 @@ object OrderBookTap {
   }
 
   def simpleLadderSimulation(): Iterator[Ladder] = {
-    val initialLadder: Ladder = new Ladder(200, 1)
-
-    val initialGauss = Gaussian(100, 10)
-    for (i <- 0 to 10) {
-      val p = initialGauss.draw().intValue()
-      initialLadder.updateLevel(if (p <= 100) Bid else Ask, p, 1)
-    }
+    val initialLadder: Ladder = new Ladder(2000, .5)
 
     val random = new Random()
-    val gauss = Gaussian(0, 5)
+    val gauss = Gaussian(0, 25)
+
+    def addLiquidity(ladder: Ladder, ratio: Double = .5) = {
+      val quoteSide = if (random.nextDouble() < ratio) Bid else Ask
+      val ladderSide = ladder.ladderSideFor(quoteSide)
+      val otherSide = ladder.ladderSideFor(quoteSide.flip)
+      var delta: Double = ladder.roundToTick(Math.abs(gauss.draw()))
+      val referencePrice: Double =
+        if (otherSide.nonEmpty) {
+          delta += ladder.tickSize
+          otherSide.bestPrice
+        }
+        else if (ladderSide.nonEmpty) ladderSide.bestPrice
+        else 100
+      val price = Math.max(quoteSide.makeWorseBy(referencePrice, delta), ladder.tickSize)
+      ladder.updateLevel(quoteSide, price, ladder.qtyAtPrice(price) + 1)
+    }
+
+    for (_ <- 0 to 100000) {
+      addLiquidity(initialLadder)
+    }
+
+    var isBullish = false
 
     Iterator.from(0)
       .scanLeft(initialLadder) {
-        case (ladder, _) =>
+        case (ladder, i) =>
+
           // Order arrival flow
-          val quoteSide = if (random.nextBoolean()) Bid else Ask
-          val ladderSide = ladder.ladderSideFor(quoteSide)
-          val otherSide = ladder.ladderSideFor(quoteSide.flip)
-          val referencePrice =
-            if (otherSide.nonEmpty) otherSide.bestPrice
-            else if (ladderSide.nonEmpty) ladderSide.bestPrice
-            else 100
-          val delta = Math.abs(gauss.draw().intValue())
-          val price = quoteSide.makeWorseBy(referencePrice, delta)
-          ladder.updateLevel(quoteSide, price, ladder.qtyAtPrice(price) + 1)
+          if (isBullish && ladder.asks.bestPrice > 115) {
+            isBullish = false;
+          } else if (!isBullish && ladder.bids.bestPrice < 85) {
+            isBullish = true;
+          }
+
+          addLiquidity(ladder, if (isBullish) .51 else .49)
 
           // Market order flow and cancellations
           if (random.nextInt(10) == 0) {
             val n = random.nextInt(100)
-            if (n < 5) {
+            if (n < 8) {
               val tradeAmt = 10
               val qSide = if (random.nextBoolean()) Bid else Ask
               ladder.matchMutable(qSide, qSide.worst, tradeAmt)
-
               if (ladder.asks.bestPrice < ladder.bids.bestPrice) {
                 throw new RuntimeException("Invalid ladder")
               }

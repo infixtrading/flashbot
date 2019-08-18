@@ -16,9 +16,8 @@ import akka.stream.scaladsl.{Keep, Sink, Source, Unzip, UnzipWith, UnzipWithAppl
 import flashbot.models.{Ladder, OrderBook, TimeRange}
 import flashbot.util.TableUtil
 import de.sciss.chart.api._
-import org.jfree.data.time.{RegularTimePeriod, Second}
+import org.jfree.data.time.{RegularTimePeriod, Second, TimePeriod, TimePeriodValue}
 
-import scala.concurrent.duration._
 import scala.concurrent.{Await, ExecutionContextExecutor, Future}
 import scala.language.postfixOps
 import scala.util.{Failure, Random, Success}
@@ -27,21 +26,23 @@ import java.util.Date
 
 import de.sciss.chart.XYChart
 import flashbot.core.TimeSeriesTap.prices
+import it.unimi.dsi.fastutil.longs.LongArrayFIFOQueue
+import it.unimi.dsi.fastutil.objects.ObjectArrayFIFOQueue
 import org.jfree.chart.StandardChartTheme
 import org.jfree.chart.axis.{DateAxis, NumberAxis}
 import org.jfree.chart.plot.{CombinedDomainXYPlot, DefaultDrawingSupplier, Plot, PlotOrientation, XYPlot}
 import org.jfree.chart.renderer.xy.XYLineAndShapeRenderer
-import org.jfree.data.time.{RegularTimePeriod, Second}
+
+import scala.collection.mutable.ArrayBuffer
 
 
 object OrderBookScanner extends App {
 
-//  object Implicits extends Implicits
-//
-//  trait Implicits {
-//  }
+  val START = Instant.now()
+  val END = START.plusSeconds(60 * 60 * 24)
+//  val END = START.plusSeconds(60)
 
-  implicit def jdate2jfree(d: Date): RegularTimePeriod = new Second(d)
+  implicit def timePeriod(d: Date): RegularTimePeriod = new Second(d)
 
 //  implicit val config: FlashbotConfig = FlashbotConfig.load()
 //  implicit val system: ActorSystem = ActorSystem(config.systemName, config.conf)
@@ -49,33 +50,68 @@ object OrderBookScanner extends App {
 //  implicit val ec: ExecutionContextExecutor = system.dispatcher
 //  implicit val timeout: Timeout = Timeout(10 seconds)
 
+  val simPrices = ArrayBuffer.empty[(Date, Double)]
+  simPrices.toTimePeriodValues()
+  val prices = simPrices.toTimePeriodValuesCollection("Close Prices")
+
+//  simPrices.toTimePeriodValuesCollection("Close Prices").getSeries(0)
+
+  val plot: CombinedDomainXYPlot = new CombinedDomainXYPlot(new DateAxis())
+  val rangeAxis = new NumberAxis()
+  val renderer = new XYLineAndShapeRenderer(true, false)
+  val simulatedPricePlot = new XYPlot(prices, null, rangeAxis, renderer)
+  plot.add(simulatedPricePlot);
+
+  val theme = StandardChartTheme.createDarknessTheme().asInstanceOf[StandardChartTheme]
+  val drawingSupplier = new DefaultDrawingSupplier(
+    Array[Paint](
+      Color.decode("0xFFFF00"), Color.decode("0x0036CC"), Color.decode("0xFF0000"),
+      Color.decode("0xFFFF7F"), Color.decode("0x6681CC"), Color.decode("0xFF7F7F"),
+      Color.decode("0xFFFFBF"), Color.decode("0x99A6CC"), Color.decode("0xFFBFBF"),
+      Color.decode("0xA9A938"), Color.decode("0x2D4587")
+    ),
+    Array[Paint](Color.decode("0xFFFF00"), Color.decode("0x0036CC")),
+    Array[Stroke](new BasicStroke(.5f)),
+    Array[Stroke](new BasicStroke(.5f)),
+    DefaultDrawingSupplier.DEFAULT_SHAPE_SEQUENCE
+  )
+  theme.setDrawingSupplier(drawingSupplier)
+  val chart = XYChart(plot, "Simulated prices", true)(theme)
+//  chart.peer.setAntiAlias(true)
+//  chart.peer.setTextAntiAlias(true)
+  chart.show("Prices", (1100, 600), true)
+
+  var lastTradeSeqId = 0L
+  var closePrice = 0D
+  val nowMillis = System.currentTimeMillis()
+
+  // We'll consider every iteration of the book to be one millisecond.
+  // Take (END - START) millis items from the iterator.
+  var i = -1L
   OrderBookTap
     .simpleLadderSimulation()
-//    .withAttributes(ActorAttributes.dispatcher(""))
-    .zipWithIndex.filter(_._2 % 50000 == 0).map(_._1)
-  //    .take(10000000)
-//    .filter(_ => Random.nextInt(100000) == 0)
-//    .groupedWithin(100000, 50 millis)
-//    .map(_.lastOption)
-//    .collect { case Some(x) => x }
+    .take(END.toEpochMilli.toInt - START.toEpochMilli.toInt)
     .foreach { ladder =>
-      //      Thread.sleep(1)
-      TableUtil.renderLadder(ladder, 1000)
+      i += 1
+
+      // Keep track of close price
+      if (ladder.aggTradeSeqId > lastTradeSeqId) {
+        lastTradeSeqId = ladder.aggTradeSeqId
+        closePrice = ladder.matchPrices(ladder.matchCount - 1)
+      }
+
+      // Add close price into dataset
+      if (i > 0 && i % 30000 == 0) {
+        prices.getSeries(0).add(
+          timePeriod(Date.from(START.plusMillis(i))),
+          closePrice
+        )
+      }
     }
 
-    System.exit(0)
-//    .runForeach { ladder =>
-//      Thread.sleep(1)
-//      TableUtil.renderLadder(ladder, 5)
-//    }
-//    .onComplete {
-//      case Success(_) =>
-//        println("Done")
-//      case Failure(err) =>
-//        println("FOOOOOOOOOOOOOOOOOO BAR")
-//        println(err)
-//        println(err.getStackTrace)
-//    }
+//  simulatedPricePlot.setDataset(simPrices.toTimePeriodValuesCollection("Close Prices"))
+
+//    System.exit(0)
 
 //  val pp: List[(Date, Double)] = Await.result(TimeSeriesTap
 //    .prices(100, .5, .5, TimeRange.build(Instant.now, "now", "24h"), 1 minute)
@@ -90,8 +126,6 @@ object OrderBookScanner extends App {
 //    val (close, sma) = series.unzip
 //    val closeData = dates.zip(close)
 //    val smaData = dates.zip(sma)
-//
-//    val plot: CombinedDomainXYPlot = new CombinedDomainXYPlot(new DateAxis())
 //
 //    val rangeAxis = new NumberAxis()
 //    val renderer = new XYLineAndShapeRenderer(true, false)
