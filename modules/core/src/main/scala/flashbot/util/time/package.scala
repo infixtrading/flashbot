@@ -1,6 +1,7 @@
 package flashbot.util
 
-import java.time.Instant
+import java.time
+import java.time.{Instant, ZoneOffset, ZonedDateTime}
 import java.util.Date
 
 import io.circe._
@@ -67,12 +68,22 @@ package object time {
   implicit class MicrosOps(micros: Long) {
     def microsToDate: Date = new Date(micros / 1000)
     def microsToInstant: Instant = Instant.ofEpochMilli(micros / 1000)
+    def microsToZdt: ZonedDateTime = microsToInstant.zdt
   }
 
-  implicit def asFiniteDuration(d: java.time.Duration) =
+  implicit class InstantOps(instant: Instant) {
+    def zdt: ZonedDateTime = ZonedDateTime.ofInstant(instant, ZoneOffset.UTC)
+    def date: Date = new Date(instant.toEpochMilli)
+  }
+
+  implicit class ZdtOps(zdt: ZonedDateTime) {
+    def millis: Long = zdt.toInstant.toEpochMilli
+  }
+
+  implicit def asFiniteDuration(d: java.time.Duration): FiniteDuration =
     scala.concurrent.duration.Duration.fromNanos(d.toNanos)
 
-  implicit def asJavaDuration(d: FiniteDuration) =
+  implicit def asJavaDuration(d: FiniteDuration): java.time.Duration =
     java.time.Duration.ofNanos(d.toNanos)
 
 

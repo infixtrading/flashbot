@@ -301,7 +301,7 @@ lazy val flashbot = project
         |import flashbot.core._
         |import flashbot.models._
         |
-        |import console.Console._
+        |// import console.Console._
       """.stripMargin
   )
   .settings(fork in run := true)
@@ -420,6 +420,7 @@ lazy val tools = flashbotModule("tools", previousFBVersion)
     // Charting
     libraryDependencies ++= Seq("de.sciss" %% "scala-chart" % "0.6.0")
   )
+  .aggregate(core, server)
   .dependsOn(core, server)
 
 //lazy val scalajs = flashbotModule("scalajs", None).enablePlugins(ScalaJSPlugin).dependsOn(coreJS)

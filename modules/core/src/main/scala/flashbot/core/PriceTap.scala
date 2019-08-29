@@ -15,7 +15,7 @@ import scala.language.postfixOps
 /**
   * TimeTap is an artificial source of time series data.
   */
-object TimeSeriesTap {
+object PriceTap {
 
   def apply(timeRange: TimeRange, timeStep: FiniteDuration, isRealTime: Boolean)
            (implicit mat: Materializer): Source[Instant, NotUsed] = {
@@ -65,9 +65,13 @@ object TimeSeriesTap {
     * @param sigma
     * @return
     */
-  def prices(initialPrice: Double, mu: Double, sigma: Double, timeRange: TimeRange,
-             timeStep: Duration, infinite: Boolean = false): Source[(Instant, Double), NotUsed] = {
+  def akkaStream(initialPrice: Double, mu: Double, sigma: Double, timeRange: TimeRange,
+                 timeStep: Duration, infinite: Boolean = false): Source[(Instant, Double), NotUsed] =
+    Source.fromIterator(() => iterator(initialPrice, mu, sigma, timeRange, timeStep, infinite))
 
+
+  def iterator(initialPrice: Double, mu: Double, sigma: Double, timeRange: TimeRange,
+               timeStep: Duration, infinite: Boolean = false): Iterator[(Instant, Double)] = {
     val gaussian = Gaussian(0, 1)
 
     def toTimestepIndex(instant: Instant): Long = instant.toEpochMilli / timeStep.toMillis
@@ -77,9 +81,9 @@ object TimeSeriesTap {
     val numTimeSteps: Long = endIndex - startIndex + 1
     val timeStepFraction: Double = 1.0/numTimeSteps
 
-    val infiniteSrc = Source(Stream.from(0))
-    val brownian = infiniteSrc.scan(0d) {
-      case (sum: Double, i) =>
+    val infiniteSrc = Iterator.from(0)
+    val brownian = infiniteSrc.scanLeft(0d) {
+      case (sum: Double, _) =>
         sum + (gaussian.draw() * math.sqrt(timeStepFraction))
     }
 
@@ -92,11 +96,11 @@ object TimeSeriesTap {
   }
 
   // Just some default parameters for when it doesn't matter
-  def prices: Source[(Instant, Double), NotUsed] =
-    prices(100, .5, .5, TimeRange.build(Instant.now, "now", "365d"), 1 day)
+  def akkaStream: Source[(Instant, Double), NotUsed] =
+    akkaStream(100, .5, .5, TimeRange.build(Instant.now, "now", "365d"), 1 day)
 
-  def prices(timeStep: Duration): Source[(Instant, Double), NotUsed] =
-    prices(100, .5, .5, TimeRange.build(Instant.now, "now", "365d"), timeStep)
+  def akkaStream(timeStep: Duration): Source[(Instant, Double), NotUsed] =
+    akkaStream(100, .5, .5, TimeRange.build(Instant.now, "now", "365d"), timeStep)
 
   sealed trait FirstState
   case object NotSet extends FirstState

@@ -51,7 +51,7 @@ class LookAheadCandleStrategy extends Strategy[LookaheadParams]
   val path1 = DataPath("bitfinex", "eth_usd", CandlesType(5 seconds))
   def dataSeqs(tr: TimeRange)(implicit mat: Materializer): Map[DataPath[Candle], Seq[MarketData[Candle]]] = Map(
     path1 -> Await.result(
-      TimeSeriesTap.prices(100.0, .2, .6, tr, timeStep = 1 minute).zipWithIndex.map {
+      PriceTap.akkaStream(100.0, .2, .6, tr, timeStep = 1 minute).zipWithIndex.map {
         case ((instant, price), i) =>
           val micros = instant.toEpochMilli * 1000
           BaseMarketData(Candle(micros, price, price, price, price, 0), path1, micros, 1, i)

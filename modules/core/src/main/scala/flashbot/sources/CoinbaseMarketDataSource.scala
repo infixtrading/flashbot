@@ -253,7 +253,7 @@ class CoinbaseMarketDataSource extends DataSource {
         responsePromise.completeWith(ingestGroup(topics, TradesType).map(_.map {
           case (topic, src) =>
             topic -> src.map(_._2).map(t => (t.instant, t.price, t.size))
-              .via(TimeSeriesTap.aggregateTrades(d).map(c => (c.micros, c.asInstanceOf[T])))
+              .via(PriceTap.aggregateTrades(d).map(c => (c.micros, c.asInstanceOf[T])))
               .drop(1)
         }))
     }

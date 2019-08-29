@@ -58,6 +58,19 @@ class Position(var size: Double, var leverage: Double, var entryPrice: Double) {
 }
 
 object Position {
-  implicit val positionEncoder: Encoder[Position] = ???
-  implicit val positionDecoder: Decoder[Position] = ???
+
+  def parse(str: String): Position = {
+    str.split("@").toList match {
+      case snl :: entryPrice :: Nil =>
+        snl.split("x").toList match {
+          case size :: Nil =>
+            new Position(size.toDouble, 1, entryPrice.toDouble)
+          case size :: leverage :: Nil =>
+            new Position(size.toDouble, leverage.toDouble, entryPrice.toDouble)
+        }
+    }
+  }
+
+  implicit val positionEncoder: Encoder[Position] = Encoder[String].contramap(_.toString)
+  implicit val positionDecoder: Decoder[Position] = Decoder[String].map(parse)
 }

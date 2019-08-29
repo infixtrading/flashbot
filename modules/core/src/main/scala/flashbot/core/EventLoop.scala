@@ -9,9 +9,9 @@ class EventBuffer(initialCapacity: Int) {
   var size: Int = 0
 
   def +=(event: Tick): Unit = {
-    if (size == buffer.len) {
+    if (size == buffer.length) {
       buffer += event
-    } else if (size < buffer.len) {
+    } else if (size < buffer.length) {
       buffer(size) = event
     } else {
       throw new RuntimeException("EventBuffer size should never be larger than underlying.")
