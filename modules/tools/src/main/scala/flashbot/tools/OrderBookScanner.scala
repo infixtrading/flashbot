@@ -38,6 +38,8 @@ import org.jfree.chart.axis.{AxisLocation, AxisSpace, DateAxis, NumberAxis}
 import org.jfree.chart.event.{AxisChangeEvent, ChartChangeEvent, ChartChangeListener, PlotChangeEvent, PlotChangeListener}
 import org.jfree.chart.plot.{CombinedDomainXYPlot, DefaultDrawingSupplier, Plot, PlotOrientation, XYPlot}
 import org.jfree.chart.renderer.xy.{XYBarRenderer, XYLineAndShapeRenderer}
+import org.ta4j.core.indicators.SMAIndicator
+import org.ta4j.core.indicators.helpers.ClosePriceIndicator
 import org.ta4j.core.{BaseTimeSeries, num}
 
 import scala.collection.mutable.ArrayBuffer
@@ -61,7 +63,25 @@ object OrderBookScanner extends App {
   implicit val ec: ExecutionContextExecutor = system.dispatcher
   implicit val timeout: Timeout = Timeout(10 seconds)
 
+
+//  def foo() = {
+//    val srcFut = Source(List(1, 2, 3))
+//      .prefixAndTail(1)
+//      .runWith(Sink.head)
+//    for {
+//      (headSeq, rest) <- srcFut
+//    } yield Source(headSeq).concat(rest)
+//  }
+//
+
+
   val engine = system.actorOf(TradingEngine.props("scanner-test-engine", config))
+
+//  for (i <- 0 until 360) {
+//    if (i % 10 == 0)
+//      println(i)
+//    Thread.sleep(1000)
+//  }
 
   val client = new FlashbotClient(engine)
   val cbp: Map[String, CandleFrame] = client.prices("coinbase/btc_usd/candles_1m", timeRange, 1 minute)
@@ -140,21 +160,32 @@ object OrderBookScanner extends App {
 
   plot.add(pricePlot, 5)
 
-  lazy val coinbaseSeries = "coinbase/btc_usd".timeSeries.withInterval(5 minutes)
+  lazy val cbSeries = "coinbase/btc_usd".timeSeries
+  lazy val cbClose = new ClosePriceIndicator(cbSeries)
+  lazy val sma = new SMAIndicator(cbClose, 14)
 
-  lazy val _cbTimeSeries = new BaseTimeSeries.SeriesBuilder()
-    .withName("coinbase/btc_usd")
-    .withMaxBarCount(10000)
-    .withNumTypeOf(num.DoubleNum.valueOf(_))
-    .build()
   cb.foreach { candle =>
-    val zdt = ZonedDateTime.ofInstant(Instant.ofEpochMilli(candle.millis), ZoneOffset.UTC)
-    _cbTimeSeries.addBar(java.time.Duration.ofMillis(60 * 1000), zdt)
+    cbSeries.put(candle)
   }
 
+  val closePriceArray = sma.getTimeSeries.iterator.map { bar =>
+    (bar.getBeginTime.toInstant, bar.getClosePrice.doubleValue)
+  }.toSeq
 
-  val accelerationIndicatorPlot = new XYPlot()
-  plot.add(accelerationIndicatorPlot)
+  val smaPlot = new XYPlot()
+  val smaRenderer = new XYLineAndShapeRenderer(true, false)
+  val smaAxis = new NumberAxis()
+  smaAxis.setAutoRange(true)
+
+  smaPlot.setRangeAxes(List(smaAxis).toArray)
+  smaRenderer.setStroke(new BasicStroke(.5f))
+  smaRenderer.setPaint(Color.GREEN)
+
+  smaPlot.setDataset(0, ToXYDataset[TimePeriodValues].convert(closePriceArray.toTimePeriodValues("Close prices / SMA")))
+  smaPlot.setRenderer(0, smaRenderer)
+  smaPlot.mapDatasetToRangeAxis(0, 0)
+
+  plot.add(smaPlot)
 
   val theme = StandardChartTheme.createDarknessTheme().asInstanceOf[StandardChartTheme]
 
@@ -174,41 +205,15 @@ object OrderBookScanner extends App {
       def resetZoomListener(): Unit = {
         zoomListener = new PlotChangeListener {
           override def plotChanged(event: PlotChangeEvent): Unit = {
-            println("HELLO", event)
             plot.removeChangeListener(zoomListener)
-//            peer.getChartPanel.setRangeZoomable(true)
-            plot.getSubplots.forEach { _p =>
-              if (_p.isInstanceOf[XYPlot]) {
-                val p: XYPlot = _p.asInstanceOf[XYPlot]
-
-                if (p eq pricePlot) println("EQUAL !!!!!!!")
-
-                println("FOOBAR 2")
-                println(pricePlot.getRangeAxis(0).getLowerBound,
-                  pricePlot.getRenderer.findRangeBounds(pricePlot.getDataset(0)).getLowerBound)
-                println(pricePlot.getRangeAxis(0).getUpperBound,
-                  pricePlot.getRenderer.findRangeBounds(pricePlot.getDataset(0)).getUpperBound)
-
-                println("configure")
-
-                for (i <- 0 until pricePlot.getRangeAxisCount) {
-                  println(i)
-                  val axis = pricePlot.getRangeAxis(i)
-                  axis.setRangeWithMargins(pricePlot.getDataRange(axis))
+            plot.getSubplots.forEach {
+              case p: XYPlot =>
+                for (i <- 0 until p.getRangeAxisCount) {
+                  val axis = p.getRangeAxis(i)
+                  axis.setRangeWithMargins(p.getDataRange(axis))
                 }
-
-                println("FOOBAR 3")
-
-                println(pricePlot.getRangeAxis(0).getLowerBound,
-                  pricePlot.getRenderer.findRangeBounds(pricePlot.getDataset(0)).getLowerBound)
-                println(pricePlot.getRangeAxis(0).getUpperBound,
-                  pricePlot.getRenderer.findRangeBounds(pricePlot.getDataset(0)).getUpperBound)
-
-              }
+              case _ =>
             }
-
-//            plot.getRenderer.
-
             resetZoomListener()
           }
         }
@@ -252,7 +257,7 @@ object OrderBookScanner extends App {
   var i = -1L
 
 //  val refPricesFlatMapBuf = new Array[Double](60000)
-  val sourceIterator = OrderBookTap.simpleLadderSimulation(refPricesIt, 14 days)
+//  val sourceIterator = OrderBookTap.simpleLadderSimulation(refPricesIt, 14 days)
 
 //  val sourceIterator = laddersIt.zip(refPricesIt)
 //    .take(END.toEpochMilli.toInt - START.toEpochMilli.toInt)
@@ -265,59 +270,59 @@ object OrderBookScanner extends App {
 
   var currentMode: ChartMode = Live
 
-  def stepForward(): Unit = {
-    if (!sourceIterator.hasNext) {
-      throw new RuntimeException("Cannot step forward on empty iterator")
-    }
-
-    sourceIterator.next() match  {
-      case (_, ladder, refPrice) =>
-        i += 1
-
-        // Keep track of close price
-        if (ladder.aggTradeSeqId > lastTradeSeqId) {
-          lastTradeSeqId = ladder.aggTradeSeqId
-          closePrice = ladder.matchPrices(ladder.matchCount - 1)
-        }
-
-        // Add close price into dataset
-        if (i > 0 && i % 60000 == 0) {
-          prices.getSeries(0).add(
-            timePeriod(Date.from(START.plusMillis(i))),
-            closePrice
-          )
-
-          prices.getSeries(1).add(
-            timePeriod(Date.from(START.plusMillis(i))),
-            refPrice
-          )
-
-          spread.getSeries(0).add(
-            timePeriod(Date.from(START.plusMillis(i))),
-            refPrice - closePrice
-          )
-        }
-
-        if (i > 0 && i % 600000 == 0) {
-  //        TableUtil.renderLadder(ladder, depthZoom = 1000)
-        }
-    }
-  }
+//  def stepForward(): Unit = {
+//    if (!sourceIterator.hasNext) {
+//      throw new RuntimeException("Cannot step forward on empty iterator")
+//    }
+//
+//    sourceIterator.next() match  {
+//      case (_, ladder, refPrice) =>
+//        i += 1
+//
+//        // Keep track of close price
+//        if (ladder.aggTradeSeqId > lastTradeSeqId) {
+//          lastTradeSeqId = ladder.aggTradeSeqId
+//          closePrice = ladder.matchPrices(ladder.matchCount - 1)
+//        }
+//
+//        // Add close price into dataset
+//        if (i > 0 && i % 60000 == 0) {
+//          prices.getSeries(0).add(
+//            timePeriod(Date.from(START.plusMillis(i))),
+//            closePrice
+//          )
+//
+//          prices.getSeries(1).add(
+//            timePeriod(Date.from(START.plusMillis(i))),
+//            refPrice
+//          )
+//
+//          spread.getSeries(0).add(
+//            timePeriod(Date.from(START.plusMillis(i))),
+//            refPrice - closePrice
+//          )
+//        }
+//
+//        if (i > 0 && i % 600000 == 0) {
+//  //        TableUtil.renderLadder(ladder, depthZoom = 1000)
+//        }
+//    }
+//  }
 
   // Main loop
-  while (true) {
-    currentMode match {
-      case Live =>
-        if (sourceIterator.hasNext) stepForward()
-        else currentMode = Done
-
-      case Paused =>
-        Thread.sleep(50)
-
-      case Done =>
-        Thread.sleep(50)
-    }
-  }
+//  while (true) {
+//    currentMode match {
+//      case Live =>
+//        if (sourceIterator.hasNext) stepForward()
+//        else currentMode = Done
+//
+//      case Paused =>
+//        Thread.sleep(50)
+//
+//      case Done =>
+//        Thread.sleep(50)
+//    }
+//  }
 
 //    .foreach
 

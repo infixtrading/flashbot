@@ -15,6 +15,7 @@ import flashbot.core.DeltaFmtJson
 import flashbot.models.DataPath
 import io.circe.Printer
 import io.circe.syntax._
+import slick.jdbc.TransactionIsolation
 
 import scala.collection.immutable
 //import scala.concurrent.ExecutionContext.Implicits.global
@@ -177,9 +178,9 @@ class BackfillService[T](bundleId: Long, path: DataPath[T], dataSource: DataSour
             // Find the earliest seqid for this bundle. Only look at snapshots. There should
             // never be backfill deltas that predate the earliest snapshot.
             earliestSeqIdOpt <- Snapshots
-              .filter(_.bundle === claim.bundle)
-              .map(_.seqid)
-              .min.result
+                .filter(_.bundle === claim.bundle)
+                .map(_.seqid).min.result
+
             seqIdBound = earliestSeqIdOpt.getOrElse(0L)
             seqIdStart: Long = seqIdBound - data.size
 
@@ -187,9 +188,10 @@ class BackfillService[T](bundleId: Long, path: DataPath[T], dataSource: DataSour
 
             // Insert the snapshot
             _ <- data.headOption.map {
-              case (micros, item) => Snapshots +=
-                SnapshotRow(0, claim.bundle, seqIdStart, micros,
+              case (micros, item) =>
+                val snapRow = SnapshotRow(0, claim.bundle, seqIdStart, micros,
                   item.asJson.pretty(Printer.noSpaces), Some(claim.bundle))
+                Snapshots += snapRow
             }.getOrElse(DBIO.successful(0))
 
             // Build and insert the deltas

@@ -1,11 +1,11 @@
 package flashbot.util
 
 import java.time
-import java.time.Instant
+import java.time.{Instant, ZoneId, ZoneOffset}
 import java.util.function
 
 import flashbot.models.Candle
-import org.ta4j.core.{Bar, BaseBar, BaseTimeSeries, TimeSeries}
+import org.ta4j.core.{Bar, BaseBar, BaseTimeSeries, Indicator, TimeSeries}
 import org.ta4j.core.BaseTimeSeries.SeriesBuilder
 import org.ta4j.core.num.{DoubleNum, Num}
 import flashbot.util.time._
@@ -42,11 +42,16 @@ package object timeseries {
 
     protected[timeseries] def registerCandle(micros: Long, open: Double, high: Double,
                                              low: Double, close: Double, volume: Double): Option[Candle] = {
+      if (volume > 1700) {
+        println("err")
+      }
       var ejectedBufferedCandle: Option[Candle] = None
       if (lastCandleSeenAt == -1) {
         firstCandleBuffer = Some(Candle(micros, open, high, low, close, volume))
       } else {
         val inferred = micros - lastCandleSeenAt
+//        println(inferred.micros.toCoarsest,
+//          micros, micros.microsToZdtLocal)
 
         // Make sure that all candles are evenly spaced. A.k.a. the inferred interval should
         // always be constant from candle to candle.
@@ -97,6 +102,18 @@ package object timeseries {
       }
       def interval: java.time.Duration = series.config.interval
       def hasInterval: Boolean = series.config.hasInterval
+
+      def put(candle: Candle): TimeSeries = putCandle(series, candle)
+
+      def iterator: Iterator[Bar] = new Iterator[Bar] {
+        private var i = series.getBeginIndex
+        override def hasNext: Boolean = i <= series.getEndIndex
+        override def next(): Bar = {
+          val bar = series.getBar(i)
+          i += 1
+          bar
+        }
+      }
     }
 
     implicit class BarOps(bar: Bar) {
@@ -112,6 +129,10 @@ package object timeseries {
     implicit class StringOps(name: String) {
       def timeSeries: TimeSeries = buildTimeSeries(name)
       def timeSeries(config: SeriesConfig): TimeSeries = buildTimeSeries(name, config)
+    }
+
+    implicit class IndicatorOps[I <: Indicator[_]](indicator: I) {
+
     }
   }
 

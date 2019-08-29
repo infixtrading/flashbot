@@ -424,10 +424,12 @@ class TradingEngine(engineId: String,
           }
 
           def viaDataServer(req: DataStreamReq[Candle],
-                            interval: Duration): Future[Map[String, CandleFrame]] = for {
+                            interval: FiniteDuration): Future[Map[String, CandleFrame]] = for {
             rsp <- (dataServer ? req).mapTo[StreamResponse[MarketData[Candle]]]
-            candlesMD: immutable.Seq[Candle] <- rsp.toSource.map(_.data)
-              .via(PriceTap.aggregateCandles(interval)).runWith(Sink.seq)
+            candlesMD: immutable.Seq[Candle] <- rsp.toSource
+              .map(_.data)
+              .via(PriceTap.aggregateCandles(interval))
+              .runWith(Sink.seq)
             path = req.selection.path
             key = List(path.source, path.topic).mkString(".")
           } yield Map(key -> CandleFrame(candlesMD))

@@ -7,6 +7,7 @@ import akka.stream.scaladsl.{Flow, Sink, Source}
 import akka.stream.{Materializer, OverflowStrategy}
 import breeze.stats.distributions.Gaussian
 import flashbot.models.{Candle, TimeRange}
+import flashbot.util.time._
 
 import scala.concurrent.duration._
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -109,35 +110,58 @@ object PriceTap {
       first.plusMillis(i * timeStep.toMillis)
   }
 
-  def aggregateTrades(timeStep: Duration): Flow[(Instant, Double, Double), Candle, NotUsed] =
+  def aggregateTrades(timeStep: FiniteDuration,
+                      allowPartialCandles: Boolean = false): Flow[(Instant, Double, Double), Candle, NotUsed] =
     _aggAsCandles[(Instant, Double, Double)](
-      x => Candle.single(x._1.toEpochMilli * 1000, x._2, x._3),
-      (c, x) => c.observeOHLC(x._2, x._2, x._2, x._2, x._3),
-      _._1)(timeStep)
+        x => Candle.single(0, x._2, x._3),
+        (c, x) => c.observeOHLC(x._2, x._2, x._2, x._2, x._3),
+        _._1)(timeStep)
+      .drop(if (allowPartialCandles) 0 else 1)
 
-  def aggregatePrices(timeStep: Duration): Flow[(Instant, Double), Candle, NotUsed] =
-    Flow[(Instant, Double)].map(x => (x._1, x._2, 0d)).via(aggregateTrades(timeStep))
+  def aggregatePrices(timeStep: FiniteDuration,
+                      allowPartialCandles: Boolean = false): Flow[(Instant, Double), Candle, NotUsed] =
+    Flow[(Instant, Double)]
+      .map(x => (x._1, x._2, 0d))
+      .via(aggregateTrades(timeStep, allowPartialCandles))
 
-  def aggregateCandles(timeStep: Duration): Flow[Candle, Candle, NotUsed] =
+  def aggregateCandles(timeStep: FiniteDuration): Flow[Candle, Candle, NotUsed] =
     _aggAsCandles[Candle](c => c,
-      (a, b) => a.observeOHLC(b.open, b.high, b.low, b.close, b.volume),
-      _.instant)(timeStep)
+        (a, b) => a.observeOHLC(b.open, b.high, b.low, b.close, b.volume),
+        _.instant)(timeStep)
 
   private def _aggAsCandles[T](build: T => Candle, reduce: (Candle, T) => Candle, inst: T => Instant)
-                              (timeStep: Duration): Flow[T, Candle, NotUsed] =
+                              (timeStep: java.time.Duration): Flow[T, Candle, NotUsed] =
     Flow[T].statefulMapConcat { () =>
       var currentCandle: Option[Candle] = None
+      var lastSeenMicros: Long = -1
       (x: T) => {
-        val instant = inst(x)
-        val singleCandle = build(x)
+        val timeStepStartMicros = timeStep.normalizeTimeStepMicros(inst(x).micros)
+        val singleCandle = build(x).copy(micros = timeStepStartMicros)
+
+        if (lastSeenMicros != -1 && lastSeenMicros > singleCandle.micros) {
+          println("Out of order data?")
+        }
+        if (lastSeenMicros != -1 && lastSeenMicros == singleCandle.micros) {
+          println("Duplicate order data?")
+        }
+        lastSeenMicros = singleCandle.micros
+
         if (currentCandle.isEmpty) {
           currentCandle = Some(singleCandle)
+          if (currentCandle.get.volume > 2000) {
+            println("ERROR?", currentCandle)
+          }
           List()
         } else {
           val prevCandle = currentCandle.get
+          println(prevCandle.micros, timeStep.toMicros, prevCandle.micros + timeStep.toMicros,
+            timeStepStartMicros, prevCandle.micros + timeStep.toMicros <= timeStepStartMicros)
           currentCandle = Some(
-            if (prevCandle.micros + timeStep.toMicros < instant.toEpochMilli * 1000) singleCandle
+            if (prevCandle.micros + timeStep.toMicros <= timeStepStartMicros) singleCandle
             else reduce(prevCandle, x))
+          if (currentCandle.get.volume > 2000) {
+            println("ERROR?", currentCandle)
+          }
           if (prevCandle.micros == currentCandle.get.micros) List()
           else List(prevCandle)
         }

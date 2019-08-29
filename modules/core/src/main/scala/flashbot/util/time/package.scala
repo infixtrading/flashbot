@@ -1,7 +1,6 @@
 package flashbot.util
 
-import java.time
-import java.time.{Instant, ZoneOffset, ZonedDateTime}
+import java.time.{Instant, ZoneId, ZoneOffset, ZonedDateTime}
 import java.util.Date
 
 import io.circe._
@@ -69,12 +68,29 @@ package object time {
     def microsToDate: Date = new Date(micros / 1000)
     def microsToInstant: Instant = Instant.ofEpochMilli(micros / 1000)
     def microsToZdt: ZonedDateTime = microsToInstant.zdt
+    def microsToZdtLocal: ZonedDateTime = microsToInstant.zdtLocal
   }
 
   implicit class InstantOps(instant: Instant) {
     def zdt: ZonedDateTime = ZonedDateTime.ofInstant(instant, ZoneOffset.UTC)
+    def zdtLocal: ZonedDateTime = ZonedDateTime.ofInstant(instant, ZoneId.systemDefault())
     def date: Date = new Date(instant.toEpochMilli)
+    def micros: Long = instant.toEpochMilli * 1000
   }
+
+  implicit class DurationOps(duration: java.time.Duration) {
+    def timeStepIndexOfMicros(micros: Long): Long = micros / (duration.toMillis * 1000)
+    def normalizeTimeStepMicros(micros: Long): Long = timeStepIndexOfMicros(micros) * duration.toMicros
+  }
+
+  implicit class ScalaDurationOps(duration: FiniteDuration) {
+    def javaDuration: java.time.Duration = asJavaDuration(duration)
+  }
+
+//  implicit class ScalaDurationOps(duration: Duration) {
+//    def timeStepIndexOfMicros(micros: Long): Long = micros / (duration.toMillis * 1000)
+//    def normalizeTimeStepMicros(micros: Long): Long = timeStepIndexOfMicros(micros) * duration.toMillis
+//  }
 
   implicit class ZdtOps(zdt: ZonedDateTime) {
     def millis: Long = zdt.toInstant.toEpochMilli
@@ -85,6 +101,5 @@ package object time {
 
   implicit def asJavaDuration(d: FiniteDuration): java.time.Duration =
     java.time.Duration.ofNanos(d.toNanos)
-
 
 }
