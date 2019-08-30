@@ -163,7 +163,7 @@ object OrderBookTap {
     lazy val sma = new SMAIndicator(close, 14)
     val referencePrices = PriceTap
       .akkaStream(startPrice, mu, sigma, timeRange, 1 minute, infinite = true)
-      .via(PriceTap.aggregatePrices(1 hour))
+      .via(PriceTap.aggregatePricesFlow(1 hour))
       .scan((timeSeries, Balanced, new Ladder(25, 1d))) {
         case ((_, arrivalRateImbalance, ladder), candle: Candle) =>
 

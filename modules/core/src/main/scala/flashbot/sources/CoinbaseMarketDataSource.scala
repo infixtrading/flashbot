@@ -255,7 +255,7 @@ class CoinbaseMarketDataSource extends DataSource {
             case (topic, src) =>
               topic -> src.map(_._2)
                 .map(t => (t.instant, t.price, t.size))
-                .via(PriceTap.aggregateTrades(d).map(c => (c.micros, c.asInstanceOf[T])))
+                .via(PriceTap.aggregateTradesFlow(d).map(c => (c.micros, c.asInstanceOf[T])))
           })
           (keys, sources) = srcMap.toSeq.unzip
           delayedSources <- Future.sequence(sources.map(waitForFirstItem))

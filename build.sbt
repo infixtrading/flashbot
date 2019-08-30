@@ -11,8 +11,11 @@ import scala.xml.transform.{ RewriteRule, RuleTransformer }
   * $ sbt '; set javaOptions += "-Dflashbot.db=postgres"; set javaOptions += "-Dakka.loglevel=INFO" ; runMain examples.CoinbaseIngest'
   */
 
+lazy val scala212 = "2.12.8"
+
 organization in ThisBuild := "com.infixtrading"
 parallelExecution in ThisBuild := false
+scalaVersion in ThisBuild := scala212
 
 lazy val akkaVersion = "2.5.19"
 lazy val akkaHttpVersion = "10.1.5"
@@ -100,7 +103,6 @@ val compilerOptions = Seq(
   "-Ywarn-numeric-widen",
   "-Xfuture",
   "-explaintypes",
-//  "-Yno-predef",
   "-Ywarn-unused-import"
 )
 
@@ -129,16 +131,13 @@ val previousFBVersion = None
 lazy val baseSettings = Seq(
   scalacOptions ++= compilerOptions,
   scalacOptions in (Compile, console) ~= {
-    _.filterNot(Set("-Ywarn-unused-import", "-Yno-predef"))
+    _.filterNot(Set("-Ywarn-unused-import"))
   },
   scalacOptions in (Test, console) ~= {
-    _.filterNot(Set("-Ywarn-unused-import", "-Yno-predef"))
+    _.filterNot(Set("-Ywarn-unused-import"))
   },
   scalacOptions in Tut ~= {
-    _.filterNot(Set("-Ywarn-unused-import", "-Yno-predef"))
-  },
-  scalacOptions in Test ~= {
-    _.filterNot(Set("-Yno-predef"))
+    _.filterNot(Set("-Ywarn-unused-import"))
   },
   resolvers ++= Seq(
     Resolver.sonatypeRepo("releases"),
@@ -150,7 +149,8 @@ lazy val baseSettings = Seq(
   unmanagedClasspath in Compile ++= update.value.select(configurationFilter(CompileTime.name)),
   unmanagedClasspath in Test ++= update.value.select(configurationFilter(CompileTime.name)),
 
-  libraryDependencies ++= (jsonDeps ++ utilDeps)
+  libraryDependencies ++= (jsonDeps ++ utilDeps),
+  crossScalaVersions := List(scalaVersion.value)
 ) ++ macroSettings
 
 lazy val allFBSettings = baseSettings ++ publishSettings
@@ -223,9 +223,6 @@ lazy val docSettings = allFBSettings ++ Seq(
     "-doc-root-content",
     (resourceDirectory.in(Compile).value / "rootdoc.txt").getAbsolutePath
   ),
-  scalacOptions ~= {
-    _.filterNot(Set("-Yno-predef"))
-  },
   git.remoteRepo := "git@github.com:infixtrading/flashbot.git",
 //  unidocProjectFilter in (ScalaUnidoc, unidoc) :=
 //    inAnyProject -- inProjects(noDocProjects(scalaVersion.value): _*),
@@ -258,7 +255,7 @@ lazy val docSettings = allFBSettings ++ Seq(
 //lazy val jvmModules = Seq[Project](server, client, testing)
 //lazy val fbDocsModules = Seq[Project](docs)
 
-lazy val jvmProjects: Seq[Project] = Seq[Project](server, testing)
+lazy val jvmProjects: Seq[Project] = Seq[Project](server, testing, tests)
 
 //lazy val jsProjects: Seq[Project] =
 //  (crossModules.map(_._2) ++ jsModules)
@@ -287,6 +284,7 @@ lazy val flashbot = project
   .settings(allFBSettings)
   .settings(noPublishSettings)
   .settings(
+    crossScalaVersions := Nil,
     initialCommands in console :=
       """
         |import scala.concurrent._ 
@@ -309,9 +307,6 @@ lazy val flashbot = project
   .dependsOn(core, server, testing, tools)
 
 //lazy val numbersTestingBase = circeCrossModule("numbers-testing", previousCirceVersion, CrossType.Pure).settings(
-//  scalacOptions ~= {
-//    _.filterNot(Set("-Yno-predef"))
-//  },
 //  libraryDependencies += "org.scalacheck" %%% "scalacheck" % scalaCheckVersionFor(scalaVersion.value),
 //  coverageExcludedPackages := "io\\.circe\\.numbers\\.testing\\..*"
 //)
@@ -428,9 +423,6 @@ lazy val tools = flashbotModule("tools", previousFBVersion)
 lazy val testing = flashbotModule("testing", previousFBVersion)
   .settings(noPublishSettings: _*)
   .settings(
-    scalacOptions ~= {
-      _.filterNot(Set("-Yno-predef"))
-    }
 //    libraryDependencies += "org.vegas-viz" %% "vegas" % "0.3.11"
   ).dependsOn(core)
 
@@ -440,9 +432,6 @@ lazy val testing = flashbotModule("testing", previousFBVersion)
 lazy val tests = flashbotModule("tests", previousFBVersion)
   .settings(noPublishSettings: _*)
   .settings(
-    scalacOptions ~= {
-      _.filterNot(Set("-Yno-predef"))
-    },
     libraryDependencies ++= Seq(
       "org.scalactic" %% "scalactic" % "3.0.5",
       "org.scalatest" %% "scalatest" % "3.0.5" % "test",
@@ -453,13 +442,15 @@ lazy val tests = flashbotModule("tests", previousFBVersion)
 //    sourceGenerators in Test += (sourceManaged in Test).map(Boilerplate.genTests).taskValue,
 //    unmanagedResourceDirectories in Compile +=
 //      file("modules/tests") / "shared" / "src" / "main" / "resources"
-  ).dependsOn(core, server)
+  )
+  .dependsOn(core, server, testing)
+  .aggregate(core, server, testing)
 
 //lazy val tests = testsBase.jvm.dependsOn(server, client)
 //lazy val testsJS = testsBase.js.dependsOn(scalajs)
 
 lazy val publishSettings = Seq(
-  releaseCrossBuild := true,
+//  releaseCrossBuild := true,
 //  releasePublishArtifactsAction := PgpKeys.publishSigned.value,
   homepage := Some(url("https://github.com/infixtrading/flashbot")),
   licenses := Seq("Apache-2.0" -> url("http://www.apache.org/licenses/LICENSE-2.0")),

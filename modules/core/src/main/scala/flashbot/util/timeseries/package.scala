@@ -4,6 +4,8 @@ import java.time
 import java.time.{Instant, ZoneId, ZoneOffset}
 import java.util.function
 
+import cats.{Foldable, Monoid}
+import flashbot.core.Timestamped.HasTime
 import flashbot.models.Candle
 import org.ta4j.core.{Bar, BaseBar, BaseTimeSeries, Indicator, TimeSeries}
 import org.ta4j.core.BaseTimeSeries.SeriesBuilder
@@ -245,4 +247,68 @@ package object timeseries {
     }
     series
   }
+
+  object Scannable {
+
+    // Type classes
+    trait GenEmpty[C] {
+      def empty(micros: Long, prev: Option[C]): C
+    }
+
+    trait Reducible[C] extends Foldable[C, C]
+    trait Foldable[I, C] {
+      def fold(candle: C, item: I): C
+    }
+
+    trait Scannable[C] extends Reducible[C] with GenEmpty[C]
+    trait ScannableItem[I, C] extends Foldable[I, C] with GenEmpty[C]
+
+
+    // Implicits
+    implicit def scannableItem[I, C](implicit foldableItem: Foldable[I, C],
+                                     genEmptyBar: GenEmpty[C]): ScannableItem[I, C] =
+      new ScannableItem[I, C] {
+        override def fold(candle: C, item: I): C = foldableItem.fold(candle, item)
+        override def empty(micros: Long, prev: Option[C]): C = genEmptyBar.empty(micros, prev)
+      }
+
+    implicit def scannable[C](implicit reducible: Reducible[C],
+                              genEmpty: GenEmpty[C]): Scannable[C] = new Scannable[C] {
+      override def fold(candle: C, item: C): C = reducible.fold(candle, item)
+      override def empty(micros: Long, prev: Option[C]): C = genEmpty.empty(micros, prev)
+    }
+
+    implicit def candleIsReducible: Reducible[Candle] = (c: Candle, i: Candle) => c.mergeOHLC(i)
+
+    // Keep the previous bars prices, but overwrite the time to our own, and remove volume,
+    // if the previous bar exists.
+    implicit def candleHasEmpty: GenEmpty[Candle] =
+      (micros: Long, prev: Option[Candle]) =>
+        prev.map(_.copy(micros = micros, volume = 0))
+          .getOrElse(Candle.empty(micros))
+
+
+    type PriceSeries = (Instant, Double)
+    implicit def priceSeriesFoldIntoCandle: Foldable[PriceSeries, Candle] =
+      (c: Candle, i: PriceSeries) => c.mergePrice(i._2)
+
+    type PriceVolSeries = (Instant, Double, Double)
+    implicit def priceVolSeriesFoldIntoCandle: Foldable[PriceVolSeries, Candle] =
+      (c: Candle, i: PriceVolSeries) => c.mergeTrade(i._2, i._3)
+
+  }
+
+  import Scannable._
+
+
+  def scan[V:HasTime, C:HasTime](timeStep: java.time.Duration)
+                                (implicit scannable: Scannable[V]): Iterable[C] = {
+    new Iterator[C] {
+      override def hasNext: Boolean = ???
+
+      override def next(): C = ???
+    }.toIterable
+  }
+
+
 }

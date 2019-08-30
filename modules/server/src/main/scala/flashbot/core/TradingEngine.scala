@@ -428,7 +428,7 @@ class TradingEngine(engineId: String,
             rsp <- (dataServer ? req).mapTo[StreamResponse[MarketData[Candle]]]
             candlesMD: immutable.Seq[Candle] <- rsp.toSource
               .map(_.data)
-              .via(PriceTap.aggregateCandles(interval))
+              .via(PriceTap.aggregateCandlesFlow(interval))
               .runWith(Sink.seq)
             path = req.selection.path
             key = List(path.source, path.topic).mkString(".")

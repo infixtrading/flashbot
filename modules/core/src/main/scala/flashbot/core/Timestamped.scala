@@ -14,4 +14,8 @@ trait Timestamped {
 }
 object Timestamped {
   val ordering: Ordering[Timestamped] = Ordering.by(_.micros)
+
+  trait HasTime[T] {
+    def micros(item: T): Long
+  }
 }

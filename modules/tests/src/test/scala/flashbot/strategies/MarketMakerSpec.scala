@@ -97,7 +97,7 @@ class MarketMakerSpec extends FlatSpec with Matchers {
     // 6 * 50 hours in time range.
     val candles = Source((0 to (360 * 6 * 50)).map(i =>
         (Instant.EPOCH.plusSeconds(i * 20), math.sin(math.toRadians(i)) * 10 + 100)))
-      .via(PriceTap.aggregatePrices(1 hour))
+      .via(PriceTap.aggregatePricesFlow(1 hour))
       .zipWithIndex
       .map { case (c, i) => BaseMarketData(c, "coinbase/btc_usd/candles_1h", c.micros, 1, i) }
 
