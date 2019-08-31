@@ -94,6 +94,7 @@ package object time {
 
   implicit class ZdtOps(zdt: ZonedDateTime) {
     def millis: Long = zdt.toInstant.toEpochMilli
+    def micros: Long = millis * 1000
   }
 
   implicit def asFiniteDuration(d: java.time.Duration): FiniteDuration =

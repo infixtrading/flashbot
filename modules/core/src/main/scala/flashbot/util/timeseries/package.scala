@@ -12,14 +12,17 @@ import org.ta4j.core.BaseTimeSeries.SeriesBuilder
 import org.ta4j.core.num.{DoubleNum, Num}
 import flashbot.util.time._
 import flashbot.util.timeseries.Implicits._
+import flashbot.util.timeseries.Scannable
+import flashbot.util.timeseries.Scannable.BaseScannable.ScannableItem
 
-import scala.collection.mutable
+import scala.collection.{GenIterable, IterableLike, mutable}
+import scala.collection.mutable.ArrayBuffer
 import scala.concurrent.duration._
 import scala.language.postfixOps
 
 package object timeseries {
 
-  protected[timeseries] class SeriesConfig(val failOnOldData: Boolean,
+  protected[timeseries] class SeriesConfig(val outOfOrderDataIsError: Boolean,
                                            val maxBarCount: Int) {
     // Implementation details for bookkeeping of candles
     protected[timeseries] var baseInterval: Long = -1
@@ -79,9 +82,9 @@ package object timeseries {
   }
 
   object SeriesConfig {
-    def apply(failOnOldData: Boolean = false,
+    def apply(outOfOrderDataIsError: Boolean = false,
               maxBarCount: Int = 10000): SeriesConfig =
-      new SeriesConfig(failOnOldData, maxBarCount)
+      new SeriesConfig(outOfOrderDataIsError, maxBarCount)
 
     private def validateIntervals(base: Long, inferred: Long): Unit = {
       if (inferred != -1 && base != -1 && base < inferred) {
@@ -91,6 +94,8 @@ package object timeseries {
       }
     }
   }
+
+  def timeSeriesIterator(series: TimeSeries) = series.iterator
 
   object Implicits {
     implicit class TimeSeriesOps(series: TimeSeries) {
@@ -126,7 +131,26 @@ package object timeseries {
       def volume: Double = bar.getVolume.getDelegate.doubleValue()
       def micros: Long = bar.getBeginTime.millis * 1000
       def candle: Candle = Candle(micros, open, high, low, close, volume)
+
+      def buildCandleConverter = (candle: Candle) => {
+        val fn = bar.getAmount.function()
+        new BaseBar(bar.getTimePeriod,
+          candle.instant.zdt.plus(bar.getTimePeriod),
+          fn(candle.open),
+          fn(candle.high),
+          fn(candle.low),
+          fn(candle.close),
+          fn(candle.volume),
+          fn(0)
+        )
+      }
     }
+
+//    implicit class CandleOps(candle: Candle) {
+//      def bar: Bar = {
+//
+//      }
+//    }
 
     implicit class StringOps(name: String) {
       def timeSeries: TimeSeries = buildTimeSeries(name)
@@ -203,7 +227,7 @@ package object timeseries {
 
     // If the data is outdated, then either throw or ignore and return immediately.
     if (series.getBarCount > 0 && series.getLastBar.getBeginTime.isAfter(zdt)) {
-      if (config.failOnOldData)
+      if (config.outOfOrderDataIsError)
         throw new RuntimeException("""This time series does not support outdated data.""")
       else
         return series
@@ -248,67 +272,72 @@ package object timeseries {
     series
   }
 
-  object Scannable {
+  def scan [I:HasTime, C:HasTime]
+  (items: Iterable[I], timeStep: java.time.Duration, dropFirst: Boolean = true, dropLast: Boolean = false)
+  (implicit scanner: ScannableItem[I, C], CollectionType: TimeSeriesLike[C]): CollectionType.Repr = {
 
-    // Type classes
-    trait GenEmpty[C] {
-      def empty(micros: Long, prev: Option[C]): C
-    }
+    def getItemMicros(item: I): Long = HasTime[I].micros(item)
+    def candleIndex(item: I): Long = timeStep.timeStepIndexOfMicros(getItemMicros(item))
 
-    trait Reducible[C] extends Foldable[C, C]
-    trait Foldable[I, C] {
-      def fold(candle: C, item: I): C
-    }
+    // This iterator is sparse in the sense that it's gaps haven't been filled in yet.
+    // That will happen at the time of scanning.
+    val groupIterator = new Iterator[(Long, Iterator[I])] {
+      var nextGroup: Iterator[I] = _
+      var rest: Iterator[I] = items.iterator
+      var bothSubGroupsNonEmpty: Boolean = _
 
-    trait Scannable[C] extends Reducible[C] with GenEmpty[C]
-    trait ScannableItem[I, C] extends Foldable[I, C] with GenEmpty[C]
-
-
-    // Implicits
-    implicit def scannableItem[I, C](implicit foldableItem: Foldable[I, C],
-                                     genEmptyBar: GenEmpty[C]): ScannableItem[I, C] =
-      new ScannableItem[I, C] {
-        override def fold(candle: C, item: I): C = foldableItem.fold(candle, item)
-        override def empty(micros: Long, prev: Option[C]): C = genEmptyBar.empty(micros, prev)
+      private def split(): Long = {
+        var currentCandleIndex: Long = -1
+        val (_nextGroup, _rest) = rest.span { item =>
+          val myCandleIndex = candleIndex(item)
+          if (currentCandleIndex == -1)
+            currentCandleIndex = myCandleIndex
+          currentCandleIndex == myCandleIndex
+        }
+        nextGroup = _nextGroup
+        rest = _rest
+        bothSubGroupsNonEmpty = nextGroup.nonEmpty && rest.nonEmpty
+        currentCandleIndex
       }
 
-    implicit def scannable[C](implicit reducible: Reducible[C],
-                              genEmpty: GenEmpty[C]): Scannable[C] = new Scannable[C] {
-      override def fold(candle: C, item: C): C = reducible.fold(candle, item)
-      override def empty(micros: Long, prev: Option[C]): C = genEmpty.empty(micros, prev)
-    }
+      var groupIndex = split()
 
-    implicit def candleIsReducible: Reducible[Candle] = (c: Candle, i: Candle) => c.mergeOHLC(i)
+      override def hasNext =
+        if (!dropLast) nextGroup.nonEmpty
+        else bothSubGroupsNonEmpty
 
-    // Keep the previous bars prices, but overwrite the time to our own, and remove volume,
-    // if the previous bar exists.
-    implicit def candleHasEmpty: GenEmpty[Candle] =
-      (micros: Long, prev: Option[Candle]) =>
-        prev.map(_.copy(micros = micros, volume = 0))
-          .getOrElse(Candle.empty(micros))
+      override def next() = {
+        val groupIt = nextGroup
+        val prevIndex = groupIndex
+        groupIndex = split()
+        (prevIndex, groupIt)
+      }
+    }.drop(if (dropFirst) 1 else 0)
 
+    val candleIterator = groupIterator
+      .scanLeft[Option[(Long, C)]](None) {
+        // First group
+        case (None, (nextCandleIndex, nextItems)) =>
+          val initialCandle: C = scanner.empty(timeStep.toMicros * nextCandleIndex, timeStep, None)
+          val calcedCandle = nextItems.foldLeft[C](initialCandle)(scanner.fold)
+          Some((nextCandleIndex, calcedCandle))
 
-    type PriceSeries = (Instant, Double)
-    implicit def priceSeriesFoldIntoCandle: Foldable[PriceSeries, Candle] =
-      (c: Candle, i: PriceSeries) => c.mergePrice(i._2)
+        // Next group. i.e. nextIndex = prevIndex + 1
+        case (Some((prevIndex, prevCandle)), (nextIndex, nextItems)) if prevIndex + 1 == nextIndex =>
+          val initialCandle: C = scanner.empty(timeStep.toMicros * nextIndex, timeStep, Some(prevCandle))
+          Some((nextIndex, nextItems.foldLeft[C](initialCandle)(scanner.fold)))
 
-    type PriceVolSeries = (Instant, Double, Double)
-    implicit def priceVolSeriesFoldIntoCandle: Foldable[PriceVolSeries, Candle] =
-      (c: Candle, i: PriceVolSeries) => c.mergeTrade(i._2, i._3)
+        // Detected missing time steps. Fill them in.
+        case (Some((prevIndex, prevCandle)), (nextIndex, _)) if prevIndex + 1 < nextIndex =>
+          val micros = timeStep.toMicros * (prevIndex + 1)
+          Some((prevIndex + 1, scanner.empty(micros, timeStep, Some(prevCandle))))
 
+      }.drop(1).map(_.get._2)
+
+    CollectionType.fromIterable(candleIterator.toIterable)
   }
 
-  import Scannable._
 
-
-  def scan[V:HasTime, C:HasTime](timeStep: java.time.Duration)
-                                (implicit scannable: Scannable[V]): Iterable[C] = {
-    new Iterator[C] {
-      override def hasNext: Boolean = ???
-
-      override def next(): C = ???
-    }.toIterable
-  }
 
 
 }

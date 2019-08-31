@@ -1,6 +1,8 @@
 package flashbot.models
 
 import flashbot.core.{Priced, Timestamped}
+import flashbot.util.timeseries.Scannable._
+import flashbot.util.time._
 
 case class Candle(micros: Long,
                   open: Double,
@@ -25,6 +27,8 @@ case class Candle(micros: Long,
   )
 
   override def price = close
+
+  override def toString = s"${instant.zdtLocal}: ${super.toString}"
 }
 
 object Candle {
@@ -48,4 +52,5 @@ object Candle {
 //    override def product: String = topic
 //    override def price: Double = data.close
 //  }
+
 }
