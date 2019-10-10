@@ -1,5 +1,7 @@
 package flashbot
 
+import java.time.Duration
+
 import scala.concurrent.Future
 import scala.util.{Failure, Success, Try}
 import scala.util.matching.Regex
@@ -33,4 +35,16 @@ package object util {
   implicit class TryFutOps[A](t: Try[A]) {
     def toFut: Future[A] = Future.fromTry(t)
   }
+
+  // Thanks! https://stackoverflow.com/a/8248689
+  def groupby[T](iter: Iterator[T])(startsGroup: T => Boolean): Iterator[Iterator[T]] =
+    new Iterator[Iterator[T]] {
+      val base = iter.buffered
+      override def hasNext = base.hasNext
+      override def next() = Iterator(base.next()) ++ new Iterator[T] {
+        override def hasNext = base.hasNext && !startsGroup(base.head)
+        override def next() = if (hasNext) base.next() else Iterator.empty.next()
+      }
+    }
+
 }

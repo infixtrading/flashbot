@@ -1,69 +1,334 @@
 package flashbot.tools
 
-import java.awt.{BasicStroke, Color, Paint, Stroke}
-import java.time.Instant
+import java.awt.event.{KeyEvent, KeyListener}
+import java.awt.{BasicStroke, Color, Dimension, Paint, Stroke}
+import java.time.{Instant, ZoneOffset, ZonedDateTime}
+import java.time.temporal.ChronoUnit
 
-import akka.NotUsed
-import akka.actor.{Actor, ActorSystem, Props}
-import akka.stream.ActorMaterializer
-import akka.util.Timeout
-import flashbot.core.DataType.LadderType
-import flashbot.core.{FlashbotConfig, OrderBookTap, TimeSeriesTap}
+import flashbot.core.{CandleFrame, DataServer, FlashbotConfig, OrderBookTap, PriceTap, TradingEngine}
 import flashbot.sources.BitMEXMarketDataSource
 import flashbot.util.stream.buildMaterializer
+import flashbot.util.timeseries.Implicits._
+import flashbot.util.time._
 import akka.pattern.{Backoff, BackoffSupervisor, ask, pipe}
 import akka.stream.scaladsl.{Keep, Sink, Source, Unzip, UnzipWith, UnzipWithApply}
-import flashbot.models.{Ladder, OrderBook, TimeRange}
+import flashbot.models.{Candle, Ladder, OrderBook, TimeRange}
 import flashbot.util.TableUtil
 import de.sciss.chart.api._
-import org.jfree.data.time.{RegularTimePeriod, Second}
+import org.jfree.data.time.{RegularTimePeriod, Second, TimePeriod, TimePeriodValue, TimePeriodValuesCollection}
 
-import scala.concurrent.duration._
 import scala.concurrent.{Await, ExecutionContextExecutor, Future}
+import scala.concurrent.duration._
 import scala.language.postfixOps
-import scala.util.{Failure, Success}
+import scala.util.{Failure, Random, Success}
 import language.implicitConversions
 import java.util.Date
 
+import akka.actor.ActorSystem
+import akka.stream.ActorMaterializer
+import akka.util.Timeout
 import de.sciss.chart.XYChart
-import flashbot.core.TimeSeriesTap.prices
-import org.jfree.chart.StandardChartTheme
-import org.jfree.chart.axis.{DateAxis, NumberAxis}
+import de.sciss.chart.event.{ChartMouseClicked, ChartMouseMoved}
+import flashbot.client.FlashbotClient
+import it.unimi.dsi.fastutil.longs.LongArrayFIFOQueue
+import it.unimi.dsi.fastutil.objects.ObjectArrayFIFOQueue
+import javax.swing.JFrame
+import org.jfree.chart.{ChartFrame, ChartMouseEvent, ChartMouseListener, ChartPanel, StandardChartTheme}
+import org.jfree.chart.axis.{AxisLocation, AxisSpace, DateAxis, NumberAxis}
+import org.jfree.chart.event.{AxisChangeEvent, ChartChangeEvent, ChartChangeListener, PlotChangeEvent, PlotChangeListener}
 import org.jfree.chart.plot.{CombinedDomainXYPlot, DefaultDrawingSupplier, Plot, PlotOrientation, XYPlot}
-import org.jfree.chart.renderer.xy.XYLineAndShapeRenderer
-import org.jfree.data.time.{RegularTimePeriod, Second}
+import org.jfree.chart.renderer.xy.{XYBarRenderer, XYLineAndShapeRenderer}
+import org.ta4j.core.indicators.SMAIndicator
+import org.ta4j.core.indicators.helpers.ClosePriceIndicator
+import org.ta4j.core.{BaseTimeSeries, num}
+
+import scala.collection.mutable.ArrayBuffer
+import scala.swing.{Frame, Publisher}
+import scala.swing.event.{MouseClicked, MouseMoved}
 
 
 object OrderBookScanner extends App {
 
-//  object Implicits extends Implicits
-//
-//  trait Implicits {
-//  }
+  val END = Instant.now()
+  val START = END.minus(7, ChronoUnit.DAYS)
+  val timeRange = TimeRange(START.toEpochMilli * 1000, END.toEpochMilli * 1000)
 
-  implicit def jdate2jfree(d: Date): RegularTimePeriod = new Second(d)
+  implicit def timePeriod(d: Date): RegularTimePeriod = new Second(d)
+  implicit def timePeriod(d: Instant): RegularTimePeriod = new Second(new Date(d.toEpochMilli))
 
-  implicit val config: FlashbotConfig = FlashbotConfig.load()
+  // Setup Flashbot environment
+  implicit val config: FlashbotConfig = FlashbotConfig.load("scanner-test")
   implicit val system: ActorSystem = ActorSystem(config.systemName, config.conf)
   implicit val mat: ActorMaterializer = buildMaterializer()
   implicit val ec: ExecutionContextExecutor = system.dispatcher
   implicit val timeout: Timeout = Timeout(10 seconds)
 
-  OrderBookTap
-    .simpleLadderSimulation()
-    .take(2000)
-    .runForeach { ladder =>
-      Thread.sleep(5)
-      TableUtil.renderLadder(ladder, 5)
+
+//  def foo() = {
+//    val srcFut = Source(List(1, 2, 3))
+//      .prefixAndTail(1)
+//      .runWith(Sink.head)
+//    for {
+//      (headSeq, rest) <- srcFut
+//    } yield Source(headSeq).concat(rest)
+//  }
+//
+
+
+  val engine = system.actorOf(TradingEngine.props("scanner-test-engine", config))
+
+//  for (i <- 0 until 360) {
+//    if (i % 10 == 0)
+//      println(i)
+//    Thread.sleep(1000)
+//  }
+
+  val client = new FlashbotClient(engine)
+  val cbp: Map[String, CandleFrame] = client.prices("coinbase/btc_usd/candles_1m", timeRange, 1 minute)
+  val cb: Array[Candle] = cbp("coinbase.btc_usd").toCandlesArray
+  val (coinbasePrices, coinbaseVols) = cb.toSeq.map(x => ((x.date, x.close), (x.date, x.volume))).unzip
+
+
+  val simPrices = ArrayBuffer.empty[(Date, Double)]
+  val refPrices = ArrayBuffer.empty[(Date, Double)]
+  val spreadBuffer = ArrayBuffer.empty[(Date, Double)]
+
+//  val prices = simPrices.toTimePeriodValuesCollection("Close Prices")
+//  prices.addSeries(refPrices.toTimePeriodValues("Reference prices"))
+  val prices = new TimePeriodValuesCollection()
+  prices.addSeries(coinbasePrices.toTimePeriodValues("Coinbase prices"))
+
+  val spread = spreadBuffer.toTimePeriodValuesCollection("Spread")
+  spread.addSeries(spreadBuffer.toTimePeriodValues("Spread"))
+
+//  simPrices.toTimePeriodValuesCollection("Close Prices").getSeries(0)
+
+  val plot: CombinedDomainXYPlot = new CombinedDomainXYPlot(new DateAxis())
+//  plot.setRangePannable(false)
+
+  val rangeAxis = new NumberAxis()
+  rangeAxis.setAutoRange(true)
+  rangeAxis.setAutoRangeIncludesZero(false)
+  rangeAxis.setLowerMargin(.3)
+  rangeAxis.configure()
+
+  val volRangeAxis = new NumberAxis()
+  volRangeAxis.setUpperMargin(5)
+  volRangeAxis.setAutoRange(true)
+
+  val spreadRangeAxis = new NumberAxis()
+
+  val pricePlot = new XYPlot()
+
+  // Axes
+  pricePlot.setRangeAxes(List(rangeAxis, volRangeAxis).toArray)
+
+  // Coinbase price
+  val cbRenderer = new XYLineAndShapeRenderer(true, false)
+//  cbRenderer.setPaint(Color.YELLOW)
+//  cbRenderer.setStroke(new BasicStroke(.5f))
+  pricePlot.setDataset(0, ToXYDataset[TimePeriodValues].convert(coinbasePrices.toTimePeriodValues("Coinbase prices")))
+  pricePlot.setRenderer(0, cbRenderer)
+  pricePlot.mapDatasetToRangeAxis(0, 0)
+
+  // Coinbase volume
+  volRangeAxis.setAutoRangeStickyZero(true)
+  volRangeAxis.setAutoRangeIncludesZero(true)
+  val volRenderer = new XYBarRenderer()
+//  volRenderer.setPaint(Color.YELLOW)
+  pricePlot.setDataset(1, ToXYDataset[TimePeriodValues].convert(coinbaseVols.toTimePeriodValues("Coinbase Volume")))
+  pricePlot.setRenderer(1, volRenderer)
+  pricePlot.setRangeAxis(1, volRangeAxis)
+  pricePlot.setRangeAxisLocation(1, AxisLocation.TOP_OR_RIGHT)
+  pricePlot.mapDatasetToRangeAxis(1, 1)
+
+  // Brownian
+  val brownianPrices = PriceTap.iterator(10000, .00005, .08, timeRange, 1 minute).toSeq
+  prices.addSeries(brownianPrices.toTimePeriodValues("Simulated brownian prices"))
+  val refPricesIt = brownianPrices.iterator
+  val brownianrenderer = new XYLineAndShapeRenderer(true, false)
+//  brownianrenderer.setStroke(new BasicStroke(.5f))
+//  brownianrenderer.setPaint(Color.WHITE)
+  pricePlot.setDataset(2, ToXYDataset[TimePeriodValues].convert(brownianPrices.toTimePeriodValues("Brownian prices")))
+  pricePlot.setRenderer(2, brownianrenderer)
+  pricePlot.mapDatasetToRangeAxis(2, 0)
+
+  // Order book
+//  val orderBookPrices = OrderBookTap.simpleLadderSimulation()
+
+//  val spreadPlot = new XYPlot(spread, null, spreadRangeAxis, renderer)
+
+  plot.add(pricePlot, 5)
+
+  lazy val cbSeries = "coinbase/btc_usd".timeSeries
+  lazy val cbClose = new ClosePriceIndicator(cbSeries)
+  lazy val sma = new SMAIndicator(cbClose, 14)
+
+  cb.foreach { candle =>
+    cbSeries.put(candle)
+  }
+
+  val closePriceArray = sma.getTimeSeries.iterator.map { bar =>
+    (bar.getBeginTime.toInstant, bar.getClosePrice.doubleValue)
+  }.toSeq
+
+  val smaPlot = new XYPlot()
+  val smaRenderer = new XYLineAndShapeRenderer(true, false)
+  val smaAxis = new NumberAxis()
+  smaAxis.setAutoRange(true)
+
+  smaPlot.setRangeAxes(List(smaAxis).toArray)
+//  smaRenderer.setStroke(new BasicStroke(.5f))
+//  smaRenderer.setPaint(Color.GREEN)
+
+  smaPlot.setDataset(0, ToXYDataset[TimePeriodValues].convert(closePriceArray.toTimePeriodValues("Close prices / SMA")))
+  smaPlot.setRenderer(0, smaRenderer)
+  smaPlot.mapDatasetToRangeAxis(0, 0)
+
+  plot.add(smaPlot)
+
+  val theme = StandardChartTheme.createDarknessTheme().asInstanceOf[StandardChartTheme]
+
+  val chart = XYChart(plot, "Simulated prices", true)(theme)
+  chart.peer.setAntiAlias(true)
+  chart.peer.setTextAntiAlias(true)
+//  chart.show("Prices", (1100, 600), true)
+
+  def showFrame(): Unit = {
+    class PriceFrame extends Frame with Publisher {
+      override lazy val peer = new ChartFrame("Order Book Simulation", chart.peer, true) with InterfaceMixin
+
+      peer.getChartPanel.setRangeZoomable(false)
+
+      var zoomListener: PlotChangeListener = _
+
+      def resetZoomListener(): Unit = {
+        zoomListener = new PlotChangeListener {
+          override def plotChanged(event: PlotChangeEvent): Unit = {
+            plot.removeChangeListener(zoomListener)
+            plot.getSubplots.forEach {
+              case p: XYPlot =>
+                for (i <- 0 until p.getRangeAxisCount) {
+                  val axis = p.getRangeAxis(i)
+                  axis.setRangeWithMargins(p.getDataRange(axis))
+                }
+              case _ =>
+            }
+            resetZoomListener()
+          }
+        }
+        plot.addChangeListener(zoomListener)
+      }
+
+      resetZoomListener()
+
+      peer.addKeyListener(new KeyListener {
+        override def keyTyped(e: KeyEvent): Unit = {
+          // Space
+          if (e.getExtendedKeyCode == 32) {
+            println("Pause")
+          }
+        }
+
+        override def keyPressed(e: KeyEvent): Unit = {}
+
+        override def keyReleased(e: KeyEvent): Unit = {}
+      })
     }
-    .onComplete {
-      case Success(_) =>
-        println("Done")
-      case Failure(err) =>
-        println("FOOOOOOOOOOOOOOOOOO BAR")
-        println(err)
-        println(err.getStackTrace)
-    }
+    val frame = new PriceFrame
+
+//    applyScalaSwingListenerTo(frame.peer.getChartPanel, frame)
+
+    frame.size = new Dimension(1100, 600)
+    frame.visible = true
+  }
+
+  showFrame()
+  Thread.sleep(1000 * 100)
+
+//  frame.add("Chart", chart.peer)
+
+  var lastTradeSeqId = 0L
+  var closePrice = 0D
+  val nowMillis = System.currentTimeMillis()
+
+  // We'll consider every iteration of the book to be one millisecond.
+  // Take (END - START) millis items from the iterator.
+  var i = -1L
+
+//  val refPricesFlatMapBuf = new Array[Double](60000)
+//  val sourceIterator = OrderBookTap.simpleLadderSimulation(refPricesIt, 14 days)
+
+//  val sourceIterator = laddersIt.zip(refPricesIt)
+//    .take(END.toEpochMilli.toInt - START.toEpochMilli.toInt)
+
+
+  sealed trait ChartMode
+  case object Live extends ChartMode
+  case object Done extends ChartMode
+  case object Paused extends ChartMode
+
+  var currentMode: ChartMode = Live
+
+//  def stepForward(): Unit = {
+//    if (!sourceIterator.hasNext) {
+//      throw new RuntimeException("Cannot step forward on empty iterator")
+//    }
+//
+//    sourceIterator.next() match  {
+//      case (_, ladder, refPrice) =>
+//        i += 1
+//
+//        // Keep track of close price
+//        if (ladder.aggTradeSeqId > lastTradeSeqId) {
+//          lastTradeSeqId = ladder.aggTradeSeqId
+//          closePrice = ladder.matchPrices(ladder.matchCount - 1)
+//        }
+//
+//        // Add close price into dataset
+//        if (i > 0 && i % 60000 == 0) {
+//          prices.getSeries(0).add(
+//            timePeriod(Date.from(START.plusMillis(i))),
+//            closePrice
+//          )
+//
+//          prices.getSeries(1).add(
+//            timePeriod(Date.from(START.plusMillis(i))),
+//            refPrice
+//          )
+//
+//          spread.getSeries(0).add(
+//            timePeriod(Date.from(START.plusMillis(i))),
+//            refPrice - closePrice
+//          )
+//        }
+//
+//        if (i > 0 && i % 600000 == 0) {
+//  //        TableUtil.renderLadder(ladder, depthZoom = 1000)
+//        }
+//    }
+//  }
+
+  // Main loop
+//  while (true) {
+//    currentMode match {
+//      case Live =>
+//        if (sourceIterator.hasNext) stepForward()
+//        else currentMode = Done
+//
+//      case Paused =>
+//        Thread.sleep(50)
+//
+//      case Done =>
+//        Thread.sleep(50)
+//    }
+//  }
+
+//    .foreach
+
+//  simulatedPricePlot.setDataset(simPrices.toTimePeriodValuesCollection("Close Prices"))
+
+//    System.exit(0)
 
 //  val pp: List[(Date, Double)] = Await.result(TimeSeriesTap
 //    .prices(100, .5, .5, TimeRange.build(Instant.now, "now", "24h"), 1 minute)
@@ -78,8 +343,6 @@ object OrderBookScanner extends App {
 //    val (close, sma) = series.unzip
 //    val closeData = dates.zip(close)
 //    val smaData = dates.zip(sma)
-//
-//    val plot: CombinedDomainXYPlot = new CombinedDomainXYPlot(new DateAxis())
 //
 //    val rangeAxis = new NumberAxis()
 //    val renderer = new XYLineAndShapeRenderer(true, false)

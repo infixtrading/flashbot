@@ -58,7 +58,7 @@ class MarketMakerSpec extends FlatSpec with Matchers {
     implicit val system = ActorSystem(config.systemName, config.conf)
     implicit val mat = ActorMaterializer()
 
-    val engine = system.actorOf(TradingEngine.props("market-maker", config))
+    val engine = system.actorOf(TradingEngine.props("market-maker", config.noIngest))
     val client = new FlashbotClient(engine)
 
     val params = MarketMakerParams("coinbase/btc_usd", "candles_1m", "sma", 4, 10, .5, .2, 4, 2.0)
@@ -73,7 +73,7 @@ class MarketMakerSpec extends FlatSpec with Matchers {
     val equity = report.timeSeries("equity").close.toVector()
     (prices zip fairPrices zip equity).foreach(println)
 
-    report.trades.len shouldEqual 103
+    report.trades.length shouldEqual 103
 
     Await.ready(for {
       _ <- system.terminate()
@@ -87,7 +87,7 @@ class MarketMakerSpec extends FlatSpec with Matchers {
     implicit val system = ActorSystem(config.systemName, config.conf)
     implicit val mat = ActorMaterializer()
 
-    val engine = system.actorOf(TradingEngine.props("market-maker", config))
+    val engine = system.actorOf(TradingEngine.props("market-maker", config.noIngest))
     val client = new FlashbotClient(engine)
 
     // Estimate mean reverting time series with a sin wave.
@@ -97,7 +97,7 @@ class MarketMakerSpec extends FlatSpec with Matchers {
     // 6 * 50 hours in time range.
     val candles = Source((0 to (360 * 6 * 50)).map(i =>
         (Instant.EPOCH.plusSeconds(i * 20), math.sin(math.toRadians(i)) * 10 + 100)))
-      .via(TimeSeriesTap.aggregatePrices(1 hour))
+      .via(PriceTap.aggregatePricesFlow(1 hour))
       .zipWithIndex
       .map { case (c, i) => BaseMarketData(c, "coinbase/btc_usd/candles_1h", c.micros, 1, i) }
 
@@ -115,7 +115,7 @@ class MarketMakerSpec extends FlatSpec with Matchers {
     val equity = report.timeSeries("equity").close.toVector
     (prices zip fairPrices zip equity).foreach(println)
 
-    println("# trades: ", report.trades.len)
+    println("# trades: ", report.trades.length)
 
     equity.last > 4000 shouldBe true
 
@@ -131,7 +131,7 @@ class MarketMakerSpec extends FlatSpec with Matchers {
     implicit val system = ActorSystem(config.systemName, config.conf)
     implicit val mat = ActorMaterializer()
 
-    val engine = system.actorOf(TradingEngine.props("market-maker", config))
+    val engine = system.actorOf(TradingEngine.props("market-maker", config.noIngest))
     val client = new FlashbotClient(engine)
 
     val trades = (0 to 30).map(i => {

@@ -46,7 +46,7 @@ class EmptyStrat extends Strategy[EmptyParams] with TimeSeriesMixin {
         val newPath = selection.path.withType(CandlesType(1.minute))
         super.resolveMarketData(selection.copy(path = newPath), dataServer, dataOverrides)
           .map(_.map(_.data)
-            .via(TimeSeriesTap.aggregateCandles(d))
+            .via(PriceTap.aggregateCandlesFlow(d))
             .zipWithIndex
             .map { case (candle, i) =>
                 BaseMarketData(candle.asInstanceOf[T], selection.path, candle.micros, 1, i)

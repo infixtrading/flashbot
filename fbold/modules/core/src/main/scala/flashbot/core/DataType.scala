@@ -33,6 +33,9 @@ object DataType {
       DeltaFmt.defaultFmtJson[Trade]("trades").asInstanceOf[DeltaFmtJson[S]]
 
     override def toString = "trades"
+
+    override def ordering[S >: Trade]: Ordering[S] =
+      Ordering.by[Trade, Long](_.micros).asInstanceOf[Ordering[S]]
   }
   case object TickersType extends DataType[Ticker] {
     override def fmtJson[S >: Ticker] = ???

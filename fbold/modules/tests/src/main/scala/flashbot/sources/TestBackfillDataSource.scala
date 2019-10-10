@@ -1,16 +1,21 @@
 package flashbot.sources
 
+import java.time.Instant
+
 import akka.NotUsed
 import akka.actor.ActorContext
+import akka.actor.Status.Success
 import akka.stream.ActorMaterializer
 import akka.stream.scaladsl.Source
 import flashbot.core.DataType.TradesType
 import flashbot.core._
 import flashbot.models.Order._
+import flashbot.models.TimeRange
 
 import scala.collection.immutable
 import scala.concurrent.Future
 import scala.concurrent.duration._
+import scala.Predef._
 import scala.language.postfixOps
 
 object TestBackfillDataSource {
@@ -61,6 +66,7 @@ class TestBackfillDataSourceA extends DataSource {
       if (isDone) None else Some((page.last.id, 20 millis)))
     )
   }
+
   override protected[flashbot] def backfillTickRate: Int = TestBackfillDataSource.backfillRate
 }
 
@@ -127,6 +133,33 @@ class TestBackfillDataSourceC extends DataSource {
   }
 
   override protected[flashbot] def backfillTickRate: Int = TestBackfillDataSource.backfillRate
+}
+
+// This resembles the Coinbase DataSource implementation
+class CandleAggregationDataSource extends flashbot.core.DataSource {
+
+  // Build reference prices, every second, 30 days back. This price series will guide
+  // the generation of the backfill and ingest data.
+  private val timeRange = TimeRange.build(Instant.ofEpochMilli(1567125714931L), "30d", "now")
+  private val refPrices = PriceTap.iterator(10000, .00005, .08, timeRange, 1 second).toSeq
+  val (backfillRefs, ingestRefs) = refPrices.splitAt(refPrices.size)
+
+  // To generate the backfill data, we simply aggregate the per-second prices into 1m candles
+  // using two methods separately: 1. aggregate into Flashbot Candles, 2. via TA4J TimeSeries.
+  // Make sure that both resulting candle sequences are identical.
+
+
+  override def ingest[T](topic: String, datatype: DataType[T])
+                        (implicit ctx: ActorContext, mat: ActorMaterializer)
+    : Future[Source[(Long, T), NotUsed]] = {
+    ???
+  }
+
+  override def backfillPage[T](topic: String, datatype: DataType[T], cursor: Option[String])
+                              (implicit ctx: ActorContext, mat:ActorMaterializer)
+    : Future[(Vector[(Long, T)], Option[(Predef.String, FiniteDuration)])] = {
+    ???
+  }
 }
 
 

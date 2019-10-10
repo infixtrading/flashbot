@@ -76,7 +76,7 @@ class TradingEngineSpec extends WordSpecLike
       implicit val config = FlashbotConfig.load()
       val system = ActorSystem(config.systemName, config.conf)
 
-      val engine = system.actorOf(TradingEngine.props("test-engine"))
+      val engine = system.actorOf(TradingEngine.props("test-engine", disableIngest = true))
       val fb = new FlashbotClient(engine)
 
       // Configure bot with 2 second TTL
@@ -126,7 +126,7 @@ class TradingEngineSpec extends WordSpecLike
       implicit val config = FlashbotConfig.load()
       implicit val system = ActorSystem(config.systemName, config.conf)
 
-      val engine = system.actorOf(TradingEngine.props("test-engine"))
+      val engine = system.actorOf(TradingEngine.props("test-engine", disableIngest = true))
       val fb = new FlashbotClient(engine)
       implicit val mat = ActorMaterializer()
 
@@ -178,7 +178,7 @@ class TradingEngineSpec extends WordSpecLike
       ))
 
       implicit val system = ActorSystem(config.systemName, config.conf)
-      val engine = system.actorOf(TradingEngine.props("engine", config))
+      val engine = system.actorOf(TradingEngine.props("engine", config.noIngest))
       val fb = new FlashbotClient(engine)
       fb.botStatus("scanner1") shouldBe Running
       fb.botStatus("scanner2") shouldBe Disabled

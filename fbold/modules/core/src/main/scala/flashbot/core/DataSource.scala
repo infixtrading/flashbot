@@ -3,15 +3,15 @@ package flashbot.core
 import akka.NotUsed
 import akka.actor.ActorContext
 import akka.stream.ActorMaterializer
-import akka.stream.scaladsl.Source
-import flashbot.core.DataSource._
+import akka.stream.scaladsl._
+import flashbot.core.DataSource.{IngestOne, IngestSchedule}
 import flashbot.core.FlashbotConfig.ExchangeConfig
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.language.postfixOps
 
-abstract class DataSource {
+class DataSource {
 
   /**
     * All available topics for this data source.
@@ -82,9 +82,12 @@ object DataSource {
   sealed trait IngestSchedule {
     def delay: Duration
   }
-  final case class IngestGroup(topics: Set[String], delay: Duration) extends IngestSchedule
-  final case class IngestOne(topic: String, delay: Duration) extends IngestSchedule
 
-  case class Bundle(id: Long, fromMicros: Long, toMicros: Long)
+  case class IngestGroup(topics: Set[String], delay: Duration) extends IngestSchedule
+  case class IngestOne(topic: String, delay: Duration) extends IngestSchedule
+
+  class Foo extends DataSource {
+  }
+
 }
 

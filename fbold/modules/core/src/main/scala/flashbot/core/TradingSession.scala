@@ -1,6 +1,7 @@
 package flashbot.core
 
 import java.util
+
 import akka.{Done, NotUsed}
 import akka.actor.{ActorRef, Cancellable, Scheduler}
 import akka.event.LoggingAdapter
@@ -12,6 +13,7 @@ import flashbot.core.TradingSession.{DataStream, SessionSetup}
 import flashbot.models._
 import flashbot.server.{ServerMetrics, Simulator}
 import flashbot.util._
+import flashbot.util.time.FlashbotTimeout
 import io.circe.Json
 import io.circe.syntax._
 
@@ -42,9 +44,10 @@ class TradingSession(val strategyKey: String,
   // report that this session will be using as state.
 
   protected[flashbot] val prices: PriceIndex = new JPriceIndex(GraphConversions)
-  lazy val instruments: InstrumentIndex = load.value.get.get.instruments
-  lazy val exchanges: Map[String, Exchange] = load.value.get.get.exchanges
-  private lazy val dataStreams: Seq[Source[MarketData[_], NotUsed]] = load.value.get.get.streams
+  private lazy val sessionSetup = Await.result(load, FlashbotTimeout.default.duration)
+  lazy val instruments: InstrumentIndex = sessionSetup.instruments
+  lazy val exchanges: Map[String, Exchange] = sessionSetup.exchanges
+  private lazy val dataStreams: Seq[Source[MarketData[_], NotUsed]] = sessionSetup.streams
 
   // Only backtests have an event loop.
   private val eventLoop: Option[EventLoop] =

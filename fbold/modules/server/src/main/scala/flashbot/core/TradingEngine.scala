@@ -424,13 +424,15 @@ class TradingEngine(engineId: String,
           }
 
           def viaDataServer(req: DataStreamReq[Candle],
-                            interval: Duration): Future[Map[String, Vector[Candle]]] = for {
+                            interval: FiniteDuration): Future[Map[String, CandleFrame]] = for {
             rsp <- (dataServer ? req).mapTo[StreamResponse[MarketData[Candle]]]
-            candlesMD <- rsp.toSource.map(_.data)
-              .via(TimeSeriesTap.aggregateCandles(interval)).runWith(Sink.seq)
+            candlesMD: immutable.Seq[Candle] <- rsp.toSource
+              .map(_.data)
+              .via(PriceTap.aggregateCandlesFlow(interval))
+              .runWith(Sink.seq)
             path = req.selection.path
             key = List(path.source, path.topic).mkString(".")
-          } yield Map(key -> candlesMD.toVector)
+          } yield Map(key -> CandleFrame(candlesMD))
 
           query match {
             // Price queries may be served by the data server directly if candle data exists
@@ -757,11 +759,14 @@ class TradingEngine(engineId: String,
 
 object TradingEngine {
 
-  def props(name: String): Props = props(name, FlashbotConfig.load())
+  def props(name: String, disableIngest: Boolean = false): Props = props(name,
+    if (disableIngest) FlashbotConfig.load().noIngest
+    else FlashbotConfig.load()
+  )
 
   def props(name: String, config: FlashbotConfig): Props =
     Props(new TradingEngine(name, config.strategies, config.exchanges,
-      config.bots, Right(DataServer.props(config.noIngest)), config.grafana))
+      config.bots, Right(DataServer.props(config)), config.grafana))
 
   def props(name: String, config: FlashbotConfig, dataServer: ActorRef): Props =
     Props(new TradingEngine(name, config.strategies, config.exchanges,

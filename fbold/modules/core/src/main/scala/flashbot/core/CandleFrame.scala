@@ -10,17 +10,17 @@ import spire.syntax.cfor._
   * Efficiently stores time series of candles.
   */
 @JsonCodec
-case class CandleFrame(time: debox.Buffer[Long] = debox.Buffer[Long](),
-                       open: Buffer[Double] = debox.Buffer[Double](),
-                       high: Buffer[Double] = debox.Buffer[Double](),
-                       low: Buffer[Double] = debox.Buffer[Double](),
-                       close: Buffer[Double] = debox.Buffer[Double](),
-                       volume: Buffer[Double] = debox.Buffer[Double]()) {
+case class CandleFrame(time: debox.Buffer[Long] = debox.Buffer.empty[Long],
+                       open: Buffer[Double] = debox.Buffer.empty[Double],
+                       high: Buffer[Double] = debox.Buffer.empty[Double],
+                       low: Buffer[Double] = debox.Buffer.empty[Double],
+                       close: Buffer[Double] = debox.Buffer.empty[Double],
+                       volume: Buffer[Double] = debox.Buffer.empty[Double]) {
 
-  def size: Int = time.len
+  def size: Int = time.length
 
   def put(candle: Candle): Unit = {
-    if (time.nonEmpty && candle.micros < time(size - 1))
+    if (time.nonEmpty.&&(candle.micros < time(size - 1)))
       throw new RuntimeException(s"Outdated candle: $candle")
 
     // If it's the same time period, the new candle overwrites the last one.
@@ -64,4 +64,12 @@ case class CandleFrame(time: debox.Buffer[Long] = debox.Buffer[Long](),
 
 object CandleFrame {
   def empty = new CandleFrame()
+
+  def apply(coll: Seq[Candle]): CandleFrame = {
+    val frame = new CandleFrame()
+    coll.foreach((x: Candle) =>
+      frame.put(x)
+    )
+    frame
+  }
 }

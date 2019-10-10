@@ -4,7 +4,7 @@ import java.time.Instant
 
 import akka.NotUsed
 import akka.actor.{ActorContext, ActorPath, ActorRef, ActorRefFactory, ActorSystem, RootActorPath}
-import akka.stream.scaladsl.{Flow, Source}
+import akka.stream.scaladsl.{Flow, Sink, Source}
 import akka.stream.{ActorMaterializer, ActorMaterializerSettings, Supervision}
 import akka.util.Timeout
 import akka.pattern.ask
@@ -14,6 +14,7 @@ import flashbot.util.time.FlashbotTimeout
 
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
+//import scala.concurrent.ExecutionContext.Implicits.global
 import scala.language.postfixOps
 
 package object stream {
@@ -138,5 +139,13 @@ package object stream {
         (allowDupes || !isDupe) && (allowUnordered || !isUnordered)
       case _ => true
     } map (_._2)
+
+  def waitForFirstItem[T](source: Source[T, NotUsed])
+                                 (implicit ec: ExecutionContext,
+                                  mat: ActorMaterializer): Future[Source[T, NotUsed]] = for {
+    (head, restSrc) <- source.prefixAndTail(1).runWith(Sink.head)
+  } yield Source(head).concat(restSrc)
+
+
 
 }

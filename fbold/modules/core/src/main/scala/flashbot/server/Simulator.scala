@@ -281,7 +281,7 @@ class Simulator(base: Exchange, ctx: TradingSession, latencyMicros: Long = 0) ex
         val ladder = depths.get(product.symbol)
         val direction = if (side == Buy) Up else Down
         if (ladder != null) {
-          val excess = NumberUtils.round8(ladder.ladderSideForTaker(side).totalSize - size)
+          val excess = NumberUtils.round8(ladder.ladderSideForTaker(side).totalQty - size)
           if (excess < 0) {
             // Order size exceeded liquidity. Surface this as a fill or kill error
             RequestError(OrderRejectedError(req, FillOrKillConstraint))

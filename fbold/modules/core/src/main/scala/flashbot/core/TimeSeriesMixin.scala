@@ -6,6 +6,7 @@ import flashbot.core.ReportEvent.{CandleAdd, CandleUpdate}
 import flashbot.models.{Candle, Market}
 import flashbot.server.ServerMetrics
 import flashbot.util.time._
+import flashbot.util.timeseries.Implicits._
 import org.ta4j.core.indicators.AbstractIndicator
 import org.ta4j.core.{Bar, BaseBar, BaseTimeSeries, TimeSeries}
 import org.ta4j.core.indicators.helpers.ClosePriceIndicator
@@ -28,17 +29,6 @@ trait TimeSeriesMixin extends DataHandler { self: Strategy[_] =>
   def getPrice(market: Market): Double = valueOf(closePrices(market)).doubleValue()
 
   private def getGlobalIndex(micros: Long): Long = micros / (barSize.toMillis * 1000)
-
-  def barToCandle(bar: Bar): Candle = {
-    val micros = bar.getBeginTime.toInstant.toEpochMilli * 1000
-    Candle(micros,
-      bar.getOpenPrice.getDelegate.doubleValue(),
-      bar.getMaxPrice.getDelegate.doubleValue(),
-      bar.getMinPrice.getDelegate.doubleValue(),
-      bar.getClosePrice.getDelegate.doubleValue(),
-      bar.getVolume.getDelegate.doubleValue()
-    )
-  }
 
   def recordTimeSeries(key: String, micros: Long, value: Double)
                       (implicit ctx: TradingSession): Unit =
@@ -101,9 +91,9 @@ trait TimeSeriesMixin extends DataHandler { self: Strategy[_] =>
     // Update the report
     if (addedBars > 0)
       (1 to addedBars).map(_ - 1).reverse.map(i =>
-          CandleAdd(key, barToCandle(series.getBar(series.getEndIndex - i))))
+          CandleAdd(key, series.getBar(series.getEndIndex - i).candle))
         .foreach(ctx.emitReportEvent(_))
-    else ctx.emitReportEvent(CandleUpdate(key, barToCandle(series.getLastBar)))
+    else ctx.emitReportEvent(CandleUpdate(key, series.getLastBar.candle))
 
     timer.close()
   }

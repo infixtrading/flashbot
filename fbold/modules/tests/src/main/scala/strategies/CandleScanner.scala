@@ -34,9 +34,9 @@ class CandleScanner extends Strategy[CandleScannerParams] {
                                     dataOverrides: Seq[DataOverride[Any]])
                                    (implicit mat: Materializer, ec: ExecutionContext)
       : Future[Source[MarketData[T], NotUsed]] = {
-    Future.successful(TimeSeriesTap
-      .prices(1 day)
-      .via(TimeSeriesTap.aggregatePrices(1 day))
+    Future.successful(PriceTap
+      .akkaStream(1 day)
+      .via(PriceTap.aggregatePricesFlow(1 day))
       .throttle(1, 200 millis)
       .zipWithIndex
       .map {

@@ -10,6 +10,8 @@ import akka.util.Timeout
 import com.typesafe.config.ConfigFactory
 import flashbot.core.FlashbotConfig.{DataSourceConfig, IngestConfig}
 import flashbot.core._
+import flashbot.core.DataSource
+import flashbot.core.DataSource._
 import flashbot.models.{DataSelection, DataStreamReq, Ladder}
 import org.scalatest.concurrent.{Eventually, IntegrationPatience}
 import org.scalatest.time.{Millis, Seconds, Span}
@@ -17,7 +19,7 @@ import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpecLike}
 import flashbot.sources.TestBackfillDataSource
 import util.TestDB
 
-import scala.concurrent.Await
+import scala.concurrent.{Await, Future}
 import scala.concurrent.duration._
 import scala.language.postfixOps
 
@@ -159,6 +161,12 @@ class DataServerSpec extends WordSpecLike with Matchers with Eventually {
       })
 
       Await.ready(TestDB.dropTestDB(), 10 seconds)
+    }
+
+    "aggregate various data types, live and historical, into a continuous dataset of candles" in {
+      // Specifically, we're testing the Coinbase DataSource here, which backfills 1m candles
+      // straight from the exchange, but uses live trades to build the candles ingest stream.
+      // Should handle volume correctly as well.
     }
   }
 }

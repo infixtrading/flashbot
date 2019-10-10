@@ -249,13 +249,17 @@ class CoinbaseMarketDataSource extends DataSource {
           }
         }
 
-      case CandlesType(d) if d == 1.minute =>
-        responsePromise.completeWith(ingestGroup(topics, TradesType).map(_.map {
-          case (topic, src) =>
-            topic -> src.map(_._2).map(t => (t.instant, t.price, t.size))
-              .via(TimeSeriesTap.aggregateTrades(d).map(c => (c.micros, c.asInstanceOf[T])))
-              .drop(1)
-        }))
+      case CandlesType(d: FiniteDuration) if d == 1.minute =>
+        responsePromise.completeWith(for {
+          srcMap <- ingestGroup(topics, TradesType).map(_.map {
+            case (topic, src) =>
+              topic -> src.map(_._2)
+                .map(t => (t.instant, t.price, t.size))
+                .via(PriceTap.aggregateTradesFlow(d).map(c => (c.micros, c.asInstanceOf[T])))
+          })
+          (keys, sources) = srcMap.toSeq.unzip
+          delayedSources <- Future.sequence(sources.map(waitForFirstItem))
+        } yield keys.zip(delayedSources).toMap)
     }
 
     responsePromise.future

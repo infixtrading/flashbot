@@ -18,6 +18,7 @@ import flashbot.core.FlashbotConfig.{DataSourceConfig, ExchangeConfig, IngestCon
 import flashbot.core.{DataType, DeltaFmt, DeltaFmtJson, MarketData}
 import flashbot.models.{DataPath, StreamLiveData}
 import io.circe.Printer
+import slick.jdbc.TransactionIsolation
 
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
@@ -256,9 +257,8 @@ class DataSourceActor(session: SlickSession,
                           // Group items and batch insert into database.
                           .groupedWithin(1000, 1000 millis)
                           .mapAsync(10) { states: Seq[ScanState] =>
-
                             for {
-                              (a, b, d) <- session.db.run((for {
+                              (a, b, ds, dd) <- session.db.run((for {
                                 // Save the deltas
                                 a <- Deltas ++= states.filter(_.delta.isDefined)
                                   .map(state => DeltaRow(0, ingestBundleId, state.seqId, state.micros,
@@ -269,13 +269,19 @@ class DataSourceActor(session: SlickSession,
                                   SnapshotRow(0, ingestBundleId, state.seqId, state.micros,
                                     fmt.modelEn(state.item).pretty(Printer.noSpaces), None)
                                 })
-                                // Delete snapshots from the future. Backfill related edge case.
-                                d <- Snapshots
+                                // Delete snapshots and deltas from the future. Backfill related edge case.
+                                ds <- Snapshots
                                   .filter(_.bundle === backfillBundleId)
                                   .filter(_.micros >= states.headOption.map(_.micros))
                                   .delete
-                              } yield (a, b, d)).transactionally)
+                                dd <- Deltas
+                                  .filter(_.bundle === backfillBundleId)
+                                  .filter(_.micros >= states.headOption.map(_.micros))
+                                  .delete
+                              } yield (a, b, ds, dd)).transactionally)
+
                               _ = log.debug("Saved {} deltas and {} snapshots for {}", a, b, path)
+                              _ = log.debug("Deleted {} deltas and {} snapshots for {}", dd, ds, path)
                             } yield states.last.seqId
                           }
                           // Clear ingested items from buffer.
