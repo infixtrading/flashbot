@@ -1,5 +1,6 @@
 *.iml
 target/
+lib/
 .idea/
 .idea_modules/
 .DS_STORE
