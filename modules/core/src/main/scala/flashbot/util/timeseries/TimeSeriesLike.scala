@@ -1,43 +1,79 @@
 package flashbot.util.timeseries
 
+import flashbot.util.time._
+import java.time.{Duration, Instant}
+
+import flashbot.core.Timestamped.HasTime
 import org.ta4j.core.{Bar, BaseTimeSeries, TimeSeries}
 
+import scala.collection.AbstractIterator
 import scala.collection.mutable.ArrayBuffer
-import flashbot.util.timeseries._
-import flashbot.util.timeseries.Implicits._
 
-/**
- * Simple type class to put things like builders for time series collections.
- */
-trait TimeSeriesLike[A] {
-  type Repr <: Iterable[A]
-  def fromIterable(it: Iterable[A]): Repr
-  def empty(name: String): Repr
+abstract class TimeSeriesLike[A: HasTime](private val it: Iterator[A], val interval: Duration)
+    extends AbstractIterator[A] {
+
+  type C
+  val elems: C
+
+  protected def insert(item: A): Unit
+
+  private var callbacks = List.empty[A => Unit]
+
+  def onUpdate(fn: A => Unit): this.type = {
+    callbacks = fn :: callbacks
+    this
+  }
+
+  protected[flashbot] def notify(update: A) = {
+    callbacks.foreach(_.apply(update))
+  }
+
+  private var firstSeenMicros: Long = -1
+  private def seqIndexOfMicros(micros: Long): Int = {
+    assert(firstSeenMicros > 0)
+    (interval.timeStepIndexOfMicros(micros) - interval.timeStepIndexOfMicros(firstSeenMicros)).toInt
+  }
+
+  def apply(i: Int): A = get(i).get
+  def get(i: Int): Option[A]
+
+  def atMicros(micros: Long): A = apply(seqIndexOfMicros(micros))
+  def getAtMicros(micros: Long): Option[A] = get(seqIndexOfMicros(micros))
+
+  def apply(instant: Instant): A = atMicros(instant.micros)
+  def get(instant: Instant): Option[A] = getAtMicros(instant.micros)
+
+  override def hasNext = it.hasNext
+  override def next() = it.next()
 }
 
-object TimeSeriesLike extends DefaultImplicits {
+trait TimeSeriesFactory[A] {
+  def fromTickingIterator(it: Iterator[A], interval: Duration): TimeSeriesLike[A]
+}
 
-  implicit object Ta4jCollectionType extends TimeSeriesLike[Bar] {
-    case class Repr(series: TimeSeries) extends Iterable[Bar] {
-      override def iterator = series.iterator
-    }
-    override def fromIterable(it: Iterable[Bar]) = {
-      val ts = empty("Time Series")
-      it.foreach(bar =>
-        ts.series.addBar(bar)
-//        ts.series.put(bar.candle)
-      )
-      ts
-    }
-    override def empty(name: String) = Repr(buildTimeSeries(name))
+object TimeSeriesFactory extends TimeSeriesLikeDefaultImplicits {
+
+  class Bars(it: Iterator[Bar], interval: Duration) extends TimeSeriesLike[Bar](it, interval) {
+    type C = TimeSeries
+    override val elems = buildTimeSeries("TS-Name")
+    override protected def insert(item: Bar): Unit = elems.addBar(item)
+    override def get(i: Int) = Option(elems.getBar(i))
+  }
+
+  object Bars extends TimeSeriesFactory[Bar] {
+    override def fromTickingIterator(it: Iterator[Bar], interval: Duration) = new Bars(it, interval)
   }
 }
 
-trait DefaultImplicits {
-  implicit def genericTimeSeriesLike[A]: TimeSeriesLike[A] = new TimeSeriesLike[A] {
-    override type Repr = ArrayBuffer[A]
-    override def fromIterable(it: Iterable[A]) = empty("") ++ it
-    override def empty(name: String) = new ArrayBuffer[A]()
-  }
+trait TimeSeriesLikeDefaultImplicits {
+  implicit def genericTimeSeriesLike[A]: TimeSeriesFactory[A] = ???
 }
+
+
+trait TimeSeriesWorkspace {
+}
+
+object MyWorkspace extends TimeSeriesWorkspace {
+}
+
 

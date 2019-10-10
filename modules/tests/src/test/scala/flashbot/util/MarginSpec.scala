@@ -25,7 +25,7 @@ class MarginSpec extends FlatSpec with Matchers {
   def round(d: Double): Double = BigDecimal.valueOf(d)
     .setScale(6, BigDecimal.RoundingMode.HALF_UP).rounded.doubleValue()
 
-  "MarginSpec" should "calculate order margin" in {
+  "Margin" should "calculate order margin" in {
 
     _calcOrderMargin(25, Seq(
       (75, 0.0086), (-20, 0.0030), (50, 0.0060),

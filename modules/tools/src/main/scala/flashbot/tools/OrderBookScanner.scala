@@ -125,8 +125,8 @@ object OrderBookScanner extends App {
 
   // Coinbase price
   val cbRenderer = new XYLineAndShapeRenderer(true, false)
-  cbRenderer.setPaint(Color.YELLOW)
-  cbRenderer.setStroke(new BasicStroke(.5f))
+//  cbRenderer.setPaint(Color.YELLOW)
+//  cbRenderer.setStroke(new BasicStroke(.5f))
   pricePlot.setDataset(0, ToXYDataset[TimePeriodValues].convert(coinbasePrices.toTimePeriodValues("Coinbase prices")))
   pricePlot.setRenderer(0, cbRenderer)
   pricePlot.mapDatasetToRangeAxis(0, 0)
@@ -135,7 +135,7 @@ object OrderBookScanner extends App {
   volRangeAxis.setAutoRangeStickyZero(true)
   volRangeAxis.setAutoRangeIncludesZero(true)
   val volRenderer = new XYBarRenderer()
-  volRenderer.setPaint(Color.YELLOW)
+//  volRenderer.setPaint(Color.YELLOW)
   pricePlot.setDataset(1, ToXYDataset[TimePeriodValues].convert(coinbaseVols.toTimePeriodValues("Coinbase Volume")))
   pricePlot.setRenderer(1, volRenderer)
   pricePlot.setRangeAxis(1, volRangeAxis)
@@ -147,8 +147,8 @@ object OrderBookScanner extends App {
   prices.addSeries(brownianPrices.toTimePeriodValues("Simulated brownian prices"))
   val refPricesIt = brownianPrices.iterator
   val brownianrenderer = new XYLineAndShapeRenderer(true, false)
-  brownianrenderer.setStroke(new BasicStroke(.5f))
-  brownianrenderer.setPaint(Color.WHITE)
+//  brownianrenderer.setStroke(new BasicStroke(.5f))
+//  brownianrenderer.setPaint(Color.WHITE)
   pricePlot.setDataset(2, ToXYDataset[TimePeriodValues].convert(brownianPrices.toTimePeriodValues("Brownian prices")))
   pricePlot.setRenderer(2, brownianrenderer)
   pricePlot.mapDatasetToRangeAxis(2, 0)
@@ -178,8 +178,8 @@ object OrderBookScanner extends App {
   smaAxis.setAutoRange(true)
 
   smaPlot.setRangeAxes(List(smaAxis).toArray)
-  smaRenderer.setStroke(new BasicStroke(.5f))
-  smaRenderer.setPaint(Color.GREEN)
+//  smaRenderer.setStroke(new BasicStroke(.5f))
+//  smaRenderer.setPaint(Color.GREEN)
 
   smaPlot.setDataset(0, ToXYDataset[TimePeriodValues].convert(closePriceArray.toTimePeriodValues("Close prices / SMA")))
   smaPlot.setRenderer(0, smaRenderer)

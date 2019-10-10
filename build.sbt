@@ -12,6 +12,7 @@ import scala.xml.transform.{ RewriteRule, RuleTransformer }
   */
 
 lazy val scala212 = "2.12.8"
+lazy val scala213 = "2.13.0"
 
 organization in ThisBuild := "com.infixtrading"
 parallelExecution in ThisBuild := false
@@ -55,6 +56,10 @@ lazy val jsonDeps = List(
   "io.circe" %% "circe-literal",
   "io.circe" %% "circe-generic-extras",
 ).map(_ % fbCirceVersion)
+
+lazy val compatDeps = List(
+  "org.scala-lang.modules" %% "scala-collection-compat" % "2.1.2" % Compile
+)
 
 lazy val dataStores = List(
   "net.openhft" % "chronicle-queue" % "5.17.1",
@@ -149,8 +154,8 @@ lazy val baseSettings = Seq(
   unmanagedClasspath in Compile ++= update.value.select(configurationFilter(CompileTime.name)),
   unmanagedClasspath in Test ++= update.value.select(configurationFilter(CompileTime.name)),
 
-  libraryDependencies ++= (jsonDeps ++ utilDeps),
-  crossScalaVersions := List(scalaVersion.value)
+  libraryDependencies ++= (jsonDeps ++ utilDeps ++ compatDeps),
+  crossScalaVersions := List(scala212)
 ) ++ macroSettings
 
 lazy val allFBSettings = baseSettings ++ publishSettings
@@ -182,6 +187,14 @@ def flashbotModule(path: String, mima: Option[String]): Project = {
   Project(id, file(s"modules/$path"))
     .configure(flashbotProject(path))
     .settings(mimaPreviousArtifacts := mima.map("com.infixtrading" %% moduleName.value % _).toSet)
+}
+
+def standaloneModule(path: String, mima: Option[String]): Project = {
+  val id = path.split("-").reduce(_ + _.capitalize)
+  Project(id, file(s"modules/$path"))
+//    .configure(flashbotProject(path))
+//    .settings(mimaPreviousArtifacts := mima.map("com.infixtrading" %% moduleName.value % _).toSet
+//    )
 }
 
 lazy val docSettings = allFBSettings ++ Seq(
@@ -255,7 +268,7 @@ lazy val docSettings = allFBSettings ++ Seq(
 //lazy val jvmModules = Seq[Project](server, client, testing)
 //lazy val fbDocsModules = Seq[Project](docs)
 
-lazy val jvmProjects: Seq[Project] = Seq[Project](server, testing, tests)
+lazy val jvmProjects: Seq[Project] = Seq[Project](server, testing, tests, tools)
 
 //lazy val jsProjects: Seq[Project] =
 //  (crossModules.map(_._2) ++ jsModules)
@@ -392,7 +405,9 @@ lazy val core = flashbotModule("core", previousFBVersion).settings(
     
     // For Java support
     "com.fasterxml.jackson.core" % "jackson-core" % "2.9.8",
-    "com.kjetland" %% "mbknor-jackson-jsonschema" % "1.0.32"
+    "com.kjetland" %% "mbknor-jackson-jsonschema" % "1.0.32",
+
+    "com.lihaoyi" %% "pprint" % "0.5.5"
   ))
 )
 //lazy val coreJS = coreBase.js
@@ -413,10 +428,32 @@ lazy val server = flashbotModule("server", previousFBVersion).settings(
 lazy val tools = flashbotModule("tools", previousFBVersion)
   .settings(
     // Charting
-    libraryDependencies ++= Seq("de.sciss" %% "scala-chart" % "0.6.0")
+    libraryDependencies ++= Seq(
+      "de.sciss" %% "scala-chart" % "0.7.1",
+      "org.scalafx" %% "scalafx" % "12.0.1-R17",
+      "org.jfree" % "jfreechart" % "1.5.0",
+      "org.jfree" % "jfreechart-fx" % "1.0.1",
+      "org.gerweck.scalafx" %% "scalafx-utils" % "0.14.0"
+    )
   )
   .aggregate(core, server)
   .dependsOn(core, server)
+
+
+//lazy val toolsnew = standaloneModule("toolsnew", previousFBVersion)
+//  .settings(
+//    scalaVersion := scala213,
+//    crossScalaVersions := List(scala212, scala213),
+//    crossPaths := false,
+////    autoScalaLibrary := false,
+//    libraryDependencies ++= Seq(
+//      "org.jfree" % "jfreechart" % "1.5.0",
+//      "org.jfree" % "jfreechart-fx" % "1.0.1",
+//      "de.sciss" %% "scala-chart" % "0.7.1",
+//      "org.scalafx" % "scalafx_2.12" % "12.0.1-R17"
+//    )
+//  )
+
 
 //lazy val scalajs = flashbotModule("scalajs", None).enablePlugins(ScalaJSPlugin).dependsOn(coreJS)
 

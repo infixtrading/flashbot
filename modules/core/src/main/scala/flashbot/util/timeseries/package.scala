@@ -5,6 +5,7 @@ import java.time.{Instant, ZoneId, ZoneOffset}
 import java.util.function
 
 import cats.{Foldable, Monoid}
+import com.fasterxml.jackson.databind.`type`.CollectionType
 import flashbot.core.Timestamped.HasTime
 import flashbot.models.Candle
 import org.ta4j.core.{Bar, BaseBar, BaseTimeSeries, Indicator, TimeSeries}
@@ -13,9 +14,9 @@ import org.ta4j.core.num.{DoubleNum, Num}
 import flashbot.util.time._
 import flashbot.util.timeseries.Implicits._
 import flashbot.util.timeseries.Scannable
-import flashbot.util.timeseries.Scannable.BaseScannable.ScannableItem
+import flashbot.util.timeseries.Scannable.BaseScannable.ScannableInto
 
-import scala.collection.{GenIterable, IterableLike, mutable}
+import scala.collection.{AbstractIterator, GenIterable, IterableLike, mutable}
 import scala.collection.mutable.ArrayBuffer
 import scala.concurrent.duration._
 import scala.language.postfixOps
@@ -272,9 +273,22 @@ package object timeseries {
     series
   }
 
-  def scan [I:HasTime, C:HasTime]
-  (items: Iterable[I], timeStep: java.time.Duration, dropFirst: Boolean = true, dropLast: Boolean = false)
-  (implicit scanner: ScannableItem[I, C], CollectionType: TimeSeriesLike[C]): CollectionType.Repr = {
+  def scan[I:HasTime, C:HasTime](items: Iterable[I],
+                                 timeStep: java.time.Duration,
+                                 dropFirst: Boolean = true,
+                                 dropLast: Boolean = false)
+                                (implicit scanner: ScannableInto[I, C],
+                                 CollectionType: TimeSeriesFactory[C]): TimeSeriesLike[C] =
+    scanVia(items, timeStep, CollectionType, dropFirst, dropLast)
+
+  def scanVia[I:HasTime, C:HasTime](itemsI: Iterable[I],
+                                                             timeStep: java.time.Duration,
+                                                             fact: TimeSeriesFactory[C],
+                                                             dropFirst: Boolean = true,
+                                                             dropLast: Boolean = false)
+                                                            (implicit scanner: ScannableInto[I, C]): TimeSeriesLike[C] = {
+
+    val items = itemsI.iterator
 
     def getItemMicros(item: I): Long = HasTime[I].micros(item)
     def candleIndex(item: I): Long = timeStep.timeStepIndexOfMicros(getItemMicros(item))
@@ -283,7 +297,7 @@ package object timeseries {
     // That will happen at the time of scanning.
     val groupIterator = new Iterator[(Long, Iterator[I])] {
       var nextGroup: Iterator[I] = _
-      var rest: Iterator[I] = items.iterator
+      var rest: Iterator[I] = items
       var bothSubGroupsNonEmpty: Boolean = _
 
       private def split(): Long = {
@@ -314,30 +328,188 @@ package object timeseries {
       }
     }.drop(if (dropFirst) 1 else 0)
 
-    val candleIterator = groupIterator
-      .scanLeft[Option[(Long, C)]](None) {
-        // First group
-        case (None, (nextCandleIndex, nextItems)) =>
-          val initialCandle: C = scanner.empty(timeStep.toMicros * nextCandleIndex, timeStep, None)
-          val calcedCandle = nextItems.foldLeft[C](initialCandle)(scanner.fold)
-          Some((nextCandleIndex, calcedCandle))
+    val finalIt: Iterator[C] = new Iterator[C] {
+      var bufferedNext: Long = -1
+      var bufferedIt: Iterator[I] = null
 
-        // Next group. i.e. nextIndex = prevIndex + 1
-        case (Some((prevIndex, prevCandle)), (nextIndex, nextItems)) if prevIndex + 1 == nextIndex =>
-          val initialCandle: C = scanner.empty(timeStep.toMicros * nextIndex, timeStep, Some(prevCandle))
-          Some((nextIndex, nextItems.foldLeft[C](initialCandle)(scanner.fold)))
+      var lastIdx: Long = -1
+      var lastItem: Option[C] = None
 
-        // Detected missing time steps. Fill them in.
-        case (Some((prevIndex, prevCandle)), (nextIndex, _)) if prevIndex + 1 < nextIndex =>
-          val micros = timeStep.toMicros * (prevIndex + 1)
-          Some((prevIndex + 1, scanner.empty(micros, timeStep, Some(prevCandle))))
+      private def isCaughtUp: Boolean = lastIdx == bufferedNext && !bufferedIt.hasNext
 
-      }.drop(1).map(_.get._2)
+      private def fetchNextIt(): Unit = {
+        val x = groupIterator.next()
+        bufferedNext = x._1
+        bufferedIt = x._2
+      }
 
-    CollectionType.fromIterable(candleIterator.toIterable)
+      override def hasNext: Boolean = {
+        // Initialize by buffering the first iterator
+        if (bufferedIt == null) {
+          if (groupIterator.hasNext) {
+            fetchNextIt();
+          } else {
+            return false;
+          }
+        }
+
+        // If we have no more items to iterate on the current buffered it, get the next one.
+        else if (isCaughtUp) {
+          if (groupIterator.hasNext) {
+            fetchNextIt();
+          } else {
+            return false;
+          }
+        }
+
+        return true;
+      }
+
+      override def next() = {
+        if (lastIdx == -1) {
+          val item = bufferedIt.next()
+          val init = scanner.empty(timeStep.toMicros * bufferedNext, timeStep, None)
+          lastItem = Some(scanner.fold(init, item))
+          lastIdx = bufferedNext
+        } else {
+          val timeStepLag = bufferedNext - lastIdx
+          if (timeStepLag == 0) {
+            lastItem = lastItem.map(c => scanner.fold(c, bufferedIt.next()))
+          } else if (timeStepLag == 1) {
+            val item = bufferedIt.next()
+            val init = scanner.empty(timeStep.toMicros * bufferedNext, timeStep, lastItem)
+            lastItem = Some(scanner.fold(init, item))
+            lastIdx = bufferedNext
+          } else {
+            lastItem = Some(scanner.empty(timeStep.toMicros * (lastIdx + 1), timeStep, lastItem))
+            lastIdx = lastIdx + 1
+          }
+        }
+
+        lastItem.get
+      }
+    }
+
+    fact.fromTickingIterator(finalIt, timeStep)
+
+
+//    var candleIterator = null
+//
+//    lazy val ret = fact.fromTickingIterator(candleIterator, timeStep)
+//
+//    def updatingFold(fn: (C, I) => C): (C, I) => C = (m, a) => {
+//      ret.notify(m)
+//      fn(m, a)
+//    }
+//
+//    def unfoldItems(init: Option[C], micros: Long, items: Iterator[I]) =
+//      items.scanLeft(scanner.empty(micros, timeStep, init)) {
+//        case (in, item) => scanner.fold(in, item)
+//      }
+//
+//    val evenlySpaced = unfoldIterator[
+//      Iterator[(Long, Option[C] => Iterator[C])],
+//      (Long, Iterator[(Long, Iterator[I])])
+//    ]((-1L, groupIterator))(
+//      memo => {
+//        val (prevIndex, gi) = memo
+//        if (gi.hasNext) {
+//          val (nextIndex, next) = gi.next()
+//          val realNextMicros = timeStep.toMicros * nextIndex
+//          val missingIndexCount = if (prevIndex == -1) 0 else nextIndex - (prevIndex + 1)
+//          val ret = (0L to missingIndexCount).reverse.map { i =>
+//            val fn = (lastCandle: Option[C]) =>
+//              unfoldItems(
+//                lastCandle,
+//                realNextMicros - i * timeStep.toMicros,
+//                if (i == 0) next else Iterator.empty
+//              )
+//            (nextIndex - i, fn)
+//          }.iterator
+//          Some((ret, (nextIndex, gi)))
+//        } else None
+//      }).flatten
+//
+////    evenlySpaced.foldLeft[Option[C]](None) {
+////      case (memo, (idx, fn2: ((Option[C]) => Iterator[C]))) => fn2(memo)
+////    }
+//
+//    val fooo: Iterator[(Int, Long, I)] = evenlySpaced.flatMap(x => x._1._2.map(y => (x._2, x._1._1, y)))
+//    fooo.scanLeft[Option[C]](None) {
+//      case (None, (i, idx, item)) =>
+//        val initialCandle: C = scanner.empty(timeStep.toMicros * idx, timeStep, None)
+//        val inner = nextItems.scanLeft[C](initialCandle)(updatingFold(scanner.fold))
+//        Some((nextCandleIndex, inner))
+//    }
+//
+//    var fooIt = unfoldIterator[C, (Option[C], Option[Iterator[C]], Iterator[Iterator[I]])]((None, None, evenlySpaced)) {
+//      case (_, _, its) if !its.hasNext => None
+//      case (None, None, its) =>
+//        val nextIt = its.next()
+////      case (None, Some(its)) if its.hasNext => Some
+//    }
+//
+//    //    unfoldIterator[Iterator[I], Iterator[(Long, Iterator[I])]](groupIterator) {
+//    //      gi: Iterator[(Long, Iterator[I])] =>
+//    //        if (gi.hasNext) {
+//    //          val (index, it) = gi.next()
+//    //          Some((it, gi))
+//    //        } else None
+//    //    }
+//
+//    candleIterator = groupIterator
+//      .scanLeft[Option[(Long, C)]](None) {
+//        // First group
+//        case (None, (nextCandleIndex, nextItems)) =>
+//          val initialCandle: C = scanner.empty(timeStep.toMicros * nextCandleIndex, timeStep, None)
+//          val inner = nextItems.scanLeft[C](initialCandle)(updatingFold(scanner.fold))
+//          Some((nextCandleIndex, inner))
+//
+//        // Next group. i.e. nextIndex = prevIndex + 1
+//        case (Some((prevIndex, prevCandles)), (nextIndex, nextItems)) if prevIndex + 1 == nextIndex =>
+//          val initialCandle: C = scanner.empty(timeStep.toMicros * nextIndex, timeStep, Some(prevCandles.last))
+//          prevCandles ++ nextItems
+//          Some((nextIndex, Seq(nextItems.foldLeft[C](initialCandle)(updatingFold(scanner.fold)))))
+//
+//        // Detected missing time steps. Fill them in.
+//        case (Some((prevIndex, prevCandles)), (nextIndex, nextItems)) if prevIndex + 1 < nextIndex =>
+//          val nextRealIndexMicros = timeStep.toMicros * nextIndex
+//          val missingIndexCount = nextIndex - (prevIndex + 1)
+//          var lastCandle = prevCandles.last
+//          val empties = (1L to missingIndexCount).reverse.map { i =>
+//            lastCandle = scanner.empty(nextRealIndexMicros - i * timeStep.toMicros, timeStep, Some(lastCandle))
+//            lastCandle
+//          }
+//          val initialCandle: C = scanner.empty(nextRealIndexMicros, timeStep, Some(empties.last))
+//          Some((nextIndex, empties :+ nextItems.foldLeft[C](initialCandle)(updatingFold(scanner.fold))))
+//
+//      }.drop(1).flatMap(_.get._2.iterator)
+
+//    CollectionType.fromIterable(candleIterator.toIterable)
   }
 
 
+  def unfoldIterator[A, S](init: S)(f: S => Option[(A, S)]): Iterator[A] = {
+    var currentState = init
+    var nextResultAndState: Option[(A, S)] = null
+
+    new AbstractIterator[A] {
+      override def hasNext: Boolean = {
+        if (nextResultAndState == null) {
+          nextResultAndState = f(currentState)
+        }
+        nextResultAndState.isDefined
+      }
+
+      override def next(): A = {
+        assert(hasNext)
+        val (result, state) = nextResultAndState.get
+        currentState = state
+        nextResultAndState = null
+        result
+      }
+    }
+  }
 
 
 }

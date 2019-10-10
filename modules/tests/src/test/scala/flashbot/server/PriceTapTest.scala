@@ -10,11 +10,12 @@ import org.scalatest.{FlatSpec, Matchers}
 import flashbot.core.PriceTap
 import flashbot.util.time._
 import flashbot.util.timeseries
-import flashbot.util.timeseries.Scannable.BaseFoldable
-import flashbot.util.timeseries.TimeSeriesLike
+import flashbot.util.timeseries.{Scannable, TimeSeriesLike}
+import flashbot.util.timeseries.Scannable.BaseScannable.ScannableInto
 import org.ta4j.core.Bar
+import pprint._
 
-import scala.collection.mutable.ArrayBuffer
+import scala.collection.AbstractIterator
 import scala.concurrent.{Await, Future}
 import scala.concurrent.duration._
 import scala.language.postfixOps
@@ -52,20 +53,24 @@ class PriceTapTest extends FlatSpec with Matchers {
   }
 
   "PriceTap" should "aggregate prices into candles" in {
-    val timerange = TimeRange.build(Instant.now(), 30 days)
+    val timerange = TimeRange.build(Instant.now(), 10 days)
     println(s"Time Range: ${timerange.startInstant} to ${timerange.endInstant}")
 
-    val timeStep = (5 minutes).javaDuration
+    val timeStep = (1 minute).javaDuration
     val srcSeq: Seq[(Instant, Double)] = PriceTap.iterator(200, .55, .35, timerange, timeStep).toVector
 
-    srcSeq.length shouldEqual 30 * 24 * 12
+    srcSeq.length shouldEqual 10 * 24 * 12 * 5
     srcSeq.head._1.micros shouldEqual timeStep.normalizeTimeStepMicros(timerange.start)
     srcSeq.last._1.micros shouldEqual timeStep.normalizeTimeStepMicros(timerange.end) - timeStep.toMicros
 
-    println(s"1. Start: ${srcSeq.head._1}\tEnd: ${srcSeq.last._1}")
+    println(s"Start: ${srcSeq.head._1}\tEnd: ${srcSeq.last._1}")
 
-    // Scan prices into 30 minute candles
-    val scanned = timeseries.scan[(Instant, Double), Candle](srcSeq, 30 minutes, false, false).toVector
+    // Scan prices into 5 minute candles
+    val fivemin = timeseries.scan[(Instant, Double), Candle](srcSeq, 5 minutes, false, false).toVector
+    println(s"1. Start: ${fivemin.head.instant}\tEnd: ${fivemin.last.instant}")
+
+    // Scan those candles into 30 minute candles
+    val scanned = timeseries.scan[Candle, Candle](fivemin, 30 minutes, false, false).toVector
     println(s"2. Start: ${scanned.head.instant}\tEnd: ${scanned.last.instant}")
 
     // Scan those candles into 30 minute TA4J TimeSeries bars
@@ -88,6 +93,27 @@ class PriceTapTest extends FlatSpec with Matchers {
     B = timeseries.scan[Candle, Candle](B, 2 hours).toVector
 
     A shouldEqual B
+  }
 
+  "TimeSeries scanner" should "handles missing data gracefully" in {
+    val timerange = TimeRange.build(Instant.now(), 30 days)
+    println(s"Time Range: ${timerange.startInstant} to ${timerange.endInstant}")
+
+    val srcItMillis = PriceTap.iterator(200, .55, .35, timerange, 60 seconds).toIterable
+    val srcIt = timeseries.scan[(Instant, Double), Candle](srcItMillis, 5 minutes, false, false).toIterable
+
+
+    val (a, b) = srcIt.take(1000).splitAt(500)
+    val (counterIt, pricesWithGap) = (a ++ b.splitAt(200)._2).iterator.duplicate
+    counterIt.size shouldEqual 800
+
+    // Scan over it to aggregate, 5 minute candles
+    val candles = timeseries.scan[Candle, Candle](pricesWithGap.toIterable, 5 minutes, false, false).toVector
+
+    // The missing data is now filled in
+    candles.size shouldEqual 1000
+    candles.zipWithIndex.foreach { case (x, i) => println(s"$i\t$x") }
+
+    candles.slice(500, 200).map(_.close).forall(_ == candles(500).close)
   }
 }

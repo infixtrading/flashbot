@@ -38,6 +38,57 @@ object Scannable {
   }
 
 
+  trait PriceMergable[T] {
+    def mergePrice(memo: T, price: Double): T
+  }
+  object PriceMergable {
+    implicit object PriceSeriesMergable extends PriceMergable[(Instant, Double)] {
+      override def mergePrice(memo: (Instant, Double), price: Double) = (memo._1, price)
+    }
+  }
+
+  trait HasPrice[T] {
+    def getPrice(item: T): Double
+  }
+  object HasPrice {
+    implicit object PriceSeriesHasPrice extends HasPrice[(Instant, Double)] {
+      override def getPrice(item: (Instant, Double)) = item._2
+    }
+  }
+
+
+  trait PriceSizeMergable[T] {
+    def mergeTrade(memo: T, price: Double, size: Double): T
+  }
+  object PriceSizeMergable extends PriceSizeDefaults {
+    implicit object PriceSizeSeries extends PriceSizeMergable[(Instant, Double, Double)] {
+      override def mergeTrade(memo: (Instant, Double, Double), price: Double, size: Double) =
+        (memo._1, price, size + memo._3)
+    }
+  }
+
+  trait HasPriceSize[T] extends HasPrice[T] {
+    def getSize(item: T): Double
+  }
+  object HasPriceSize extends PriceSizeDefaults {
+    implicit object PriceSizeSeries extends HasPriceSize[(Instant, Double, Double)] {
+      override def getPrice(item: (Instant, Double, Double)) = item._2
+      override def getSize(item: (Instant, Double, Double)) = item._3
+    }
+  }
+
+  trait PriceSizeDefaults {
+    implicit def priceNoSizeMergable[T](implicit priceMergable: PriceMergable[T]): PriceSizeMergable[T] =
+      new PriceSizeMergable[T] {
+        override def mergeTrade(memo: T, price: Double, size: Double) = priceMergable.mergePrice(memo, price)
+      }
+    implicit def priceNoSize[T](implicit priceNoSize: HasPrice[T]): HasPriceSize[T] =
+      new HasPriceSize[T] {
+        override def getPrice(item: T) = priceNoSize.getPrice(item)
+        override def getSize(item: T) = 0
+      }
+  }
+
   sealed trait BaseFoldable[I, C] {
     def fold(candle: C, item: I): C
   }
@@ -45,13 +96,13 @@ object Scannable {
     type Reducible[C] = BaseFoldable[C, C]
     type Foldable[I, C] = BaseFoldable[I, C]
 
-    implicit object PriceSeriesFoldableIntoCandle extends Foldable[(Instant, Double), Candle] {
-      override def fold(candle: Candle, item: (Instant, Double)): Candle = candle.mergePrice(item._2)
-    }
-
-    implicit object PriceVolSeriesFoldableIntoCandle extends Foldable[(Instant, Double, Double), Candle] {
-      override def fold(candle: Candle, item: (Instant, Double, Double)): Candle = candle.mergeTrade(item._2, item._3)
-    }
+//    implicit object PriceSeriesFoldableIntoCandle extends Foldable[(Instant, Double), Candle] {
+//      override def fold(candle: Candle, item: (Instant, Double)): Candle = candle.mergePrice(item._2)
+//    }
+//
+//    implicit object PriceVolSeriesFoldableIntoCandle extends Foldable[(Instant, Double, Double), Candle] {
+//      override def fold(candle: Candle, item: (Instant, Double, Double)): Candle = candle.mergeTrade(item._2, item._3)
+//    }
 
     implicit object CandleFoldableIntoBar extends Foldable[Candle, Bar] {
       override def fold(bar: Bar, candle: Candle) = {
@@ -83,6 +134,33 @@ object Scannable {
       }
     }
 
+    implicit object BarIsPriceSize extends HasPriceSize[Bar] with PriceSizeMergable[Bar] {
+      override def getSize(item: Bar) = item.getVolume.doubleValue()
+      override def getPrice(item: Bar) = item.getClosePrice.doubleValue()
+      override def mergeTrade(bar: Bar, price: Double, size: Double) = {
+        val fn = bar.getAmount.function()
+        new BaseBar(
+          bar.getTimePeriod,
+          bar.getEndTime,
+          bar.getOpenPrice,
+          fn(bar.getMaxPrice.doubleValue max price),
+          fn(bar.getMinPrice.doubleValue min price),
+          fn(price),
+          fn(bar.getVolume.doubleValue + size),
+          fn(0)
+        )
+      }
+
+    }
+
+    implicit def priceSizeIsFoldable[I, C](implicit mergable: PriceSizeMergable[C],
+                                           priceSize: HasPriceSize[I]): Foldable[I, C] = {
+      new Foldable[I, C] {
+        override def fold(candle: C, item: I) =
+          mergable.mergeTrade(candle, priceSize.getPrice(item), priceSize.getSize(item))
+      }
+    }
+
 //    implicit def priceSeriesFoldIntoCandle: Foldable[(Instant, Double), Candle] =
 //      new Foldable[(Instant, Double), Candle] {
 //      }
@@ -99,12 +177,12 @@ object Scannable {
 
   sealed trait BaseScannable[I, C] extends Foldable[I, C] with GenEmpty[C]
   object BaseScannable {
-    type ScannableItem[I, C] = BaseScannable[I, C]
+    type ScannableInto[I, C] = BaseScannable[I, C]
     type Scannable[C] = BaseScannable[C, C]
 
     implicit def scannableItem[I, C](implicit foldableItem: Foldable[I, C],
-                                     genEmptyCandle: GenEmpty[C]): ScannableItem[I, C] =
-      new ScannableItem[I, C] {
+                                     genEmptyCandle: GenEmpty[C]): ScannableInto[I, C] =
+      new ScannableInto[I, C] {
         override def fold(candle: C, item: I): C = foldableItem.fold(candle, item)
         override def empty(micros: Long, duration: java.time.Duration, prev: Option[C]): C =
           genEmptyCandle.empty(micros, duration, prev)
@@ -117,33 +195,6 @@ object Scannable {
         genEmpty.empty(micros, duration, prev)
     }
   }
-
-//  trait BaseScannable[I, C] { self: Foldable[I, C] with GenEmpty[C] => }
-//    extends Foldable[I, C] with GenEmpty[C]
-
-//  trait ScannableItem[I, C] extends Foldable[I, C] with GenEmpty[C]
-//  trait ScannableItem[I, C] {
-//    def fold(candle: C, item: I): C
-//    def empty(micros: Long, prev: Option[C]): C
-//  }
-
-
-
-
-//  trait Scannable[C] { self: BaseScannable[C, C] => }
-//  trait Scannable[C] {
-//    def fold(candle: C, item: C): C
-//    def empty(micros: Long, prev: Option[C]): C
-//  }
-
-//  object Scannable {
-//  }
-
-
-
-
-  // Implicits
-
 
 }
 

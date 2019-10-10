@@ -27,8 +27,6 @@ case class Candle(micros: Long,
   )
 
   override def price = close
-
-  override def toString = s"${instant.zdtLocal}: ${super.toString}"
 }
 
 object Candle {
@@ -42,6 +40,10 @@ object Candle {
     Candle(micros, price, price, price, price, volume)
 
   def empty(micros: Long): Candle = Candle.single(micros, 0)
+
+  implicit object candleOHLCMergable extends PriceSizeMergable[Candle] {
+    override def mergeTrade(memo: Candle, price: Double, volume: Double) = memo.mergeTrade(price, volume)
+  }
 
 //  case class CandleMD(source: String, topic: String, data: Candle)
 //    extends GenMD[Candle] with Priced with HasProduct {
