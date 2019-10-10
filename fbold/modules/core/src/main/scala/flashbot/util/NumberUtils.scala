@@ -1,5 +1,6 @@
 package flashbot.util
 
+
 object NumberUtils {
 
   def scale(d: Double): Int = BigDecimal(d.toString).scale
