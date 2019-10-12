@@ -1,0 +1,32 @@
+version: "3.7"
+
+services:
+  influxdb:
+    image: quay.io/influxdb/influxdb:2.0.0-alpha
+    ports:
+      - "9999:9999"
+    volumes:
+      - ~/.flashbot/data:/var/lib/flashbot/data
+    networks:
+      - pdsnet
+
+  chronograf:
+    image: quay.io/influxdb/chronograf:1.7.14
+    networks:
+      - pdsnet
+
+  kapacitor:
+    image: kapacitor
+    networks:
+      - pdsnet
+
+networks:
+  mynet:
+    ipam:
+      driver: default
+      config:
+        - subnet: 10.0.0.0/16
+
+volumes:
+  datavolume:
+    driver:
