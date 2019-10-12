@@ -5,6 +5,7 @@ trait FoldFmt[T] {
   def unfold(x: T): (T, Option[T])
 }
 
+
 object FoldFmt {
   // Implemented as loop because of possible stack size concerns and I'm too
   // lazy to figure out tail call optimization.

@@ -21,3 +21,10 @@ lazy val tools = (project in file("modules/tools"))
   .dependsOn(core)
   .aggregate(core)
 
+
+lazy val `flashbot-ignite` = (project in file("modules/ignite"))
+  .settings(
+    name := "flashbot-ignite"
+  )
+  .dependsOn(core)
+  .aggregate(core)
