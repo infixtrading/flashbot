@@ -1,32 +1,43 @@
 version: "3.7"
 
 services:
-  influxdb:
-    image: quay.io/influxdb/influxdb:2.0.0-alpha
+  zeppelin:
+    image: apache/zeppelin:0.8.2
     ports:
-      - "9999:9999"
+      - 8080:8080
     volumes:
-      - ~/.flashbot/data:/var/lib/flashbot/data
-    networks:
-      - pdsnet
+      - ~/.flashbot/zeppelin/logs:/logs
+      - ~/.flashbot/zeppelin/notebook:/notebook
+    environment:
+      - ZEPPELIN_LOG_DIR=/logs
+      - ZEPPELIN_NOTEBOOK_DIR=/notebook
 
-  chronograf:
-    image: quay.io/influxdb/chronograf:1.7.14
-    networks:
-      - pdsnet
+#  influxdb:
+#    image: quay.io/influxdb/influxdb:2.0.0-alpha
+#    ports:
+#      - "9999:9999"
+#    volumes:
+#      - ~/.flashbot/data:/var/lib/flashbot/data
+#    networks:
+#      - mynet
+#
+#  chronograf:
+#    image: quay.io/influxdb/chronograf:1.7.14
+#    networks:
+#      - mynet
+#
+#  kapacitor:
+#    image: kapacitor
+#    networks:
+#      - mynet
 
-  kapacitor:
-    image: kapacitor
-    networks:
-      - pdsnet
+#networks:
+#  mynet:
+#    ipam:
+#      driver: default
+#      config:
+#        - subnet: 10.0.0.0/16
 
-networks:
-  mynet:
-    ipam:
-      driver: default
-      config:
-        - subnet: 10.0.0.0/16
-
-volumes:
-  datavolume:
-    driver:
+#volumes:
+#  datavolume:
+#    driver:

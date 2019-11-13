@@ -10,7 +10,7 @@ import spire.syntax.cfor._
   * Efficiently stores time series of candles.
   */
 @JsonCodec
-case class CandleFrame(time: debox.Buffer[Long] = debox.Buffer.empty[Long],
+case class CandleFrame(time: Buffer[Long] = debox.Buffer.empty[Long],
                        open: Buffer[Double] = debox.Buffer.empty[Double],
                        high: Buffer[Double] = debox.Buffer.empty[Double],
                        low: Buffer[Double] = debox.Buffer.empty[Double],

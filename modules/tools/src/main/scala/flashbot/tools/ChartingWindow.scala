@@ -1,96 +1,74 @@
 package flashbot.tools
 
-import scalafx.application.JFXApp
-import scalafx.application.JFXApp.PrimaryStage
-import scalafx.scene.Scene
-import scalafx.scene.layout.{BorderPane, HBox}
-import scalafx.scene.paint.Color._
-import scalafx.beans.property._
-import org.gerweck.scalafx.util._
-import scalafx.beans.value.ObservableValue
-import scalafx.geometry.{Insets, Pos}
-import scalafx.geometry.Orientation.Horizontal
-import scalafx.scene.control.{Button, Slider}
-import scalafx.scene.shape.Rectangle
+import java.awt.Dimension
+import java.awt.event.{KeyEvent, KeyListener}
 
-import scala.concurrent.duration._
-import scala.language.postfixOps
+import flashbot.tools.OrderBookScanner.{chart, plot}
+import org.jfree.chart.ChartFrame
+import org.jfree.chart.event.{PlotChangeEvent, PlotChangeListener}
+import org.jfree.chart.plot.XYPlot
 
-object ChartingWindow extends JFXApp {
+import scala.swing.{Frame, Publisher}
 
-  val base = DoubleProperty(15)
-  val height = DoubleProperty(10)
-  val area = DoubleProperty(0)
+class ChartingWindow(title: String) {
 
-  area <== base * height / 2
+  var frame: Option[Frame] = None
 
-  def printValues() = println(f"base = ${base()}%4.1f, height = ${height()}%4.1f, area = ${area()}%5.1f\n")
-  printValues()
+  def reload: Unit = {
 
-  println("Setting base to 20")
-  base() = 20
-  printValues()
+    if (frame.nonEmpty) {
+      frame.get.visible = false;
+      frame.get.dispose()
+      frame = None
+    }
 
-  println("Setting height to " + 5)
-  height() = 5
-  printValues()
+    class PriceFrame extends Frame with Publisher {
+      override lazy val peer = new ChartFrame(title, chart.peer, true) with InterfaceMixin
+      peer.getChartPanel.setRangeZoomable(false)
+      var zoomListener: PlotChangeListener = _
 
-  val sliderA = new Slider {
-    min = 0
-    max = 255
-    value = 255
-    orientation = Horizontal
-    alignmentInParent = Pos.BottomRight
-  }
-  val sliderB = new Slider {
-    min = 0
-    max = 255
-    value = 255
-    orientation = Horizontal
-    alignmentInParent = Pos.BottomRight
-  }
-
-//  val sliderValsA = DoubleProperty(255)
-//  sliderValsA <== sliderA.value
-
-  slider.value
-
-  stage = new PrimaryStage {
-    width = 800
-    height = 600
-    title = "Sam Demo"
-
-    scene = new Scene {
-      root = new HBox {
-        padding = Insets(10)
-        children = Seq(
-          new Button {
-            text = "hello"
-            onAction = { ae => println("hi", ae) }
-          },
-          slider
-        )
-
-        sliderVals.map()
-
+      def resetZoomListener(): Unit = {
+        zoomListener = new PlotChangeListener {
+          override def plotChanged(event: PlotChangeEvent): Unit = {
+            plot.removeChangeListener(zoomListener)
+            plot.getSubplots.forEach {
+              case p: XYPlot =>
+                for (i <- 0 until p.getRangeAxisCount) {
+                  val axis = p.getRangeAxis(i)
+                  axis.setRangeWithMargins(p.getDataRange(axis))
+                }
+              case _ =>
+            }
+            resetZoomListener()
+          }
+        }
+        plot.addChangeListener(zoomListener)
       }
 
-//      content = new Rectangle {
-//        x = 25
-//        y = 40
-//        width = 100
-//        height = 100
-//        fill <== when (hover) choose Green otherwise Red
-//        fill.onChange { (source, prev, next) =>
-//          println(s"Fill changed to $next")
-//        }
-//      }
-//      root = new BorderPane {
-//        padding = Insets(25)
-//        center = new Label("Hello SBT")
-//      }
+      resetZoomListener()
+
+      peer.addKeyListener(new KeyListener {
+        override def keyTyped(e: KeyEvent): Unit = {
+          // Space
+          if (e.getExtendedKeyCode == 32) {
+            println("Pause")
+          }
+        }
+
+        override def keyPressed(e: KeyEvent): Unit = {}
+
+        override def keyReleased(e: KeyEvent): Unit = {}
+      })
     }
+
+    frame = Some(new PriceFrame)
+    frame.get.size = new Dimension(1100, 600)
+    frame.get.visible = true
   }
 
 
+}
+
+object ChartingWindow {
+  case class ChartConfig()
 }

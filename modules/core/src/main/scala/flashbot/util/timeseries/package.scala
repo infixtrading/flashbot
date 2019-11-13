@@ -96,7 +96,7 @@ package object timeseries {
     }
   }
 
-  def timeSeriesIterator(series: TimeSeries) = series.iterator
+  def timeSeriesIterator(series: TimeSeries): Iterator[Bar] = series.iterator
 
   object Implicits {
     implicit class TimeSeriesOps(series: TimeSeries) {
@@ -275,18 +275,18 @@ package object timeseries {
 
   def scan[I:HasTime, C:HasTime](items: Iterable[I],
                                  timeStep: java.time.Duration,
-                                 dropFirst: Boolean = true,
+                                 dropFirst: Boolean = false,
                                  dropLast: Boolean = false)
                                 (implicit scanner: ScannableInto[I, C],
                                  CollectionType: TimeSeriesFactory[C]): TimeSeriesLike[C] =
     scanVia(items, timeStep, CollectionType, dropFirst, dropLast)
 
   def scanVia[I:HasTime, C:HasTime](itemsI: Iterable[I],
-                                                             timeStep: java.time.Duration,
-                                                             fact: TimeSeriesFactory[C],
-                                                             dropFirst: Boolean = true,
-                                                             dropLast: Boolean = false)
-                                                            (implicit scanner: ScannableInto[I, C]): TimeSeriesLike[C] = {
+                                    timeStep: java.time.Duration,
+                                    fact: TimeSeriesFactory[C],
+                                    dropFirst: Boolean = false,
+                                    dropLast: Boolean = false)
+                                   (implicit scanner: ScannableInto[I, C]): TimeSeriesLike[C] = {
 
     val items = itemsI.iterator
 
@@ -362,7 +362,7 @@ package object timeseries {
           }
         }
 
-        return true;
+        true;
       }
 
       override def next() = {

@@ -27,6 +27,10 @@ case class Candle(micros: Long,
   )
 
   override def price = close
+
+  override def toString = {
+    s"Candle(${micros.microsToInstant}, o: $open, h: $high, l: $low, c: $close, v: $volume)"
+  }
 }
 
 object Candle {

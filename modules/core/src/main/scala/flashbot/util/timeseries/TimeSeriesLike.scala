@@ -34,14 +34,14 @@ abstract class TimeSeriesLike[A: HasTime](private val it: Iterator[A], val inter
     (interval.timeStepIndexOfMicros(micros) - interval.timeStepIndexOfMicros(firstSeenMicros)).toInt
   }
 
-  def apply(i: Int): A = get(i).get
-  def get(i: Int): Option[A]
+  def iloc(i: Int): A = ilocOpt(i).get
+  def ilocOpt(i: Int): Option[A]
 
-  def atMicros(micros: Long): A = apply(seqIndexOfMicros(micros))
-  def getAtMicros(micros: Long): Option[A] = get(seqIndexOfMicros(micros))
+  def apply(micros: Long): A = iloc(seqIndexOfMicros(micros))
+  def get(micros: Long): Option[A] = ilocOpt(seqIndexOfMicros(micros))
 
-  def apply(instant: Instant): A = atMicros(instant.micros)
-  def get(instant: Instant): Option[A] = getAtMicros(instant.micros)
+  def apply(instant: Instant): A = apply(instant.micros)
+  def get(instant: Instant): Option[A] = get(instant.micros)
 
   override def hasNext = it.hasNext
   override def next() = it.next()
@@ -57,7 +57,7 @@ object TimeSeriesFactory extends TimeSeriesLikeDefaultImplicits {
     type C = TimeSeries
     override val elems = buildTimeSeries("TS-Name")
     override protected def insert(item: Bar): Unit = elems.addBar(item)
-    override def get(i: Int) = Option(elems.getBar(i))
+    override def ilocOpt(i: Int) = Option(elems.getBar(i))
   }
 
   object Bars extends TimeSeriesFactory[Bar] {

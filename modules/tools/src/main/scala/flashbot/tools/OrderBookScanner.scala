@@ -2,17 +2,11 @@ package flashbot.tools
 
 import java.awt.event.{KeyEvent, KeyListener}
 import java.awt.{BasicStroke, Color, Dimension, Paint, Stroke}
-import java.time.{Instant, ZoneOffset, ZonedDateTime}
-import java.time.temporal.ChronoUnit
 
-import flashbot.core.{CandleFrame, DataServer, FlashbotConfig, OrderBookTap, PriceTap, TradingEngine}
 import flashbot.sources.BitMEXMarketDataSource
-import flashbot.util.stream.buildMaterializer
-import flashbot.util.timeseries.Implicits._
 import flashbot.util.time._
 import akka.pattern.{Backoff, BackoffSupervisor, ask, pipe}
 import akka.stream.scaladsl.{Keep, Sink, Source, Unzip, UnzipWith, UnzipWithApply}
-import flashbot.models.{Candle, Ladder, OrderBook, TimeRange}
 import flashbot.util.TableUtil
 import de.sciss.chart.api._
 import org.jfree.data.time.{RegularTimePeriod, Second, TimePeriod, TimePeriodValue, TimePeriodValuesCollection}
@@ -30,6 +24,7 @@ import akka.util.Timeout
 import de.sciss.chart.XYChart
 import de.sciss.chart.event.{ChartMouseClicked, ChartMouseMoved}
 import flashbot.client.FlashbotClient
+import flashbot.util.timeseries.SeriesConfig
 import it.unimi.dsi.fastutil.longs.LongArrayFIFOQueue
 import it.unimi.dsi.fastutil.objects.ObjectArrayFIFOQueue
 import javax.swing.JFrame
@@ -49,12 +44,26 @@ import scala.swing.event.{MouseClicked, MouseMoved}
 
 object OrderBookScanner extends App {
 
+  import flashbot.models._
+  import flashbot.core._
+  import flashbot.util.stream.buildMaterializer
+  import flashbot.util.timeseries.Implicits._
+  import akka.pattern.{Backoff, BackoffSupervisor, ask, pipe}
+  import akka.stream.scaladsl.{Keep, Sink, Source, Unzip, UnzipWith, UnzipWithApply}
+  import akka.actor.ActorSystem
+  import akka.stream.ActorMaterializer
+  import akka.util.Timeout
+  import flashbot.client.FlashbotClient
+  import scala.concurrent.{Await, ExecutionContextExecutor, Future}
+  import scala.concurrent.duration._
+
+  // Ranges
+  import java.time.{Instant, ZoneOffset, ZonedDateTime}
+  import java.time.temporal.ChronoUnit
   val END = Instant.now()
   val START = END.minus(7, ChronoUnit.DAYS)
   val timeRange = TimeRange(START.toEpochMilli * 1000, END.toEpochMilli * 1000)
 
-  implicit def timePeriod(d: Date): RegularTimePeriod = new Second(d)
-  implicit def timePeriod(d: Instant): RegularTimePeriod = new Second(new Date(d.toEpochMilli))
 
   // Setup Flashbot environment
   implicit val config: FlashbotConfig = FlashbotConfig.load("scanner-test")
@@ -62,6 +71,16 @@ object OrderBookScanner extends App {
   implicit val mat: ActorMaterializer = buildMaterializer()
   implicit val ec: ExecutionContextExecutor = system.dispatcher
   implicit val timeout: Timeout = Timeout(10 seconds)
+
+
+  implicit def timePeriod(d: Date): RegularTimePeriod = new Second(d)
+  implicit def timePeriod(d: Instant): RegularTimePeriod = new Second(new Date(d.toEpochMilli))
+
+
+  val engine = system.actorOf(TradingEngine.props("scanner-test-engine", config))
+  val client = new FlashbotClient(engine)
+
+  new ChartingWindow("Order Book Simulation")
 
 
 //  def foo() = {
@@ -75,7 +94,6 @@ object OrderBookScanner extends App {
 //
 
 
-  val engine = system.actorOf(TradingEngine.props("scanner-test-engine", config))
 
 //  for (i <- 0 until 360) {
 //    if (i % 10 == 0)
@@ -83,7 +101,6 @@ object OrderBookScanner extends App {
 //    Thread.sleep(1000)
 //  }
 
-  val client = new FlashbotClient(engine)
   val cbp: Map[String, CandleFrame] = client.prices("coinbase/btc_usd/candles_1m", timeRange, 1 minute)
   val cb: Array[Candle] = cbp("coinbase.btc_usd").toCandlesArray
   val (coinbasePrices, coinbaseVols) = cb.toSeq.map(x => ((x.date, x.close), (x.date, x.volume))).unzip
@@ -176,6 +193,8 @@ object OrderBookScanner extends App {
   val smaRenderer = new XYLineAndShapeRenderer(true, false)
   val smaAxis = new NumberAxis()
   smaAxis.setAutoRange(true)
+
+  SeriesConfig()
 
   smaPlot.setRangeAxes(List(smaAxis).toArray)
 //  smaRenderer.setStroke(new BasicStroke(.5f))
