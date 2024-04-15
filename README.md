@@ -1,4 +1,4 @@
-# Flashbot
+# Flashbot (Deprecated)
 [![Build Status](https://travis-ci.org/infixtrading/flashbot.svg?branch=master)](https://travis-ci.org/infixtrading/flashbot)
 <a href='https://github.com/infixtrading/flashbot/blob/master/LICENSE'>
   <img src='https://img.shields.io/github/license/infixtrading/flashbot.svg?longCache=true' alt='License' />
@@ -12,9 +12,8 @@ Crypto markets are unique in the world of finance because the "playing field is 
 Check out the following core files (on the branch v1):
 
 *Interfaces*
-* [Strategy.scala](https://github.com/infixtrading/flashbot/blob/v1/modules/core/jvm/src/main/scala/flashbot/core/Strategy.scala)
-* [DataSource.scala](https://github.com/infixtrading/flashbot/blob/v1/modules/core/jvm/src/main/scala/flashbot/core/DataSource.scala)
-* [Exchange.scala](https://github.com/infixtrading/flashbot/blob/v1/modules/core/jvm/src/main/scala/flashbot/core/Exchange.scala)
+* [DataSource.scala](https://github.com/infixtrading/flashbot/blob/master/modules/server/src/main/scala/com/infixtrading/flashbot/core/DataSource.scala)
+* [Exchange.scala](https://github.com/infixtrading/flashbot/blob/master/modules/server/src/main/scala/com/infixtrading/flashbot/core/Exchange.scala)
 
 *Core*
 * [TradingEngine.scala](https://github.com/infixtrading/flashbot/blob/v1/modules/server/src/main/scala/flashbot/core/TradingEngine.scala)
@@ -22,9 +21,6 @@ Check out the following core files (on the branch v1):
 * [BackfillService.scala](https://github.com/infixtrading/flashbot/blob/v1/modules/server/src/main/scala/flashbot/server/BackfillService.scala)
 * [TradingSessionActor.scala](https://github.com/infixtrading/flashbot/blob/v1/modules/server/src/main/scala/flashbot/server/TradingSessionActor.scala)
 * [DataServer.scala](https://github.com/infixtrading/flashbot/blob/v1/modules/server/src/main/scala/flashbot/core/DataServer.scala)
-
-*Sample strategy*
-* [MarketMaker.scala](https://github.com/infixtrading/flashbot/blob/v1/modules/core/jvm/src/main/scala/flashbot/strategies/MarketMaker.scala)
 
 
 ## Features
